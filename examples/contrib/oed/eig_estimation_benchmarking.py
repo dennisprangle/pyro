@@ -10,7 +10,7 @@ import pyro
 from pyro import optim
 from pyro.infer import TraceEnum_ELBO
 from pyro.contrib.oed.eig import (
-    vi_ape, naive_rainforth_eig, donsker_varadhan_eig, barber_agakov_ape, gibbs_y_eig,
+    vi_ape, naive_rainforth_eig, accelerated_rainforth_eig, donsker_varadhan_eig, barber_agakov_ape, gibbs_y_eig,
     gibbs_y_re_eig
 )
 from pyro.contrib.oed.util import (
@@ -143,6 +143,7 @@ barber_agakov_ape.name = "Barber-Agakov"
 donsker_varadhan_eig.name = "Donsker-Varadhan"
 linear_model_ground_truth.name = "Ground truth"
 naive_rainforth_eig.name = "Naive Rainforth"
+accelerated_rainforth_eig.name = "Accelerated Rainforth"
 gibbs_y_eig.name = "Gibbs y"
 gibbs_y_re_eig.name = "Gibbs y with random effects"
 
@@ -156,6 +157,26 @@ T = namedtuple("CompareEstimatorsExample", [
 ])
 
 CMP_TEST_CASES = [
+      T(
+        "Logistic regression",
+        logistic_2p_model,
+        loc_15d_1n_2p,
+        "y",
+        "w1",
+        [
+            (accelerated_rainforth_eig, [{"y": torch.tensor([0., 1.])}, 500, 500]),
+            (gibbs_y_eig,
+             [40, 100, logistic_response_est(15), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (ba_eig_mc,
+             [40, 800, logistic_guide(15), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            # (donsker_varadhan_eig,
+            # [400, 400, GuideDV(logistic_guide(15)),
+            #  optim.Adam({"lr": 0.05}), False, None, 500]),
+        ]
+    ),    
+        
     T(
         "Sigmoid with random effects",
         sigmoid_high_random_effects,
@@ -169,6 +190,7 @@ CMP_TEST_CASES = [
             (ba_eig_mc,
              [40, 800, sigmoid_random_effect_guide(15), optim.Adam({"lr": 0.05}),
               False, None, 500]),
+            (naive_rainforth_eig, [500, 500, 500])
             # (gibbs_y_re_eig,
             #  [40, 32000, sigmoid_response_est(15), sigmoid_cond_response_est(15),
             #   optim.Adam({"lr": 0.05}), False, None, 500]),
@@ -190,6 +212,7 @@ CMP_TEST_CASES = [
             (ba_eig_mc,
              [40, 800, sigmoid_high_guide(15), optim.Adam({"lr": 0.05}),
               False, None, 500]),
+            (naive_rainforth_eig, [2000, 2000])
             #(donsker_varadhan_eig,
             # [400, 80, GuideDV(sigmoid_high_guide(15)),
             #  optim.Adam({"lr": 0.05}), False, None, 500])
@@ -210,24 +233,7 @@ CMP_TEST_CASES = [
               False, None, 500]),
         ]
     ),
-    T(
-        "Logistic regression",
-        logistic_2p_model,
-        loc_15d_1n_2p,
-        "y",
-        "w1",
-        [
-            (gibbs_y_eig,
-             [40, 100, logistic_response_est(15), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (ba_eig_mc,
-             [40, 800, logistic_guide(15), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            # (donsker_varadhan_eig,
-            # [400, 400, GuideDV(logistic_guide(15)),
-            #  optim.Adam({"lr": 0.05}), False, None, 500]),
-        ]
-    ),
+  
     T(
         "A/B test linear model with known observation variance",
         basic_2p_linear_model_sds_10_2pt5,
