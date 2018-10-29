@@ -148,7 +148,7 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
 
 
 def accelerated_rainforth_eig(model, design, observation_labels, target_labels,
-                              yspace, N=100, M=10):
+                              yspace, N=100, M_prime=None):
     """
     Accelerated Rainforth (i.e. Unnested Monte Carlo) estimate of the expected information
     gain (EIG). The estimate is
@@ -181,8 +181,7 @@ TO DO ################################################
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-
-    # Take N samples of the model
+        
     expanded_design = lexpand(design, N, 1)#N copies of the model
     shape = list(design.shape[:-1])
     expanded_yspace = {k: rexpand(y, *shape) for k, y in yspace.items()}
@@ -190,10 +189,24 @@ TO DO ################################################
     trace = poutine.trace(newmodel).get_trace(expanded_design)
     trace.compute_log_prob()
     lp = sum(trace.nodes[l]["log_prob"] for l in observation_labels)
-    plp = lp*torch.exp(lp)
-    first_term = plp.sum(0).sum(0)/N
-    py = torch.exp(lp).sum(0)/N
-    second_term = (py*torch.log(py)).sum(0)
+    
+    if M_prime is None:
+        first_term = xexpx(lp).sum(0).sum(0)/N
+
+    else:
+        y_dict = {l: lexpand(trace.nodes[l]["value"], M_prime, 1) for l in observation_labels}
+        theta_dict = {l: lexpand(trace.nodes[l]["value"], M_prime) for l in target_labels}
+        theta_dict.update(y_dict)
+        # Resample M values of u and compute conditional probabilities
+        newnewmodel = pyro.condition(model, data=theta_dict)
+        reexpanded_design = lexpand(design, M_prime, N, 1)
+        retrace = poutine.trace(newnewmodel).get_trace(reexpanded_design)
+        retrace.compute_log_prob()
+        relp = logsumexp(sum(retrace.nodes[l]["log_prob"] for l in observation_labels), 0) \
+            - np.log(M_prime)
+        first_term = xexpx(relp).sum(0).sum(0)/N
+        
+    second_term = xexpx(logsumexp(lp, 0) - np.log(N)).sum(0)
     return first_term - second_term
 
 
@@ -508,6 +521,13 @@ def logsumexp(inputs, dim=None, keepdim=False):
     if not keepdim:
         outputs = outputs.squeeze(dim)
     return outputs
+
+
+def xexpx(a):
+    mask = (a == float('-inf'))
+    y = a*torch.exp(a)
+    y[mask] = 0.
+    return y
 
 
 class EwmaLog(torch.autograd.Function):
