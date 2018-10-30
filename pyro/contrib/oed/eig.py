@@ -84,7 +84,14 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
     .. math::
 
         \\frac{1}{N}\\sum_{n=1}^N \\log p(y_n | \\theta_n, d) -
-        \\log \\left(\\frac{1}{M}\\sum_{m=1}^M p(y_n | \\theta_m, d)\\right)
+        \\frac{1}{N}\\sum_{n=1}^N \\log \\left(\\frac{1}{M}\\sum_{m=1}^M p(y_n | \\theta_m, d)\\right)
+
+    .. math::
+
+        \\frac{1}{N}\\sum_{n=1}^N  \\log \\left(\\frac{1}{M'}\\sum_{m=1}^{M'}
+        p(y_n | \\theta_n, \\widetilde{\\theta}_{nm}, d)\\right)-
+        \\frac{1}{N}\\sum_{n=1}^N \\log \\left(\\frac{1}{M}\\sum_{m=1}^{M}
+        p(y_n | \\theta_m, \\widetilde{\\theta}_{m}, d)\\right)
 
     Monte Carlo estimation is attempted for the :math:`\\log p(y | \\theta, d)` term if
     the parameter `M_prime` is passed. Otherwise, it is assumed that that :math:`\\log p(y | \\theta, d)`
@@ -105,13 +112,13 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
     :rtype: `torch.Tensor`
     """
 
-    if isinstance(observation_labels, str):#list of strings instead of strings
+    if isinstance(observation_labels, str):  # list of strings instead of strings
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
 
     # Take N samples of the model
-    expanded_design = lexpand(design, N)#N copies of the model
+    expanded_design = lexpand(design, N)  # N copies of the model
     trace = poutine.trace(model).get_trace(expanded_design)
     trace.compute_log_prob()
 
@@ -138,7 +145,7 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
     conditional_model = pyro.condition(model, data=y_dict)
     # Using (M, 1) instead of (M, N) - acceptable to re-use thetas between ys because
     # theta comes before y in graphical model
-    reexpanded_design = lexpand(design, M, 1)#sample M theta
+    reexpanded_design = lexpand(design, M, 1)  # sample M theta
     retrace = poutine.trace(conditional_model).get_trace(reexpanded_design)
     retrace.compute_log_prob()
     marginal_lp = logsumexp(sum(retrace.nodes[l]["log_prob"] for l in observation_labels), 0) \
@@ -154,9 +161,18 @@ def accelerated_rainforth_eig(model, design, observation_labels, target_labels,
     gain (EIG). The estimate is
 
     .. math::
-TO DO ################################################
-        \\frac{1}{N}\\sum_{n=1}^N \\log p(y_n | \\theta_n, d) -
-        \\log \\left(\\frac{1}{M}\\sum_{m=1}^M p(y_n | \\theta_m, d)\\right)
+
+            \\frac{1}{N}\\sum_{n=1}^N\\sum_{y=1}^{|Y|}p(y | \\theta_n, d) \\log p(y | \\theta_n, d)-
+            \\sum_{y=1}^{|Y|}\\left[ \\left( \\frac{1}{N} \\sum_{n=1}^N p(y | \\theta_n, d)\\right)
+            log\\left(\\frac{1}{N}\\sum_{n=1}^N p(y | \\theta_n, d)\\right)\\right]
+
+    .. math::
+
+        \\frac{1}{N}\\sum_{n=1}^N\\sum_{y=1}^{|Y|}\\left(\\left(\\frac{1}{M'}\\sum_{m=1}^{M'}
+        p(y | \\theta_n, \\widetilde{\\theta}_{nm}, d)\\right)
+        \\log \\left(\\frac{1}{M'}\\sum_{m=1}^{M'}p(y | \\theta_n, \\widetilde{\\theta}_{nm}, d)\\right)\\right)-
+        \\sum_{y=1}^{|Y|}\\left(\\left( \\frac{1}{N}\\sum_{n=1}^N p(y | \\theta_n, \\widetilde{\\theta}_{n}, d)\\right)
+        \\log \\left(\\frac{1}{N}\\sum_{n=1}^N p(y | \\theta_n, \\widetilde{\\theta}_{n}, d)\\right)\\right)
 
     Monte Carlo estimation is attempted for the :math:`\\log p(y | \\theta, d)` term if
     the parameter `M_prime` is passed. Otherwise, it is assumed that that :math:`\\log p(y | \\theta, d)`
@@ -170,26 +186,26 @@ TO DO ################################################
         posterior is to be inferred.
     :param list target_labels: A subset of the sample sites over which the posterior
         entropy is to be measured.
+    :param dictionary yspace: maps y to a tensor that contains the possible values that y can take
     :param int N: Number of outer expectation samples.
-    :param int M: Number of inner expectation samples for `p(y|d)`.
     :param int M_prime: Number of samples for `p(y | theta, d)` if required.
     :return: EIG estimate
     :rtype: `torch.Tensor`
     """
 
-    if isinstance(observation_labels, str):#list of strings instead of strings
+    if isinstance(observation_labels, str):  # list of strings instead of strings
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-        
-    expanded_design = lexpand(design, N, 1)#N copies of the model
+
+    expanded_design = lexpand(design, N, 1)  # N copies of the model
     shape = list(design.shape[:-1])
     expanded_yspace = {k: rexpand(y, *shape) for k, y in yspace.items()}
     newmodel = pyro.condition(model, data=expanded_yspace)
     trace = poutine.trace(newmodel).get_trace(expanded_design)
     trace.compute_log_prob()
     lp = sum(trace.nodes[l]["log_prob"] for l in observation_labels)
-    
+
     if M_prime is None:
         first_term = xexpx(lp).sum(0).sum(0)/N
 
@@ -197,15 +213,15 @@ TO DO ################################################
         y_dict = {l: lexpand(trace.nodes[l]["value"], M_prime, 1) for l in observation_labels}
         theta_dict = {l: lexpand(trace.nodes[l]["value"], M_prime) for l in target_labels}
         theta_dict.update(y_dict)
-        # Resample M values of u and compute conditional probabilities
-        newnewmodel = pyro.condition(model, data=theta_dict)
+        # Resample M values of theta_tilde and compute conditional probabilities
+        othermodel = pyro.condition(model, data=theta_dict)
         reexpanded_design = lexpand(design, M_prime, N, 1)
-        retrace = poutine.trace(newnewmodel).get_trace(reexpanded_design)
+        retrace = poutine.trace(othermodel).get_trace(reexpanded_design)
         retrace.compute_log_prob()
         relp = logsumexp(sum(retrace.nodes[l]["log_prob"] for l in observation_labels), 0) \
             - np.log(M_prime)
         first_term = xexpx(relp).sum(0).sum(0)/N
-        
+
     second_term = xexpx(logsumexp(lp, 0) - np.log(N)).sum(0)
     return first_term - second_term
 
@@ -325,7 +341,7 @@ def gibbs_y_eig(model, design, observation_labels, target_labels,
 
 
 def gibbs_y_re_eig(model, design, observation_labels, target_labels,
-                   num_samples, num_steps, marginal_guide, cond_guide, optim, 
+                   num_samples, num_steps, marginal_guide, cond_guide, optim,
                    return_history=False, final_design=None, final_num_samples=None):
     """Estimate EIG by estimating the marginal entropy, that of :math:`p(y|d)`,
     *and* the conditional entropy, of :math:`p(y|\\theta, d)`, both via Gibbs' Inequality.
@@ -524,6 +540,14 @@ def logsumexp(inputs, dim=None, keepdim=False):
 
 
 def xexpx(a):
+    """This function makes the outputs more stable when the inputs of this function converge to -infinity
+
+    Args:
+        a: Tensor
+
+    Returns:
+        Equivalent of 'x*expx(a)'.
+    """
     mask = (a == float('-inf'))
     y = a*torch.exp(a)
     y[mask] = 0.

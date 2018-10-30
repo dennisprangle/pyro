@@ -80,7 +80,6 @@ X_circle_5d_1n_2p = torch.stack([item_thetas_small.cos(), -item_thetas_small.sin
 
 # Location finding designs
 loc_15d_1n_2p = torch.stack([torch.linspace(-15., 15., 15), torch.ones(15)], dim=-1).unsqueeze(-2)
-print(loc_15d_1n_2p[5, ...])
 loc_4d_1n_2p = torch.tensor([[-5., 1], [-4.9, 1.], [4.9, 1], [5., 1.]]).unsqueeze(-2)
 
 #########################################################################################
@@ -120,7 +119,7 @@ logistic_random_effects = logistic_regression_model([torch.tensor([1.]), torch.t
                                                     coef_labels=["coef", "loc"])
 loc_ba_guide = lambda d: LinearModelGuide(d, {"w1": 2})  # noqa: E731
 logistic_guide  = lambda d: LogisticGuide(d, {"w1": 2})
-logistic_random_effect_guide = lambda d: LogisticGuide(d, {"coef": 1, "loc": 1})
+logistic_random_effect_guide = lambda d: LogisticGuide(d, {"loc": 1})
 logistic_response_est = lambda d: LogisticResponseEst(d, ["y"])
 logistic_cond_response_est = lambda d: LogisticCondResponseEst(d, {"coef": 1, "loc": 1}, ["y"])
 sigmoid_response_est = lambda d: SigmoidResponseEst(d, ["y"])
@@ -166,7 +165,6 @@ CMP_TEST_CASES = [
         "loc",
         [
             (accelerated_rainforth_eig, [{"y": torch.tensor([0., 1.])}, 100, 100]),
-            (accelerated_rainforth_eig, [{"y": torch.tensor([0., 1.])}, 500, 500]),
             (gibbs_y_re_eig,
              [40, 1200, logistic_response_est(15), logistic_cond_response_est(15),
               optim.Adam({"lr": 0.05}), False, None, 500]),
@@ -208,13 +206,6 @@ CMP_TEST_CASES = [
              [40, 800, sigmoid_random_effect_guide(15), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             (naive_rainforth_eig, [500, 500, 500])
-            
-            # (gibbs_y_re_eig,
-            #  [40, 32000, sigmoid_response_est(15), sigmoid_cond_response_est(15),
-            #   optim.Adam({"lr": 0.05}), False, None, 500]),
-            # (ba_eig_mc,
-            #  [40, 16000, sigmoid_random_effect_guide(15), optim.Adam({"lr": 0.05}),
-            #   False, None, 500])
         ]
     ),  
     T(
