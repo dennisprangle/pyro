@@ -79,12 +79,14 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
                         N=100, M=10, M_prime=None):
     """
     Naive Rainforth (i.e. Nested Monte Carlo) estimate of the expected information
-    gain (EIG). The estimate is
+    gain (EIG). The estimate is, when there are not any random effects,
 
     .. math::
 
         \\frac{1}{N}\\sum_{n=1}^N \\log p(y_n | \\theta_n, d) -
         \\frac{1}{N}\\sum_{n=1}^N \\log \\left(\\frac{1}{M}\\sum_{m=1}^M p(y_n | \\theta_m, d)\\right)
+
+    The estimate is, in the presence of random effects,
 
     .. math::
 
@@ -158,13 +160,15 @@ def accelerated_rainforth_eig(model, design, observation_labels, target_labels,
                               yspace, N=100, M_prime=None):
     """
     Accelerated Rainforth (i.e. Unnested Monte Carlo) estimate of the expected information
-    gain (EIG). The estimate is
+    gain (EIG). The estimate is, when there are not any random effects,
 
     .. math::
 
             \\frac{1}{N}\\sum_{n=1}^N\\sum_{y=1}^{|Y|}p(y | \\theta_n, d) \\log p(y | \\theta_n, d)-
             \\sum_{y=1}^{|Y|}\\left[ \\left( \\frac{1}{N} \\sum_{n=1}^N p(y | \\theta_n, d)\\right)
             log\\left(\\frac{1}{N}\\sum_{n=1}^N p(y | \\theta_n, d)\\right)\\right]
+
+    The estimate is, in the presence of random effects,
 
     .. math::
 
