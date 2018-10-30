@@ -13,6 +13,7 @@ from pyro.contrib.oed.eig import (
     vi_ape, naive_rainforth_eig, accelerated_rainforth_eig, donsker_varadhan_eig, barber_agakov_ape, gibbs_y_eig,
     gibbs_y_re_eig
 )
+from pyro.contrib.util import lexpand
 from pyro.contrib.oed.util import (
     linear_model_ground_truth, vi_eig_lm, ba_eig_lm, ba_eig_mc
 )
@@ -158,6 +159,42 @@ T = namedtuple("CompareEstimatorsExample", [
 
 CMP_TEST_CASES = [
     T(
+        "Sigmoid with random effects",
+        sigmoid_high_random_effects,
+        loc_15d_1n_2p,
+        "y",
+        "loc",
+        [  
+            (gibbs_y_re_eig,
+             [40, 1600, sigmoid_response_est(15), sigmoid_cond_response_est(15),
+              optim.Adam({"lr": 0.05}), False, None, 500]),
+            (ba_eig_mc,
+             [40, 800, sigmoid_random_effect_guide(15), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (naive_rainforth_eig, [2000, 2000, 2000])
+        ]
+    ),  
+    T(
+        "Sigmoid link function: location finding with 1d response, no random effects",
+        sigmoid_high_2p_model,
+        loc_15d_1n_2p,
+        "y",
+        "w",
+        [
+            (gibbs_y_eig,
+             [40, 1200, sigmoid_response_est(15), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (ba_eig_mc,
+             [40, 800, sigmoid_high_guide(15), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (naive_rainforth_eig, [2000, 2000])
+            #(donsker_varadhan_eig,
+            # [400, 80, GuideDV(sigmoid_high_guide(15)),
+            #  optim.Adam({"lr": 0.05}), False, None, 500])
+        ]
+    ),
+  
+    T(
         "Logistic with random effects",
         logistic_random_effects,
         loc_15d_1n_2p,
@@ -192,42 +229,6 @@ CMP_TEST_CASES = [
             #  optim.Adam({"lr": 0.05}), False, None, 500]),
         ]
     ),
-    T(
-        "Sigmoid with random effects",
-        sigmoid_high_random_effects,
-        loc_15d_1n_2p,
-        "y",
-        "loc",
-        [  
-            (gibbs_y_re_eig,
-             [40, 1600, sigmoid_response_est(15), sigmoid_cond_response_est(15),
-              optim.Adam({"lr": 0.05}), False, None, 500]),
-            (ba_eig_mc,
-             [40, 800, sigmoid_random_effect_guide(15), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (naive_rainforth_eig, [500, 500, 500])
-        ]
-    ),  
-    T(
-        "Sigmoid link function: location finding with 1d response",
-        sigmoid_high_2p_model,
-        loc_15d_1n_2p,
-        "y",
-        "w",
-        [
-            (gibbs_y_eig,
-             [40, 1200, sigmoid_response_est(15), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (ba_eig_mc,
-             [40, 800, sigmoid_high_guide(15), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (naive_rainforth_eig, [2000, 2000])
-            #(donsker_varadhan_eig,
-            # [400, 80, GuideDV(sigmoid_high_guide(15)),
-            #  optim.Adam({"lr": 0.05}), False, None, 500])
-        ]
-    ),
-  
     T(
         "A/B test linear model with known observation variance",
         basic_2p_linear_model_sds_10_2pt5,
@@ -360,24 +361,33 @@ def test_eig_and_plot(title, model, design, observation_label, target_label, arg
     This is repeated for each `arglist`.
     """
     ys = []
+    sds = []
     names = []
     elapseds = []
     print(title)
     for estimator, args in arglist:
-        y, elapsed = time_eig(estimator, model, design, observation_label, target_label, args)
-        ys.append(y)
+        y, elapsed = time_eig(estimator, model, lexpand(design, 5), observation_label, target_label, args)
+        ys.append(y.mean(0).detach().numpy())
+        sds.append(y.std(0).detach().numpy())
         elapseds.append(elapsed)
         names.append(estimator.name)
 
     if PLOT:
         import matplotlib.pyplot as plt
         plt.figure(figsize=(10, 5))
-        for y in ys:
-            plt.plot(y.detach().numpy(), linestyle='None', marker='o', markersize=10)
+        x = np.arange(0, len(ys[0]))
+        for y, s in zip(ys, sds):
+            plt.errorbar(x, y, yerr=s, linestyle='None', marker='o', markersize=3)
         plt.title(title)
         plt.legend(names)
         plt.xlabel("Design")
         plt.ylabel("EIG estimate")
+        plt.show()
+
+        newx = np.arange(0, len(elapseds))
+        plt.bar(newx, np.array(elapseds), color=plt.rcParams['axes.prop_cycle'].by_key()['color'])
+        plt.gca().set_xticks(newx)
+        plt.gca().set_xticklabels(names)
         plt.show()
 
 
