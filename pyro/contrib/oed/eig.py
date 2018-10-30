@@ -95,9 +95,7 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
         \\frac{1}{N}\\sum_{n=1}^N \\log \\left(\\frac{1}{M}\\sum_{m=1}^{M}
         p(y_n | \\theta_m, \\widetilde{\\theta}_{m}, d)\\right)
 
-    Monte Carlo estimation is attempted for the :math:`\\log p(y | \\theta, d)` term if
-    the parameter `M_prime` is passed. Otherwise, it is assumed that that :math:`\\log p(y | \\theta, d)`
-    can safely be read from the model itself.
+    The latter form is used when `M_prime != None`.
 
     :param function model: A pyro model accepting `design` as only argument.
     :param torch.Tensor design: Tensor representation of design
@@ -178,9 +176,7 @@ def accelerated_rainforth_eig(model, design, observation_labels, target_labels,
         \\sum_{y=1}^{|Y|}\\left(\\left( \\frac{1}{N}\\sum_{n=1}^N p(y | \\theta_n, \\widetilde{\\theta}_{n}, d)\\right)
         \\log \\left(\\frac{1}{N}\\sum_{n=1}^N p(y | \\theta_n, \\widetilde{\\theta}_{n}, d)\\right)\\right)
 
-    Monte Carlo estimation is attempted for the :math:`\\log p(y | \\theta, d)` term if
-    the parameter `M_prime` is passed. Otherwise, it is assumed that that :math:`\\log p(y | \\theta, d)`
-    can safely be read from the model itself.
+    The latter form is used when `M_prime != None`.
 
     :param function model: A pyro model accepting `design` as only argument.
     :param torch.Tensor design: Tensor representation of design
@@ -544,13 +540,15 @@ def logsumexp(inputs, dim=None, keepdim=False):
 
 
 def xexpx(a):
-    """This function makes the outputs more stable when the inputs of this function converge to -infinity
+    """Computes `a*exp(a)`.
+    
+    This function makes the outputs more stable when the inputs of this function converge to -infinity
 
     Args:
-        a: Tensor
+        a: torch.Tensor
 
     Returns:
-        Equivalent of 'x*expx(a)'.
+        Equivalent of `a*torch.exp(a)`.
     """
     mask = (a == float('-inf'))
     y = a*torch.exp(a)
