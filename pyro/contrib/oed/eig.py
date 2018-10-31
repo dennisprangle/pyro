@@ -76,7 +76,7 @@ def vi_ape(model, design, observation_labels, target_labels,
 
 
 def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
-                        N=100, M=10, M_prime=None):
+                        N=100, M=10, M_prime=None, independent_priors=False):
     """
     Naive Rainforth (i.e. Nested Monte Carlo) estimate of the expected information
     gain (EIG). The estimate is, when there are not any random effects,
@@ -128,9 +128,12 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
         theta_dict.update(y_dict)
         # Resample M values of u and compute conditional probabilities
         conditional_model = pyro.condition(model, data=theta_dict)
-        # Not acceptable to use (M_prime, 1) here - other variables may occur after
-        # theta, so need to be sampled conditional upon it
-        reexpanded_design = lexpand(design, M_prime, N)
+        if independent_priors:
+            reexpanded_design = lexpand(design, M_prime, 1)
+        else:
+            # Not acceptable to use (M_prime, 1) here - other variables may occur after
+            # theta, so need to be sampled conditional upon it
+            reexpanded_design = lexpand(design, M_prime, N)
         retrace = poutine.trace(conditional_model).get_trace(reexpanded_design)
         retrace.compute_log_prob()
         conditional_lp = logsumexp(sum(retrace.nodes[l]["log_prob"] for l in observation_labels), 0) \

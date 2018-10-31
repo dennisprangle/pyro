@@ -7,7 +7,7 @@ from torch.distributions.transforms import AffineTransform, SigmoidTransform
 import pyro
 import pyro.distributions as dist
 from pyro import poutine
-from pyro.contrib.util import get_indices, tensor_to_dict, rmv, rvv, rtril
+from pyro.contrib.util import get_indices, tensor_to_dict, rmv, rvv, rtril, rdiag
 from pyro.ops.linalg import rinverse
 
 
@@ -29,10 +29,10 @@ class LinearModelGuide(nn.Module):
         # Making a weak mean-field assumption
         # To avoid this- combine labels
         self.tikhonov_diag = nn.Parameter(
-                tikhonov_init*torch.ones(sum(w_sizes.values())))
-        self.scaled_prior_mean = nn.Parameter(torch.zeros(sum(w_sizes.values())))
+                tikhonov_init*torch.ones(*d, sum(w_sizes.values())))
+        self.scaled_prior_mean = nn.Parameter(torch.zeros(*d, sum(w_sizes.values())))
         self.scale_tril = {l: nn.Parameter(
-                scale_tril_init*torch.ones(d, p, p)) for l, p in w_sizes.items()}
+                scale_tril_init*torch.ones(*d, p, p)) for l, p in w_sizes.items()}
         # This registers the dict values in pytorch
         # Await new version to use nn.ParamterDict
         self._registered = nn.ParameterList(self.scale_tril.values())
@@ -46,7 +46,7 @@ class LinearModelGuide(nn.Module):
 
     def linear_model_formula(self, y, design, target_labels):
 
-        tikhonov_diag = torch.diag(self.softplus(self.tikhonov_diag))
+        tikhonov_diag = rdiag(self.softplus(self.tikhonov_diag))
         xtx = torch.matmul(design.transpose(-1, -2), design) + tikhonov_diag
         xtxi = rinverse(xtx, sym=True)
         mu = rmv(xtxi, rmv(design.transpose(-1, -2), y) + self.scaled_prior_mean)
@@ -77,19 +77,19 @@ class SigmoidGuide(LinearModelGuide):
         self.inverse_sigmoid_scale = 1./slope
 
         self.mu0 = {l: nn.Parameter(
-                mu_init*torch.ones(d, p)) for l, p in w_sizes.items()}
+                mu_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
         self._registered_mu0 = nn.ParameterList(self.mu0.values())
 
         self.mu1 = {l: nn.Parameter(
-                mu_init*torch.ones(d, p)) for l, p in w_sizes.items()}
+                mu_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
         self._registered_mu1 = nn.ParameterList(self.mu1.values())
 
         self.scale_tril0 = {l: nn.Parameter(
-                scale_tril_init*torch.ones(d, p, p)) for l, p in w_sizes.items()}
+                scale_tril_init*torch.ones(*d, p, p)) for l, p in w_sizes.items()}
         self._registered0 = nn.ParameterList(self.scale_tril0.values())
 
         self.scale_tril1 = {l: nn.Parameter(
-                scale_tril_init*torch.ones(d, p, p)) for l, p in w_sizes.items()}
+                scale_tril_init*torch.ones(*d, p, p)) for l, p in w_sizes.items()}
         self._registered1 = nn.ParameterList(self.scale_tril1.values())
 
 
@@ -122,19 +122,19 @@ class LogisticGuide(LinearModelGuide):
         super(LogisticGuide, self).__init__(d, w_sizes, scale_tril_init=scale_tril_init,
                                            **kwargs)
         self.mu0 = {l: nn.Parameter(
-                mu_init*torch.ones(d, p)) for l, p in w_sizes.items()}
+                mu_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
         self._registered_mu0 = nn.ParameterList(self.mu0.values())
 
         self.mu1 = {l: nn.Parameter(
-                mu_init*torch.ones(d, p)) for l, p in w_sizes.items()}
+                mu_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
         self._registered_mu1 = nn.ParameterList(self.mu1.values())
 
         self.scale_tril0 = {l: nn.Parameter(
-                scale_tril_init*torch.ones(d, p, p)) for l, p in w_sizes.items()}
+                scale_tril_init*torch.ones(*d, p, p)) for l, p in w_sizes.items()}
         self._registered0 = nn.ParameterList(self.scale_tril0.values())
 
         self.scale_tril1 = {l: nn.Parameter(
-                scale_tril_init*torch.ones(d, p, p)) for l, p in w_sizes.items()}
+                scale_tril_init*torch.ones(*d, p, p)) for l, p in w_sizes.items()}
         self._registered1 = nn.ParameterList(self.scale_tril1.values())
 
 
@@ -163,8 +163,8 @@ class SigmoidResponseEst(nn.Module):
 
         super(SigmoidResponseEst, self).__init__()
 
-        self.mu = {l: nn.Parameter(mu_init*torch.ones(d, 1)) for l in observation_labels}
-        self.sigma = {l: nn.Parameter(sigma_init*torch.ones(d, 1)) for l in observation_labels}
+        self.mu = {l: nn.Parameter(mu_init*torch.ones(*d, 1)) for l in observation_labels}
+        self.sigma = {l: nn.Parameter(sigma_init*torch.ones(*d, 1)) for l in observation_labels}
         self._registered_mu = nn.ParameterList(self.mu.values())
         self._registered_sigma = nn.ParameterList(self.sigma.values())
         # TODO read from torch float specs
@@ -213,7 +213,7 @@ class LogisticResponseEst(nn.Module):
 
         super(LogisticResponseEst, self).__init__()
 
-        self.logits = {l: nn.Parameter(p_logit_init*torch.ones(d, 1)) for l in observation_labels}
+        self.logits = {l: nn.Parameter(p_logit_init*torch.ones(*d, 1)) for l in observation_labels}
         self._registered = nn.ParameterList(self.logits.values())
 
     
@@ -232,8 +232,8 @@ class LogisticCondResponseEst(nn.Module):
 
         super(LogisticCondResponseEst, self).__init__()
 
-        self.logit_correction = {l: nn.Parameter(p_logit_init*torch.ones(d, 1)) for l in observation_labels}
-        self.logit_offset = {l: nn.Parameter(torch.zeros(d, 1)) for l in observation_labels}
+        self.logit_correction = {l: nn.Parameter(p_logit_init*torch.ones(*d, 1)) for l in observation_labels}
+        self.logit_offset = {l: nn.Parameter(torch.zeros(*d, 1)) for l in observation_labels}
         self._registered_correction = nn.ParameterList(self.logit_correction.values())
         self._registered_offset = nn.ParameterList(self.logit_offset.values())
         self.w_sizes = w_sizes
@@ -261,8 +261,8 @@ class NormalInverseGammaGuide(LinearModelGuide):
     def __init__(self, d, w_sizes, mf=False, tau_label="tau", alpha_init=100.,
                  b0_init=100., **kwargs):
         super(NormalInverseGammaGuide, self).__init__(d, w_sizes, **kwargs)
-        self.alpha = nn.Parameter(alpha_init*torch.ones(d))
-        self.b0 = nn.Parameter(b0_init*torch.ones(d))
+        self.alpha = nn.Parameter(alpha_init*torch.ones(*d))
+        self.b0 = nn.Parameter(b0_init*torch.ones(*d))
         self.mf = mf
         self.tau_label = tau_label
 

@@ -138,15 +138,15 @@ elbo = TraceEnum_ELBO(strict_enumeration_warning=False).differentiable_loss
 # Makes the plots look pretty
 vi_eig_lm.name = "Variational inference"
 vi_ape.name = "Variational inference"
-ba_eig_lm.name = "Barber-Agakov"
-ba_eig_mc.name = "Barber-Agakov"
-barber_agakov_ape.name = "Barber-Agakov"
+ba_eig_lm.name = "Posterior Gibbs"
+ba_eig_mc.name = "Posterior Gibbs"
+barber_agakov_ape.name = "Posterior Gibbs"
 donsker_varadhan_eig.name = "Donsker-Varadhan"
 linear_model_ground_truth.name = "Ground truth"
-naive_rainforth_eig.name = "Naive Rainforth"
+naive_rainforth_eig.name = "Nested Monte Carlo"
 accelerated_rainforth_eig.name = "Accelerated Rainforth"
-gibbs_y_eig.name = "Gibbs y"
-gibbs_y_re_eig.name = "Gibbs y with random effects"
+gibbs_y_eig.name = "Marginal Gibbs"
+gibbs_y_re_eig.name = "Marginal Gibbs, with random effects"
 
 T = namedtuple("CompareEstimatorsExample", [
     "title",
@@ -159,41 +159,60 @@ T = namedtuple("CompareEstimatorsExample", [
 
 CMP_TEST_CASES = [
     T(
+        "A/B test linear model known covariance (different sds)",
+        basic_2p_linear_model_sds_10_0pt1,
+        lexpand(AB_test_11d_10n_2p, 10),
+        "y",
+        "w",
+        [
+            (linear_model_ground_truth, []),
+            (naive_rainforth_eig, [60*60, 60]),
+            #(vi_eig_lm,
+            # [{"guide": basic_2p_guide, "optim": optim.Adam({"lr": 0.05}), "loss": elbo,
+            #   "num_steps": 1000}, {"num_samples": 1}]),
+            #(donsker_varadhan_eig,
+            # [400, 400, GuideDV(basic_2p_ba_guide((11,))),
+            #  optim.Adam({"lr": 0.05}), False, None, 500]),
+            (ba_eig_lm,
+             [20, 400, basic_2p_ba_guide((10, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 500])
+        ]
+    ),
+    T(
         "Sigmoid with random effects",
         sigmoid_high_random_effects,
-        loc_15d_1n_2p,
+        lexpand(loc_15d_1n_2p, 10),
         "y",
         "loc",
         [  
             (gibbs_y_re_eig,
-             [40, 1600, sigmoid_response_est(15), sigmoid_cond_response_est(15),
+             [40, 1600, sigmoid_response_est((10, 15)), sigmoid_cond_response_est((10, 15)),
               optim.Adam({"lr": 0.05}), False, None, 500]),
             (ba_eig_mc,
-             [40, 800, sigmoid_random_effect_guide(15), optim.Adam({"lr": 0.05}),
+             [10, 400, sigmoid_random_effect_guide((10, 15)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
-            (naive_rainforth_eig, [2000, 2000, 2000])
+            (naive_rainforth_eig, [60*60, 60, 60, True])
         ]
     ),  
     T(
         "Sigmoid link function: location finding with 1d response, no random effects",
         sigmoid_high_2p_model,
-        loc_15d_1n_2p,
+        lexpand(loc_15d_1n_2p, 10),
         "y",
         "w",
         [
             (gibbs_y_eig,
-             [40, 1200, sigmoid_response_est(15), optim.Adam({"lr": 0.05}),
+             [20, 2400, sigmoid_response_est((10, 15)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             (ba_eig_mc,
-             [40, 800, sigmoid_high_guide(15), optim.Adam({"lr": 0.05}),
+             [10, 150, sigmoid_high_guide((10, 15)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
-            (naive_rainforth_eig, [2000, 2000])
+            (naive_rainforth_eig, [68*68, 68])
             #(donsker_varadhan_eig,
             # [400, 80, GuideDV(sigmoid_high_guide(15)),
             #  optim.Adam({"lr": 0.05}), False, None, 500])
         ]
     ),
-  
     T(
         "Logistic with random effects",
         logistic_random_effects,
@@ -203,10 +222,10 @@ CMP_TEST_CASES = [
         [
             (accelerated_rainforth_eig, [{"y": torch.tensor([0., 1.])}, 100, 100]),
             (gibbs_y_re_eig,
-             [40, 1200, logistic_response_est(15), logistic_cond_response_est(15),
+             [40, 1200, logistic_response_est((15,)), logistic_cond_response_est((15,)),
               optim.Adam({"lr": 0.05}), False, None, 500]),
             (ba_eig_mc,
-             [40, 800, logistic_random_effect_guide(15), optim.Adam({"lr": 0.05}),
+             [40, 800, logistic_random_effect_guide((15,)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
         ]
     ),
@@ -219,10 +238,10 @@ CMP_TEST_CASES = [
         [
             (accelerated_rainforth_eig, [{"y": torch.tensor([0., 1.])}, 2000]),
             (gibbs_y_eig,
-             [40, 400, logistic_response_est(15), optim.Adam({"lr": 0.05}),
+             [40, 400, logistic_response_est((15,)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             (ba_eig_mc,
-             [40, 800, logistic_guide(15), optim.Adam({"lr": 0.05}),
+             [40, 800, logistic_guide((15,)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             # (donsker_varadhan_eig,
             # [400, 400, GuideDV(logistic_guide(15)),
@@ -242,10 +261,10 @@ CMP_TEST_CASES = [
              [{"guide": basic_2p_guide, "optim": optim.Adam({"lr": 0.05}), "loss": elbo,
                "num_steps": 1000}, {"num_samples": 1}]),
             (donsker_varadhan_eig,
-             [400, 800, GuideDV(basic_2p_ba_guide(11)),
+             [400, 800, GuideDV(basic_2p_ba_guide((11,))),
               optim.Adam({"lr": 0.025}), False, None, 500]),
             (ba_eig_lm,
-             [20, 400, basic_2p_ba_guide(11), optim.Adam({"lr": 0.05}),
+             [20, 400, basic_2p_ba_guide((11,)), optim.Adam({"lr": 0.05}),
               False, None, 500])
         ]
     ),
@@ -262,10 +281,10 @@ CMP_TEST_CASES = [
              [{"guide": nig_2p_guide, "optim": optim.Adam({"lr": 0.05}), "loss": elbo,
                "num_steps": 1000}, {"num_samples": 4}]),
             (barber_agakov_ape,
-             [20, 800, nig_2p_ba_guide(11), optim.Adam({"lr": 0.05}),
+             [20, 800, nig_2p_ba_guide((11,)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             (barber_agakov_ape,
-             [20, 800, nig_2p_ba_mf_guide(11), optim.Adam({"lr": 0.05}),
+             [20, 800, nig_2p_ba_mf_guide((11,)), optim.Adam({"lr": 0.05}),
               False, None, 500])
         ]
     ),
@@ -282,10 +301,10 @@ CMP_TEST_CASES = [
              [{"guide": nig_2p_guide, "optim": optim.Adam({"lr": 0.05}), "loss": elbo,
                "num_steps": 1000}, {"num_samples": 4}]),
             (barber_agakov_ape,
-             [20, 800, nig_2p_ba_guide(11), optim.Adam({"lr": 0.05}),
+             [20, 800, nig_2p_ba_guide((11,)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             (barber_agakov_ape,
-             [20, 800, nig_2p_ba_mf_guide(11), optim.Adam({"lr": 0.05}),
+             [20, 800, nig_2p_ba_mf_guide((11,)), optim.Adam({"lr": 0.05}),
               False, None, 500])
         ]
     ),
@@ -303,10 +322,10 @@ CMP_TEST_CASES = [
              [{"guide": group_2p_guide, "optim": optim.Adam({"lr": 0.05}), "loss": elbo,
                "num_steps": 1000}, {"num_samples": 1}]),
             (donsker_varadhan_eig,
-             [400, 400, GuideDV(group_2p_ba_guide(10)),
+             [400, 400, GuideDV(group_2p_ba_guide((10,))),
               optim.Adam({"lr": 0.05}), False, None, 500]),
             (ba_eig_lm,
-             [20, 400, group_2p_ba_guide(10), optim.Adam({"lr": 0.05}),
+             [20, 400, group_2p_ba_guide((10,)), optim.Adam({"lr": 0.05}),
               False, None, 500])
         ]
     ),
@@ -323,30 +342,10 @@ CMP_TEST_CASES = [
              [{"guide": basic_2p_guide, "optim": optim.Adam({"lr": 0.05}), "loss": elbo,
                "num_steps": 1000}, {"num_samples": 1}]),
             (donsker_varadhan_eig,
-             [400, 400, GuideDV(basic_2p_ba_guide(10)),
+             [400, 400, GuideDV(basic_2p_ba_guide((10,))),
               optim.Adam({"lr": 0.05}), False, None, 500]),
             (ba_eig_lm,
-             [20, 400, basic_2p_ba_guide(10), optim.Adam({"lr": 0.05}),
-              False, None, 500])
-        ]
-    ),
-    T(
-        "A/B test linear model known covariance (different sds)",
-        basic_2p_linear_model_sds_10_0pt1,
-        AB_test_11d_10n_2p,
-        "y",
-        "w",
-        [
-            (linear_model_ground_truth, []),
-            (naive_rainforth_eig, [2000, 2000]),
-            (vi_eig_lm,
-             [{"guide": basic_2p_guide, "optim": optim.Adam({"lr": 0.05}), "loss": elbo,
-               "num_steps": 1000}, {"num_samples": 1}]),
-            (donsker_varadhan_eig,
-             [400, 400, GuideDV(basic_2p_ba_guide(11)),
-              optim.Adam({"lr": 0.05}), False, None, 500]),
-            (ba_eig_lm,
-             [20, 400, basic_2p_ba_guide(11), optim.Adam({"lr": 0.05}),
+             [20, 400, basic_2p_ba_guide((10,)), optim.Adam({"lr": 0.05}),
               False, None, 500])
         ]
     ),
@@ -360,24 +359,26 @@ def test_eig_and_plot(title, model, design, observation_label, target_label, arg
     of axes. Typically, each test within one `arglist` should estimate the same quantity.
     This is repeated for each `arglist`.
     """
+    ep = 0.1
     ys = []
     sds = []
     names = []
     elapseds = []
     print(title)
     for estimator, args in arglist:
-        y, elapsed = time_eig(estimator, model, lexpand(design, 5), observation_label, target_label, args)
-        ys.append(y.mean(0).detach().numpy())
-        sds.append(y.std(0).detach().numpy())
+        y, elapsed = time_eig(estimator, model, design, observation_label, target_label, args)
+        y = y.detach().numpy()
+        ys.append(np.nanmean(y, 0))
+        sds.append(2*np.nanstd(y, 0))
         elapseds.append(elapsed)
         names.append(estimator.name)
 
     if PLOT:
         import matplotlib.pyplot as plt
         plt.figure(figsize=(10, 5))
-        x = np.arange(0, len(ys[0]))
-        for y, s in zip(ys, sds):
-            plt.errorbar(x, y, yerr=s, linestyle='None', marker='o', markersize=3)
+        x = np.arange(0, ys[0].shape[0])
+        for n, (y, s) in enumerate(zip(ys, sds)):
+            plt.errorbar(x+n*ep, y, yerr=s, linestyle='None', marker='o', markersize=5)
         plt.title(title)
         plt.legend(names)
         plt.xlabel("Design")
@@ -400,6 +401,7 @@ def time_eig(estimator, model, design, observation_label, target_label, args):
 
     print(estimator.__name__)
     print('estimate', y)
+    print(y.shape)
     print('elapsed', elapsed)
     return y, elapsed
 
@@ -425,7 +427,7 @@ CONV_TEST_CASES = [
         barber_agakov_ape,
         None,
         {"num_steps": 800, "num_samples": 40, "optim": optim.Adam({"lr": 0.05}),
-         "guide": logistic_guide(4), "final_num_samples": 1000},
+         "guide": logistic_guide((4,)), "final_num_samples": 1000},
         {}
     ),
     # U(
@@ -458,7 +460,7 @@ CONV_TEST_CASES = [
         barber_agakov_ape,
         linear_model_ground_truth,
         {"num_steps": 800, "num_samples": 40, "optim": optim.Adam({"lr": 0.05}),
-         "guide": sigmoid_high_guide(4), "final_num_samples": 1000},
+         "guide": sigmoid_high_guide((4,)), "final_num_samples": 1000},
         {"eig": False}
     ),
     U(
@@ -470,7 +472,7 @@ CONV_TEST_CASES = [
         barber_agakov_ape,
         None,
         {"num_steps": 800, "num_samples": 20, "optim": optim.Adam({"lr": 0.05}),
-         "guide": nig_2p_ba_guide(2), "final_num_samples": 1000},
+         "guide": nig_2p_ba_guide((2,)), "final_num_samples": 1000},
         {}
     ),
     U(
@@ -482,7 +484,7 @@ CONV_TEST_CASES = [
         barber_agakov_ape,
         None,
         {"num_steps": 800, "num_samples": 20, "optim": optim.Adam({"lr": 0.05}),
-         "guide": nig_2p_ba_mf_guide(2), "final_num_samples": 1000},
+         "guide": nig_2p_ba_mf_guide((2,)), "final_num_samples": 1000},
         {}
     ),
     U(
@@ -494,7 +496,7 @@ CONV_TEST_CASES = [
         barber_agakov_ape,
         linear_model_ground_truth,
         {"num_steps": 400, "num_samples": 10, "optim": optim.Adam({"lr": 0.05}),
-         "guide": basic_2p_ba_guide(5), "final_num_samples": 1000},
+         "guide": basic_2p_ba_guide((5,)), "final_num_samples": 1000},
         {"eig": False}
     ),
     U(
@@ -506,7 +508,7 @@ CONV_TEST_CASES = [
         barber_agakov_ape,
         linear_model_ground_truth,
         {"num_steps": 400, "num_samples": 10, "optim": optim.Adam({"lr": 0.05}),
-         "guide": basic_2p_ba_guide(2), "final_num_samples": 1000},
+         "guide": basic_2p_ba_guide((2,)), "final_num_samples": 1000},
         {"eig": False}
     ),
     U(
@@ -518,7 +520,7 @@ CONV_TEST_CASES = [
         donsker_varadhan_eig,
         linear_model_ground_truth,
         {"num_steps": 400, "num_samples": 100, "optim": optim.Adam({"lr": 0.05}),
-         "T": GuideDV(basic_2p_ba_guide(2)), "final_num_samples": 10000},
+         "T": GuideDV(basic_2p_ba_guide((2,))), "final_num_samples": 10000},
         {}
     ),
     U(
@@ -530,7 +532,7 @@ CONV_TEST_CASES = [
         donsker_varadhan_eig,
         linear_model_ground_truth,
         {"num_steps": 400, "num_samples": 400, "optim": optim.Adam({"lr": 0.05}),
-         "T": GuideDV(basic_2p_ba_guide(5)), "final_num_samples": 10000},
+         "T": GuideDV(basic_2p_ba_guide((5,))), "final_num_samples": 10000},
         {}
     ),
 ]

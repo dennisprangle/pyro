@@ -7,6 +7,7 @@ import torch
 from torch.nn.functional import softplus
 from torch.distributions import constraints
 from torch.distributions.transforms import AffineTransform, SigmoidTransform
+from torch.distributions.utils import broadcast_all
 
 import pyro
 import pyro.distributions as dist
@@ -263,7 +264,7 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
             u_prior = dist.Normal(torch.tensor(0.), G.repeat(repeat_shape)).independent(1)
             w.append(pyro.sample(name, u_prior))
         # Regression coefficient `w` is batch x p
-        w = torch.cat(w, dim=-1)
+        w = torch.cat(broadcast_all(*w), dim=-1)
 
         # Run the regressor forward conditioned on inputs
         prediction_mean = rmv(design, w)
