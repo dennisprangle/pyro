@@ -187,6 +187,45 @@ class SigmoidResponseEst(nn.Module):
             pyro.sample(label, response_dist)
 
 
+class NormalResponseEst(nn.Module):
+
+    def __init__(self, d, observation_dimensions, mu_init=0., sigma_init=3., **kwargs):
+
+        super(NormalResponseEst, self).__init__()
+
+        self.mu = {l: nn.Parameter(mu_init*torch.ones(*d, p)) for l, p in observation_dimensions.items()}
+        self.scale_tril = {l: nn.Parameter(sigma_init*torch.ones(*d, p, p)) for l, p in observation_dimensions.items()}
+        self._registered_mu = nn.ParameterList(self.mu.values())
+        self._registered_scale_tril = nn.ParameterList(self.scale_tril.values())
+
+    def forward(self, design, observation_labels, target_labels):
+
+        pyro.module("gibbs_y_guide", self)
+
+        for l in observation_labels:
+            pyro.sample(l, dist.MultivariateNormal(self.mu[l], scale_tril=rtril(self.scale_tril[l])))
+
+
+class NormalCondResponseEst(NormalResponseEst):
+
+    def __init__(self, d, w_sizes, observation_dimensions, mu_init=0., sigma_init=3., **kwargs):
+
+        super(NormalCondResponseEst, self).__init__(d, observation_dimensions, mu_init, sigma_init, **kwargs)
+        self.w_sizes = w_sizes
+
+    def forward(self, theta_dict, design, observation_labels, target_labels):
+
+        theta = torch.cat(list(theta_dict.values()), dim=-1)
+        indices = get_indices(target_labels, self.w_sizes)
+        subdesign = design[..., indices]
+        centre = rmv(subdesign, theta)
+
+        pyro.module("gibbs_y_re_guide", self)
+
+        for l in observation_labels:
+            pyro.sample(l, dist.MultivariateNormal(centre + self.mu[l], scale_tril=rtril(self.scale_tril[l])))
+
+
 class SigmoidCondResponseEst(SigmoidResponseEst):
 
     def __init__(self, d, w_sizes, observation_labels, mu_init=0., sigma_init=20., **kwargs):

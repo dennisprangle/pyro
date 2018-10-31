@@ -7,7 +7,7 @@ import torch
 from torch.nn.functional import softplus
 from torch.distributions import constraints
 from torch.distributions.transforms import AffineTransform, SigmoidTransform
-from torch.distributions.utils import broadcast_all
+from torch.distributions.utils import _broadcast_shape
 
 import pyro
 import pyro.distributions as dist
@@ -68,12 +68,20 @@ def zero_mean_unit_obs_sd_lm(coef_sd, coef_label="w"):
     return model, guide
 
 
-def normal_inverse_gamma_linear_model(coef_mean, coef_sqrtlambda, alpha,
-                                      beta, coef_label="w",
-                                      observation_label="y"):
+def normal_inverse_gamma_linear_model(coef_means, coef_sqrtlambdas, alpha,
+                                      beta, coef_labels="w", observation_label="y"):
+
+    if not isinstance(coef_means, list):
+        coef_means = [coef_means]
+    if not isinstance(coef_sqrtlambdas, list):
+        coef_sqrtlambdas = [coef_sqrtlambdas]
+    if not isinstance(coef_labels, list):
+        coef_labels = [coef_labels]
+
     return partial(bayesian_linear_model,
-                   w_means={coef_label: coef_mean},
-                   w_sqrtlambdas={coef_label: coef_sqrtlambda},
+                   w_means=OrderedDict([(label, mean) for label, mean in zip(coef_labels, coef_means)]),
+                   w_sqrtlambdas=OrderedDict([
+                       (label, sqrtlambda) for label, sqrtlambda in zip(coef_labels, coef_sqrtlambdas)]),
                    alpha_0=alpha, beta_0=beta,
                    response_label=observation_label)
 
@@ -264,7 +272,7 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
             u_prior = dist.Normal(torch.tensor(0.), G.repeat(repeat_shape)).independent(1)
             w.append(pyro.sample(name, u_prior))
         # Regression coefficient `w` is batch x p
-        w = torch.cat(broadcast_all(*w), dim=-1)
+        w = broadcast_cat(w)
 
         # Run the regressor forward conditioned on inputs
         prediction_mean = rmv(design, w)
@@ -400,3 +408,11 @@ def iter_iaranges_to_shape(shape):
     # Go backwards (right to left)
     for i, s in enumerate(shape[::-1]):
         yield pyro.iarange("iarange_" + str(i), s)
+
+
+def broadcast_cat(ws):
+    shapes = [w.shape[:-1] for w in ws]
+    target = _broadcast_shape(shapes)
+    expanded = [w.expand(target + (w.shape[-1],)) for w in ws]
+    return torch.cat(expanded, dim=-1)
+

@@ -15,14 +15,15 @@ def linear_model_ground_truth(model, design, observation_labels, target_labels, 
 
     w_sd = torch.cat(list(model.w_sds.values()), dim=-1)
     prior_cov = torch.diag(w_sd**2)
-    posterior_covs = [analytic_posterior_cov(prior_cov, x, model.obs_sd) for x in torch.unbind(design)]
+    design_shape = design.shape
+    posterior_covs = [analytic_posterior_cov(prior_cov, x, model.obs_sd) for x in torch.unbind(design.contiguous().view(-1, design_shape[-2], design_shape[-1]))]
     target_indices = get_indices(target_labels, tensors=model.w_sds)
     target_posterior_covs = [S[target_indices, :][:, target_indices] for S in posterior_covs]
     if eig:
         prior_entropy = lm_H_prior(model, design, observation_labels, target_labels)
-        return prior_entropy - torch.tensor([0.5*torch.logdet(2*np.pi*np.e*C) for C in target_posterior_covs])
+        return prior_entropy - torch.tensor([0.5*torch.logdet(2*np.pi*np.e*C) for C in target_posterior_covs]).view(design_shape[:-2])
     else:
-        return torch.tensor([0.5*torch.logdet(2*np.pi*np.e*C) for C in target_posterior_covs])
+        return torch.tensor([0.5*torch.logdet(2*np.pi*np.e*C) for C in target_posterior_covs]).view(design_shape[:-2])
 
 
 def lm_H_prior(model, design, observation_labels, target_labels):
