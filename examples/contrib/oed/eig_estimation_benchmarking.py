@@ -15,7 +15,7 @@ from pyro.contrib.oed.eig import (
 )
 from pyro.contrib.util import lexpand
 from pyro.contrib.oed.util import (
-    linear_model_ground_truth, vi_eig_lm, ba_eig_lm, ba_eig_mc
+    linear_model_ground_truth, vi_eig_lm, ba_eig_lm, ba_eig_mc, normal_inverse_gamma_ground_truth
 )
 from pyro.contrib.glmm import (
     zero_mean_unit_obs_sd_lm, group_assignment_matrix,
@@ -26,7 +26,7 @@ from pyro.contrib.glmm import (
 from pyro.contrib.glmm.guides import (
     LinearModelGuide, NormalInverseGammaGuide, SigmoidGuide, GuideDV, LogisticGuide,
     LogisticResponseEst, LogisticCondResponseEst, SigmoidResponseEst, SigmoidCondResponseEst,
-    NormalResponseEst, NormalCondResponseEst
+    NormalResponseEst, NormalCondResponseEst, SigmoidResponseEstTrue
 )
 
 PLOT = True
@@ -97,6 +97,7 @@ basic_2p_ba_guide = lambda d: LinearModelGuide(d, {"w": 2})  # noqa: E731
 normal_response_est = lambda d: NormalResponseEst(d, {"y": 10})
 normal_response_est_50 = lambda d: NormalResponseEst(d, {"y": 20})
 normal_cond_response_est = lambda d: NormalCondResponseEst(d, {"ab": 2, "re": 10}, {"y": 10})
+normal_cond_response_est2 = lambda d: NormalCondResponseEst(d, {"w": 2}, {"y": 10})
 group_2p_linear_model_sds_10_2pt5 = group_linear_model(torch.tensor(0.), torch.tensor([10.]), torch.tensor(0.),
                                                        torch.tensor([2.5]), torch.tensor(1.))
 normal_re = group_linear_model(torch.tensor(0.), torch.tensor([10., .1]), torch.tensor(0.),
@@ -125,6 +126,10 @@ sigmoid_high_random_effects = sigmoid_model_fixed([torch.tensor([1.]), torch.ten
                                                   [torch.tensor([.25]), torch.tensor([4.])],
                                                   torch.tensor(1.), torch.tensor(2.),
                                                   coef_labels=["coef", "loc"])
+sigmoid_integrated = sigmoid_model_fixed([torch.tensor([1.]), torch.tensor([5.])],
+                                         [torch.tensor([.01]), torch.tensor([4.])],
+                                          torch.tensor(1.03), torch.tensor(2.),
+                                          coef_labels=["coef", "loc"])
 loc_2p_model = known_covariance_linear_model(torch.tensor([1., 5.]), torch.tensor([.25, 4.]), torch.tensor(1.),
                                              coef_label="w1")
 logistic_2p_model = logistic_regression_model(torch.tensor([1., 5.]), torch.tensor([.25, 4.]), coef_labels="w1")
@@ -137,6 +142,7 @@ logistic_random_effect_guide = lambda d: LogisticGuide(d, {"loc": 1})
 logistic_response_est = lambda d: LogisticResponseEst(d, ["y"])
 logistic_cond_response_est = lambda d: LogisticCondResponseEst(d, {"coef": 1, "loc": 1}, ["y"])
 sigmoid_response_est = lambda d: SigmoidResponseEst(d, ["y"])
+sigmoid_true_response_est = SigmoidResponseEstTrue(loc_15d_1n_2p) 
 sigmoid_cond_response_est = lambda d: SigmoidCondResponseEst(d, {"coef": 1, "loc": 1}, ["y"])
 sigmoid_low_guide = lambda d: SigmoidGuide(d, {"w": 2}, torch.tensor(.5))  # noqa: E731
 sigmoid_high_guide = lambda d: SigmoidGuide(d, {"w": 2}, torch.tensor(2.))  # noqa: E731
@@ -151,15 +157,16 @@ elbo = TraceEnum_ELBO(strict_enumeration_warning=False).differentiable_loss
 # Makes the plots look pretty
 vi_eig_lm.name = "Variational inference"
 vi_ape.name = "Variational inference"
-ba_eig_lm.name = "Posterior Gibbs"
-ba_eig_mc.name = "Posterior Gibbs"
-barber_agakov_ape.name = "Posterior Gibbs"
+ba_eig_lm.name = "Posterior"
+ba_eig_mc.name = "Posterior"
+barber_agakov_ape.name = "Posterior"
 donsker_varadhan_eig.name = "Donsker-Varadhan"
 linear_model_ground_truth.name = "Ground truth"
+normal_inverse_gamma_ground_truth.name = "Ground truth"
 naive_rainforth_eig.name = "Nested Monte Carlo"
 accelerated_rainforth_eig.name = "Accelerated Rainforth"
-gibbs_y_eig.name = "Marginal Gibbs"
-gibbs_y_re_eig.name = "Marginal Gibbs, with random effects"
+gibbs_y_eig.name = "Marginal"
+gibbs_y_re_eig.name = "Marginal with random effects"
 
 T = namedtuple("CompareEstimatorsExample", [
     "title",
@@ -172,36 +179,63 @@ T = namedtuple("CompareEstimatorsExample", [
 
 CMP_TEST_CASES = [
     T(
+        "Normal inverse gamma model",
+        nig_2p_linear_model_3_2,
+        AB_test_11d_10n_2p,
+        "y",
+        ["w", "tau"],
+        [
+            (naive_rainforth_eig, [110*110, 110]),
+            (ba_eig_mc,
+             [10, 800, nig_2p_ba_mf_guide((10, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (gibbs_y_eig,
+             [10, 1200, normal_response_est((10, 11)),
+              optim.Adam({"lr": 0.05}), False, None, 500]),
+            (ba_eig_mc,
+             [20, 1300, nig_2p_ba_guide((1, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            # (normal_inverse_gamma_ground_truth, [])
+            #(ba_eig_mc,
+            # [20, 1600, nig_2p_ba_guide((10, 11)), optim.Adam({"lr": 0.05}),
+            #  False, None, 500]),
+        ]
+    ),
+    T(
+        "Sigmoid regression model",
+        sigmoid_high_2p_model,
+        loc_15d_1n_2p,
+        "y",
+        "w",
+        [
+            (naive_rainforth_eig, [70*70, 70]),
+            (ba_eig_mc,
+             [10, 180, sigmoid_high_guide((10, 15)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (gibbs_y_eig,
+             [20, 2800, sigmoid_response_est((10, 15)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (naive_rainforth_eig, [110*110, 110]),
+            #(donsker_varadhan_eig,
+            # [400, 80, GuideDV(sigmoid_high_guide(15)),
+            #  optim.Adam({"lr": 0.05}), False, None, 500])
+        ]
+    ),
+    T(
         "Linear model with random effects",
         normal_re,
         lexpand(AB_test_11d_10n_12p, 10),
         "y",
         "ab",
         [
-            (linear_model_ground_truth, []),
             (naive_rainforth_eig, [52*52, 52, 52, True]),
+            (ba_eig_mc,
+             [10, 150, re_guide((10, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
             (gibbs_y_re_eig,
              [10, 600, normal_response_est((10, 11)), normal_cond_response_est((10, 11)),
               optim.Adam({"lr": 0.05}), False, None, 500]),
-            (ba_eig_mc,
-             [10, 400, re_guide((10, 11)), optim.Adam({"lr": 0.05}),
-              False, None, 500])
-        ]
-    ),
-    T(
-        "Normal inverse gamma model",
-        nig_2p_linear_model_3_2,
-        lexpand(AB_test_11d_10n_2p, 10),
-        "y",
-        "w",
-        [
-            (naive_rainforth_eig, [110*110, 110]),
-            (gibbs_y_eig,
-             [10, 1200, normal_response_est((10, 11)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (ba_eig_mc,
-             [20, 800, basic_2p_ba_guide((10, 11)), optim.Adam({"lr": 0.05}),
-              False, None, 500])
+            (linear_model_ground_truth, []),
         ]
     ),
     T(
@@ -211,8 +245,10 @@ CMP_TEST_CASES = [
         "y",
         "w",
         [
-            (linear_model_ground_truth, []),
             (naive_rainforth_eig, [90*90, 90]),
+            (ba_eig_lm,
+             [10, 1000, basic_2p_ba_guide((10, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
             (gibbs_y_eig,
              [10, 700, normal_response_est_50((10, 11)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
@@ -222,11 +258,72 @@ CMP_TEST_CASES = [
             #(donsker_varadhan_eig,
             # [400, 400, GuideDV(basic_2p_ba_guide((11,))),
             #  optim.Adam({"lr": 0.05}), False, None, 500]),
-            (ba_eig_lm,
-             [10, 1200, basic_2p_ba_guide((10, 11)), optim.Adam({"lr": 0.05}),
-              False, None, 500])
+            (linear_model_ground_truth, []),
         ]
     ),
+    T(
+        "Linear regression model",
+        basic_2p_linear_model_sds_10_0pt1,
+        lexpand(AB_test_11d_10n_2p, 10),
+        "y",
+        "w",
+        [
+            (naive_rainforth_eig, [110*110, 110]),
+            (ba_eig_lm,
+             [10, 1200, basic_2p_ba_guide((10, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (gibbs_y_eig,
+             [10, 1200, normal_response_est((10, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            #(vi_eig_lm,
+            # [{"guide": basic_2p_guide, "optim": optim.Adam({"lr": 0.05}), "loss": elbo,
+            #   "num_steps": 1000}, {"num_samples": 1}]),
+            #(donsker_varadhan_eig,
+            # [400, 400, GuideDV(basic_2p_ba_guide((11,))),
+            #  optim.Adam({"lr": 0.05}), False, None, 500]),
+            (linear_model_ground_truth, []),
+        ]
+    ),
+    T(
+        "Sigmoid integrated",
+        sigmoid_integrated,
+        loc_15d_1n_2p,
+        "y",
+        "loc",
+        [  
+            #(naive_rainforth_eig, [300*300, 300, 300, True]),
+            (naive_rainforth_eig, [50*50, 50, 50, True]),
+            (naive_rainforth_eig, [50*50, 50]),
+            (gibbs_y_re_eig,
+             [10, 5000, sigmoid_response_est((10, 15)), sigmoid_cond_response_est((10, 15)),
+              optim.Adam({"lr": 0.05}), False, None, 500]),
+            (gibbs_y_eig,
+             [20, 500, sigmoid_response_est((10, 15)), optim.Adam({"lr": 0.05}), False, None, 500]),
+            (ba_eig_mc,
+             [10, 2000, sigmoid_random_effect_guide((10, 15)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+        ]
+    ),  
+    T(
+        "Sigmoid with random effects",
+        sigmoid_high_random_effects,
+        loc_15d_1n_2p,
+        "y",
+        "loc",
+        [  
+            #(naive_rainforth_eig, [300*300, 300, 300, True]),
+            (naive_rainforth_eig, [50*50, 50, 50, True]),
+            (naive_rainforth_eig, [50*50, 50]),
+            (gibbs_y_re_eig,
+             [10, 5000, sigmoid_response_est((10, 15)), sigmoid_cond_response_est((10, 15)),
+              optim.Adam({"lr": 0.05}), False, None, 500]),
+            (gibbs_y_eig,
+             [20, 500, sigmoid_response_est((10, 15)), optim.Adam({"lr": 0.05}), False, None, 500]),
+            (ba_eig_mc,
+             [10, 2000, sigmoid_random_effect_guide((10, 15)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+        ]
+    ),  
     T(
         "Sigmoid regression model",
         sigmoid_high_2p_model,
@@ -244,29 +341,6 @@ CMP_TEST_CASES = [
             #(donsker_varadhan_eig,
             # [400, 80, GuideDV(sigmoid_high_guide(15)),
             #  optim.Adam({"lr": 0.05}), False, None, 500])
-        ]
-    ),
-    T(
-        "Linear regression model",
-        basic_2p_linear_model_sds_10_0pt1,
-        lexpand(AB_test_11d_10n_2p, 10),
-        "y",
-        "w",
-        [
-            (linear_model_ground_truth, []),
-            (naive_rainforth_eig, [110*110, 110]),
-            (gibbs_y_eig,
-             [10, 1200, normal_response_est((10, 11)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            #(vi_eig_lm,
-            # [{"guide": basic_2p_guide, "optim": optim.Adam({"lr": 0.05}), "loss": elbo,
-            #   "num_steps": 1000}, {"num_samples": 1}]),
-            #(donsker_varadhan_eig,
-            # [400, 400, GuideDV(basic_2p_ba_guide((11,))),
-            #  optim.Adam({"lr": 0.05}), False, None, 500]),
-            (ba_eig_lm,
-             [10, 1200, basic_2p_ba_guide((10, 11)), optim.Adam({"lr": 0.05}),
-              False, None, 500])
         ]
     ),
     T(
@@ -453,29 +527,33 @@ def test_eig_and_plot(title, model, design, observation_label, target_label, arg
     sds = []
     names = []
     elapseds = []
+    markers = ['x', '+', 'o']
     print(title)
-    for estimator, args in arglist:
-        y, elapsed = time_eig(estimator, model, design, observation_label, target_label, args)
+    for n, (estimator, args) in enumerate(arglist):
+        y, elapsed = time_eig(estimator, model, lexpand(design, 10) if n<3 else lexpand(design,1), observation_label, target_label, args)
         y = y.detach().numpy()
+        y[np.isinf(y)] = np.nan
         ys.append(y)
         means.append(np.nanmean(y, 0))
         sds.append(2*np.nanstd(y, 0))
         elapseds.append(elapsed)
         names.append(estimator.name)
 
-    error = [np.abs(y - y[0]).sum() for y in ys]
-    print(error)
+    bias = [np.nanmean(m - means[-1]) for m in means]
+    variance = [np.nanmean(s - sds[-1]) for s in sds]
+    print(bias, variance)
 
     if PLOT:
         import matplotlib.pyplot as plt
         plt.figure(figsize=(10, 5))
         x = np.arange(0, means[0].shape[0])
-        for n, (y, s) in enumerate(zip(means, sds)):
-            plt.errorbar(x+n*ep, y, yerr=s, linestyle='None', marker='x', markersize=10)
+        for n, (y, s) in enumerate(zip(means[:-1], sds[:-1])):
+            plt.errorbar(x+n*ep, y-means[-1], yerr=s, linestyle='-', marker=markers[n], markersize=10)
         plt.title(title, fontsize=18)
-        plt.legend(names, loc=0, fontsize=16)
+        plt.legend(names, loc=2, fontsize=16)
+        plt.axhline(color='k')
         plt.xlabel("Design", fontsize=18)
-        plt.ylabel("EIG estimate", fontsize=18)
+        plt.ylabel("EIG estimation error", fontsize=18)
         plt.show()
 
         # newx = np.arange(0, len(elapseds))

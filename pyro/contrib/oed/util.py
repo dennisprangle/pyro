@@ -9,6 +9,21 @@ from pyro.contrib.glmm import analytic_posterior_cov
 from pyro.contrib.oed.eig import barber_agakov_ape, vi_ape
 
 
+def normal_inverse_gamma_ground_truth(model, design, observation_labels, target_labels, eig=True):
+    lm = linear_model_ground_truth(model, design, observation_labels, target_labels, eig=eig)
+
+    sign = 2.*(eig - .5)
+    p = design.shape[-2]
+    nu = model.alpha*2
+    correction_factor = -(p/2.)*(np.log(2) + 1.) - torch.lgamma((nu+p)/2) + torch.lgamma(nu/2) + (p/2.)*torch.log(nu) \
+                        + ((nu+p)/2.)*(torch.digamma((nu+p)/2) \
+                        - torch.digamma(nu/2)) + (p/2.)*torch.log(model.beta/model.alpha) \
+                        + (p/2.)*(model.alpha + torch.log(model.beta) + torch.lgamma(model.alpha) \
+                        - (1+model.alpha)*torch.digamma(model.alpha))
+    return lm + sign*correction_factor
+
+
+
 def linear_model_ground_truth(model, design, observation_labels, target_labels, eig=True):
     if isinstance(target_labels, str):
         target_labels = [target_labels]

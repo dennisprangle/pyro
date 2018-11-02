@@ -186,6 +186,13 @@ class SigmoidResponseEst(nn.Module):
                     tr_dist, upper_lim=1.-self.epsilon, lower_lim=self.epsilon).independent(1)
             pyro.sample(label, response_dist)
 
+class SigmoidResponseEstTrue(SigmoidResponseEst):
+
+    def __init__(self, design):
+
+        super(SigmoidResponseEstTrue, self).__init__((10, 15), ["y"])
+        self.mu = {"y": nn.Parameter(2*rmv(design, torch.tensor([1., 5.])))}
+        self.sigma = {"y": nn.Parameter(torch.tensor(8.015279))}
 
 class NormalResponseEst(nn.Module):
 
@@ -241,6 +248,8 @@ class SigmoidCondResponseEst(SigmoidResponseEst):
         centre = rmv(subdesign, theta)
         
         pyro.module("gibbs_y_re_guide", self)
+        print(self.mu)
+        print(self.sigma)
 
         for l in observation_labels:
             self.sample_sigmoid(l, centre + self.mu[l], self.sigma[l])
@@ -297,8 +306,8 @@ class LogisticCondResponseEst(nn.Module):
 
 class NormalInverseGammaGuide(LinearModelGuide):
 
-    def __init__(self, d, w_sizes, mf=False, tau_label="tau", alpha_init=100.,
-                 b0_init=100., **kwargs):
+    def __init__(self, d, w_sizes, mf=False, tau_label="tau", alpha_init=10.,
+                 b0_init=2., **kwargs):
         super(NormalInverseGammaGuide, self).__init__(d, w_sizes, **kwargs)
         self.alpha = nn.Parameter(alpha_init*torch.ones(*d))
         self.b0 = nn.Parameter(b0_init*torch.ones(*d))

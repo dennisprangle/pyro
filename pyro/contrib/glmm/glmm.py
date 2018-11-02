@@ -78,12 +78,18 @@ def normal_inverse_gamma_linear_model(coef_means, coef_sqrtlambdas, alpha,
     if not isinstance(coef_labels, list):
         coef_labels = [coef_labels]
 
-    return partial(bayesian_linear_model,
-                   w_means=OrderedDict([(label, mean) for label, mean in zip(coef_labels, coef_means)]),
-                   w_sqrtlambdas=OrderedDict([
-                       (label, sqrtlambda) for label, sqrtlambda in zip(coef_labels, coef_sqrtlambdas)]),
-                   alpha_0=alpha, beta_0=beta,
-                   response_label=observation_label)
+    model = partial(bayesian_linear_model,
+                    w_means=OrderedDict([(label, mean) for label, mean in zip(coef_labels, coef_means)]),
+                    w_sqrtlambdas=OrderedDict([
+                        (label, sqrtlambda) for label, sqrtlambda in zip(coef_labels, coef_sqrtlambdas)]),
+                    alpha_0=alpha, beta_0=beta,
+                    response_label=observation_label)
+    # For computing the true EIG
+    model.obs_sd = torch.tensor(1.)
+    model.w_sds = OrderedDict([(label, 1./sqrtlambda) for label, sqrtlambda in zip(coef_labels, coef_sqrtlambdas)])
+    model.alpha = alpha
+    model.beta = beta
+    return model
 
 
 def normal_inverse_gamma_guide(coef_shape, coef_label="w", **kwargs):
