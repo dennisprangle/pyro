@@ -127,6 +127,9 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
         theta_dict = {l: lexpand(trace.nodes[l]["value"], M_prime) for l in target_labels}
         theta_dict.update(y_dict)
         # Resample M values of u and compute conditional probabilities
+        # WARNING: currently the use of condition does not actually sample
+        # the conditional distribution!
+        # We need to use some importane weighting
         conditional_model = pyro.condition(model, data=theta_dict)
         if independent_priors:
             reexpanded_design = lexpand(design, M_prime, 1)
@@ -279,7 +282,7 @@ def donsker_varadhan_eig(model, design, observation_labels, target_labels,
 
 def barber_agakov_ape(model, design, observation_labels, target_labels,
                       num_samples, num_steps, guide, optim, return_history=False,
-                      final_design=None, final_num_samples=None):
+                      final_design=None, final_num_samples=None, *args, **kwargs):
     """
     Barber-Agakov estimate of average posterior entropy (APE).
 
@@ -319,7 +322,7 @@ def barber_agakov_ape(model, design, observation_labels, target_labels,
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-    loss = barber_agakov_loss(model, guide, observation_labels, target_labels)
+    loss = barber_agakov_loss(model, guide, observation_labels, target_labels, *args, **kwargs)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
                             final_design, final_num_samples)
 
@@ -427,9 +430,9 @@ def donsker_varadhan_loss(model, T, observation_labels, target_labels):
     return loss_fn
 
 
-def barber_agakov_loss(model, guide, observation_labels, target_labels):
+def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic_entropy=False):
 
-    def loss_fn(design, num_particles, **kwargs):
+    def loss_fn(design, num_particles, evaluation=False, **kwargs):
 
         expanded_design = lexpand(design, num_particles)
 
@@ -443,8 +446,14 @@ def barber_agakov_loss(model, guide, observation_labels, target_labels):
         cond_trace = poutine.trace(conditional_guide).get_trace(
             y_dict, expanded_design, observation_labels, target_labels)
         cond_trace.compute_log_prob()
+        if evaluation and analytic_entropy:
+            print('use analytic posterior entropy')
+            loss = mean_field_guide_entropy(guide,
+                    [y_dict, expanded_design, observation_labels, target_labels],
+                    whitelist=target_labels).sum(0)/num_particles
 
-        loss = -sum(cond_trace.nodes[l]["log_prob"] for l in target_labels).sum(0)/num_particles
+        else:
+            loss = -sum(cond_trace.nodes[l]["log_prob"] for l in target_labels).sum(0)/num_particles
         agg_loss = loss.sum()
         return agg_loss, loss
 

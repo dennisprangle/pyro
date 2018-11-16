@@ -5,6 +5,7 @@ import time
 import torch
 import pytest
 import numpy as np
+from functools import partial
 
 import pyro
 from pyro import optim
@@ -154,10 +155,14 @@ sigmoid_random_effect_guide = lambda d: SigmoidGuide(d, {"coef": 1, "loc": 1}, t
 
 elbo = TraceEnum_ELBO(strict_enumeration_warning=False).differentiable_loss
 
+ba_lm_use_ae = partial(ba_eig_lm, analytic_entropy=True)
+ba_lm_use_ae.__name__ = 'ba_lm_use_ae'
+
 # Makes the plots look pretty
 vi_eig_lm.name = "Variational inference"
 vi_ape.name = "Variational inference"
 ba_eig_lm.name = "Posterior"
+ba_lm_use_ae.name = "Posterior, with analytic entropy"
 ba_eig_mc.name = "Posterior"
 barber_agakov_ape.name = "Posterior"
 donsker_varadhan_eig.name = "Donsker-Varadhan"
@@ -178,6 +183,25 @@ T = namedtuple("CompareEstimatorsExample", [
 ])
 
 CMP_TEST_CASES = [
+    T(
+        "Linear regression model",
+        basic_2p_linear_model_sds_10_0pt1,
+        AB_test_11d_10n_2p,
+        "y",
+        "w",
+        [
+            (ba_eig_lm,
+             [10, 1200, basic_2p_ba_guide((10, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (ba_lm_use_ae,
+             [10, 1200, basic_2p_ba_guide((10, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 50]),
+            (donsker_varadhan_eig,
+             [100, 100, GuideDV(basic_2p_ba_guide((10, 11))),
+              optim.Adam({"lr": 0.05}), False, None, 500]),
+            (linear_model_ground_truth, []),
+        ]
+    ),
     T(
         "Normal inverse gamma model",
         nig_2p_linear_model_3_2,
@@ -251,29 +275,6 @@ CMP_TEST_CASES = [
               False, None, 500]),
             (gibbs_y_eig,
              [10, 700, normal_response_est_50((10, 11)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            #(vi_eig_lm,
-            # [{"guide": basic_2p_guide, "optim": optim.Adam({"lr": 0.05}), "loss": elbo,
-            #   "num_steps": 1000}, {"num_samples": 1}]),
-            #(donsker_varadhan_eig,
-            # [400, 400, GuideDV(basic_2p_ba_guide((11,))),
-            #  optim.Adam({"lr": 0.05}), False, None, 500]),
-            (linear_model_ground_truth, []),
-        ]
-    ),
-    T(
-        "Linear regression model",
-        basic_2p_linear_model_sds_10_0pt1,
-        lexpand(AB_test_11d_10n_2p, 10),
-        "y",
-        "w",
-        [
-            (naive_rainforth_eig, [110*110, 110]),
-            (ba_eig_lm,
-             [10, 1200, basic_2p_ba_guide((10, 11)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (gibbs_y_eig,
-             [10, 1200, normal_response_est((10, 11)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             #(vi_eig_lm,
             # [{"guide": basic_2p_guide, "optim": optim.Adam({"lr": 0.05}), "loss": elbo,
@@ -530,7 +531,7 @@ def test_eig_and_plot(title, model, design, observation_label, target_label, arg
     markers = ['x', '+', 'o']
     print(title)
     for n, (estimator, args) in enumerate(arglist):
-        y, elapsed = time_eig(estimator, model, lexpand(design, 10) if n<3 else lexpand(design,1), observation_label, target_label, args)
+        y, elapsed = time_eig(estimator, model, lexpand(design, 10) if n<(len(arglist)-1) else lexpand(design,1), observation_label, target_label, args)
         y = y.detach().numpy()
         y[np.isinf(y)] = np.nan
         ys.append(y)
