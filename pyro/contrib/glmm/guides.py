@@ -186,6 +186,7 @@ class SigmoidResponseEst(nn.Module):
                     tr_dist, upper_lim=1.-self.epsilon, lower_lim=self.epsilon).independent(1)
             pyro.sample(label, response_dist)
 
+
 class SigmoidResponseEstTrue(SigmoidResponseEst):
 
     def __init__(self, design):
@@ -193,6 +194,7 @@ class SigmoidResponseEstTrue(SigmoidResponseEst):
         super(SigmoidResponseEstTrue, self).__init__((10, 15), ["y"])
         self.mu = {"y": nn.Parameter(2*rmv(design, torch.tensor([1., 5.])))}
         self.sigma = {"y": nn.Parameter(torch.tensor(8.015279))}
+
 
 class NormalResponseEst(nn.Module):
 
@@ -245,11 +247,9 @@ class SigmoidCondResponseEst(SigmoidResponseEst):
         theta = torch.cat(list(theta_dict.values()), dim=-1)
         indices = get_indices(target_labels, self.w_sizes)
         subdesign = design[..., indices]
-        centre = rmv(subdesign, theta)
+        centre = 2*rmv(subdesign, theta)
         
         pyro.module("gibbs_y_re_guide", self)
-        print(self.mu)
-        print(self.sigma)
 
         for l in observation_labels:
             self.sample_sigmoid(l, centre + self.mu[l], self.sigma[l])

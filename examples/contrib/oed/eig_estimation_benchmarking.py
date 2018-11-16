@@ -155,6 +155,11 @@ sigmoid_random_effect_guide = lambda d: SigmoidGuide(d, {"coef": 1, "loc": 1}, t
 
 elbo = TraceEnum_ELBO(strict_enumeration_warning=False).differentiable_loss
 
+def zerofn(*args, **kwargs):
+    return torch.tensor(0.)
+
+zerofn.name = 'zero'
+
 ba_lm_use_ae = partial(ba_eig_lm, analytic_entropy=True)
 ba_lm_use_ae.__name__ = 'ba_lm_use_ae'
 
@@ -183,6 +188,44 @@ T = namedtuple("CompareEstimatorsExample", [
 ])
 
 CMP_TEST_CASES = [
+    T(
+        "Sigmoid with random effects",
+        sigmoid_high_random_effects,
+        loc_15d_1n_2p,
+        "y",
+        "loc",
+        [  
+            #(naive_rainforth_eig, [300*300, 300, 300, True]),
+            (naive_rainforth_eig, [50*50, 50, 50, True]),
+            (gibbs_y_re_eig,
+             [10, 3000, sigmoid_response_est((10, 15)), sigmoid_cond_response_est((10, 15)),
+              optim.Adam({"lr": 0.05}), False, None, 500]),
+            (ba_eig_mc,
+             [10, 1500, sigmoid_random_effect_guide((10, 15)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (naive_rainforth_eig, [150*150, 150, 150, True]),
+        ]
+    ),  
+    T(
+        "Sigmoid regression model",
+        sigmoid_high_2p_model,
+        loc_15d_1n_2p,
+        "y",
+        "w",
+        [
+            (naive_rainforth_eig, [70*70, 70]),
+            (ba_eig_mc,
+             [10, 400, sigmoid_high_guide((10, 15)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (gibbs_y_eig,
+             [20, 4000, sigmoid_response_est((10, 15)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (naive_rainforth_eig, [300*300, 300]),
+            #(donsker_varadhan_eig,
+            # [400, 80, GuideDV(sigmoid_high_guide(15)),
+            #  optim.Adam({"lr": 0.05}), False, None, 500])
+        ]
+    ),
     T(
         "Linear regression model",
         basic_2p_linear_model_sds_10_0pt1,
@@ -223,26 +266,6 @@ CMP_TEST_CASES = [
             #(ba_eig_mc,
             # [20, 1600, nig_2p_ba_guide((10, 11)), optim.Adam({"lr": 0.05}),
             #  False, None, 500]),
-        ]
-    ),
-    T(
-        "Sigmoid regression model",
-        sigmoid_high_2p_model,
-        loc_15d_1n_2p,
-        "y",
-        "w",
-        [
-            (naive_rainforth_eig, [70*70, 70]),
-            (ba_eig_mc,
-             [10, 180, sigmoid_high_guide((10, 15)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (gibbs_y_eig,
-             [20, 2800, sigmoid_response_est((10, 15)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (naive_rainforth_eig, [110*110, 110]),
-            #(donsker_varadhan_eig,
-            # [400, 80, GuideDV(sigmoid_high_guide(15)),
-            #  optim.Adam({"lr": 0.05}), False, None, 500])
         ]
     ),
     T(
@@ -288,26 +311,6 @@ CMP_TEST_CASES = [
     T(
         "Sigmoid integrated",
         sigmoid_integrated,
-        loc_15d_1n_2p,
-        "y",
-        "loc",
-        [  
-            #(naive_rainforth_eig, [300*300, 300, 300, True]),
-            (naive_rainforth_eig, [50*50, 50, 50, True]),
-            (naive_rainforth_eig, [50*50, 50]),
-            (gibbs_y_re_eig,
-             [10, 5000, sigmoid_response_est((10, 15)), sigmoid_cond_response_est((10, 15)),
-              optim.Adam({"lr": 0.05}), False, None, 500]),
-            (gibbs_y_eig,
-             [20, 500, sigmoid_response_est((10, 15)), optim.Adam({"lr": 0.05}), False, None, 500]),
-            (ba_eig_mc,
-             [10, 2000, sigmoid_random_effect_guide((10, 15)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-        ]
-    ),  
-    T(
-        "Sigmoid with random effects",
-        sigmoid_high_random_effects,
         loc_15d_1n_2p,
         "y",
         "loc",
@@ -528,7 +531,7 @@ def test_eig_and_plot(title, model, design, observation_label, target_label, arg
     sds = []
     names = []
     elapseds = []
-    markers = ['x', '+', 'o']
+    markers = ['x', '+', 'o', 'D', 'v', '^']
     print(title)
     for n, (estimator, args) in enumerate(arglist):
         y, elapsed = time_eig(estimator, model, lexpand(design, 10) if n<(len(arglist)-1) else lexpand(design,1), observation_label, target_label, args)

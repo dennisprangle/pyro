@@ -129,7 +129,7 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
         # Resample M values of u and compute conditional probabilities
         # WARNING: currently the use of condition does not actually sample
         # the conditional distribution!
-        # We need to use some importane weighting
+        # We need to use some importance weighting
         conditional_model = pyro.condition(model, data=theta_dict)
         if independent_priors:
             reexpanded_design = lexpand(design, M_prime, 1)
@@ -157,7 +157,11 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
     marginal_lp = logsumexp(sum(retrace.nodes[l]["log_prob"] for l in observation_labels), 0) \
         - np.log(M)
 
-    return (conditional_lp - marginal_lp).sum(0)/N
+    # return (conditional_lp - marginal_lp).sum(0)/N
+    terms = conditional_lp - marginal_lp
+    nonnan = (~torch.isnan(terms)).sum(0).float()
+    terms[torch.isnan(terms)] = 0.
+    return terms.sum(0)/nonnan
 
 
 def accelerated_rainforth_eig(model, design, observation_labels, target_labels,
@@ -514,7 +518,7 @@ def gibbs_y_re_loss(model, marginal_guide, cond_guide, observation_labels, targe
 
         loss = -sum(marginal_trace.nodes[l]["log_prob"] for l in observation_labels).sum(0)/num_particles
 
-        # At evaluation time, use the right estimator, q(y | theta, d) - y(y | d)
+        # At evaluation time, use the right estimator, q(y | theta, d) - q(y | d)
         # At training time, use -q(y | theta, d) - q(y | d) so gradients go the same way
         if evaluation:
             loss += sum(cond_trace.nodes[l]["log_prob"] for l in observation_labels).sum(0)/num_particles
@@ -545,7 +549,9 @@ def logsumexp(inputs, dim=None, keepdim=False):
         inputs = inputs.view(-1)
         dim = 0
     s, _ = torch.max(inputs, dim=dim, keepdim=True)
-    outputs = s + (inputs - s).exp().sum(dim=dim, keepdim=True).log()
+    j = (inputs - s).exp()
+    j[(inputs - s) == float('-inf')] = 0.
+    outputs = s + j.sum(dim=dim, keepdim=True).log()
     if not keepdim:
         outputs = outputs.squeeze(dim)
     return outputs
