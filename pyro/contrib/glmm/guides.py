@@ -71,11 +71,9 @@ class LinearModelGuide(nn.Module):
 
 class SigmoidGuide(LinearModelGuide):
 
-    def __init__(self, d, w_sizes, slope, scale_tril_init=3., mu_init=0., **kwargs):
+    def __init__(self, d, w_sizes, scale_tril_init=3., mu_init=0., **kwargs):
         super(SigmoidGuide, self).__init__(d, w_sizes, scale_tril_init=scale_tril_init,
                                            **kwargs)
-        self.inverse_sigmoid_scale = 1./slope
-
         self.mu0 = {l: nn.Parameter(
                 mu_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
         self._registered_mu0 = nn.ParameterList(self.mu0.values())
@@ -101,7 +99,7 @@ class SigmoidGuide(LinearModelGuide):
         mask1 = (1.-y < 1e-35).squeeze(-1)
         y, y1m = y.clamp(1e-35, 1), (1.-y).clamp(1e-35, 1)
         logited = y.log() - y1m.log()
-        y_trans = logited * self.inverse_sigmoid_scale
+        y_trans = logited
 
         mu, scale_tril = self.linear_model_formula(y_trans, design, target_labels)
         scale_tril = {l: scale_tril[l].expand(mu[l].shape + (mu[l].shape[-1], )) for l in scale_tril}
@@ -187,15 +185,6 @@ class SigmoidResponseEst(nn.Module):
             pyro.sample(label, response_dist)
 
 
-class SigmoidResponseEstTrue(SigmoidResponseEst):
-
-    def __init__(self, design):
-
-        super(SigmoidResponseEstTrue, self).__init__((10, 15), ["y"])
-        self.mu = {"y": nn.Parameter(2*rmv(design, torch.tensor([1., 5.])))}
-        self.sigma = {"y": nn.Parameter(torch.tensor(8.015279))}
-
-
 class NormalResponseEst(nn.Module):
 
     def __init__(self, d, observation_dimensions, mu_init=0., sigma_init=3., **kwargs):
@@ -247,7 +236,7 @@ class SigmoidCondResponseEst(SigmoidResponseEst):
         theta = torch.cat(list(theta_dict.values()), dim=-1)
         indices = get_indices(target_labels, self.w_sizes)
         subdesign = design[..., indices]
-        centre = 2*rmv(subdesign, theta)
+        centre = rmv(subdesign, theta)
         
         pyro.module("gibbs_y_re_guide", self)
 

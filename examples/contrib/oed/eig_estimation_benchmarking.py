@@ -27,7 +27,7 @@ from pyro.contrib.glmm import (
 from pyro.contrib.glmm.guides import (
     LinearModelGuide, NormalInverseGammaGuide, SigmoidGuide, GuideDV, LogisticGuide,
     LogisticResponseEst, LogisticCondResponseEst, SigmoidResponseEst, SigmoidCondResponseEst,
-    NormalResponseEst, NormalCondResponseEst, SigmoidResponseEstTrue
+    NormalResponseEst, NormalCondResponseEst
 )
 
 PLOT = True
@@ -84,7 +84,7 @@ item_thetas_small = torch.linspace(0., np.pi/2, 5).unsqueeze(-1)
 X_circle_5d_1n_2p = torch.stack([item_thetas_small.cos(), -item_thetas_small.sin()], dim=-1)
 
 # Location finding designs
-loc_15d_1n_2p = torch.stack([torch.linspace(-15., 15., 15), torch.ones(15)], dim=-1).unsqueeze(-2)
+loc_15d_1n_2p = torch.stack([torch.linspace(-30., 30., 15), torch.ones(15)], dim=-1).unsqueeze(-2)
 loc_4d_1n_2p = torch.tensor([[-5., 1], [-4.9, 1.], [4.9, 1], [5., 1.]]).unsqueeze(-2)
 
 #########################################################################################
@@ -119,23 +119,16 @@ nig_2p_guide = normal_inverse_gamma_guide((2,), mf=True)
 nig_2p_ba_guide = lambda d: NormalInverseGammaGuide(d, {"w": 2})  # noqa: E731
 nig_2p_ba_mf_guide = lambda d: NormalInverseGammaGuide(d, {"w": 2}, mf=True)  # noqa: E731
 
-sigmoid_low_2p_model = sigmoid_model_fixed(torch.tensor([1., 5.]), torch.tensor([.25, 4.]), 
-                                           torch.tensor(1.), torch.tensor(.5))
-sigmoid_high_2p_model = sigmoid_model_fixed(torch.tensor([1., 5.]), torch.tensor([.25, 4.]),
-                                            torch.tensor(1.), torch.tensor(2.))
-sigmoid_high_random_effects = sigmoid_model_fixed([torch.tensor([1.]), torch.tensor([5.])],
-                                                  [torch.tensor([.25]), torch.tensor([4.])],
-                                                  torch.tensor(1.), torch.tensor(2.),
-                                                  coef_labels=["coef", "loc"])
-sigmoid_integrated = sigmoid_model_fixed([torch.tensor([1.]), torch.tensor([5.])],
-                                         [torch.tensor([.01]), torch.tensor([4.])],
-                                          torch.tensor(1.03), torch.tensor(2.),
-                                          coef_labels=["coef", "loc"])
-loc_2p_model = known_covariance_linear_model(torch.tensor([1., 5.]), torch.tensor([.25, 4.]), torch.tensor(1.),
+sigmoid_2p_model = sigmoid_model_fixed(torch.tensor([1., 10.]), torch.tensor([.25, 8.]),
+                                       torch.tensor(2.))
+sigmoid_re_model = sigmoid_model_fixed([torch.tensor([1.]), torch.tensor([10.])],
+                                                  [torch.tensor([.25]), torch.tensor([8.])],
+                                                  torch.tensor(2.), coef_labels=["coef", "loc"])
+loc_2p_model = known_covariance_linear_model(torch.tensor([1., 10.]), torch.tensor([.25, 8.]), torch.tensor(2.),
                                              coef_label="w1")
-logistic_2p_model = logistic_regression_model(torch.tensor([1., 5.]), torch.tensor([.25, 4.]), coef_labels="w1")
-logistic_random_effects = logistic_regression_model([torch.tensor([1.]), torch.tensor([5.])],
-                                                    [torch.tensor([.25]), torch.tensor([4.])],
+logistic_2p_model = logistic_regression_model(torch.tensor([1., 10.]), torch.tensor([.25, 8.]), coef_labels="w1")
+logistic_random_effects = logistic_regression_model([torch.tensor([1.]), torch.tensor([10.])],
+                                                    [torch.tensor([.25]), torch.tensor([8.])],
                                                     coef_labels=["coef", "loc"])
 loc_ba_guide = lambda d: LinearModelGuide(d, {"w1": 2})  # noqa: E731
 logistic_guide  = lambda d: LogisticGuide(d, {"w1": 2})
@@ -143,11 +136,10 @@ logistic_random_effect_guide = lambda d: LogisticGuide(d, {"loc": 1})
 logistic_response_est = lambda d: LogisticResponseEst(d, ["y"])
 logistic_cond_response_est = lambda d: LogisticCondResponseEst(d, {"coef": 1, "loc": 1}, ["y"])
 sigmoid_response_est = lambda d: SigmoidResponseEst(d, ["y"])
-sigmoid_true_response_est = SigmoidResponseEstTrue(loc_15d_1n_2p) 
 sigmoid_cond_response_est = lambda d: SigmoidCondResponseEst(d, {"coef": 1, "loc": 1}, ["y"])
-sigmoid_low_guide = lambda d: SigmoidGuide(d, {"w": 2}, torch.tensor(.5))  # noqa: E731
-sigmoid_high_guide = lambda d: SigmoidGuide(d, {"w": 2}, torch.tensor(2.))  # noqa: E731
-sigmoid_random_effect_guide = lambda d: SigmoidGuide(d, {"coef": 1, "loc": 1}, torch.tensor(2.))
+sigmoid_low_guide = lambda d: SigmoidGuide(d, {"w": 2})  # noqa: E731
+sigmoid_high_guide = lambda d: SigmoidGuide(d, {"w": 2})  # noqa: E731
+sigmoid_random_effect_guide = lambda d: SigmoidGuide(d, {"coef": 1, "loc": 1})
 
 ########################################################################################
 # Aux
@@ -190,7 +182,7 @@ T = namedtuple("CompareEstimatorsExample", [
 CMP_TEST_CASES = [
     T(
         "Sigmoid with random effects",
-        sigmoid_high_random_effects,
+        sigmoid_re_model,
         loc_15d_1n_2p,
         "y",
         "loc",
@@ -208,7 +200,7 @@ CMP_TEST_CASES = [
     ),  
     T(
         "Sigmoid regression model",
-        sigmoid_high_2p_model,
+        sigmoid_2p_model,
         loc_15d_1n_2p,
         "y",
         "w",
@@ -309,28 +301,8 @@ CMP_TEST_CASES = [
         ]
     ),
     T(
-        "Sigmoid integrated",
-        sigmoid_integrated,
-        loc_15d_1n_2p,
-        "y",
-        "loc",
-        [  
-            #(naive_rainforth_eig, [300*300, 300, 300, True]),
-            (naive_rainforth_eig, [50*50, 50, 50, True]),
-            (naive_rainforth_eig, [50*50, 50]),
-            (gibbs_y_re_eig,
-             [10, 5000, sigmoid_response_est((10, 15)), sigmoid_cond_response_est((10, 15)),
-              optim.Adam({"lr": 0.05}), False, None, 500]),
-            (gibbs_y_eig,
-             [20, 500, sigmoid_response_est((10, 15)), optim.Adam({"lr": 0.05}), False, None, 500]),
-            (ba_eig_mc,
-             [10, 2000, sigmoid_random_effect_guide((10, 15)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-        ]
-    ),  
-    T(
         "Sigmoid regression model",
-        sigmoid_high_2p_model,
+        sigmoid_2p_model,
         lexpand(loc_15d_1n_2p, 10),
         "y",
         "w",
@@ -365,7 +337,7 @@ CMP_TEST_CASES = [
     ),
     T(
         "Sigmoid with random effects",
-        sigmoid_high_random_effects,
+        sigmoid_re_model,
         lexpand(loc_15d_1n_2p, 10),
         "y",
         "loc",
@@ -628,7 +600,7 @@ CONV_TEST_CASES = [
     # ),
     U(
         "High slope sigmoid -- should see major difference",
-        sigmoid_high_2p_model,
+        sigmoid_2p_model,
         loc_4d_1n_2p,
         "y", "w1",
         barber_agakov_ape,

@@ -153,7 +153,7 @@ def sigmoid_model_gamma(coef1_mean, coef1_sd, coef2_mean, coef2_sd, observation_
     return model
 
 
-def sigmoid_model_fixed(coef_means, coef_sds, observation_sd, slope, coef_labels="w", observation_label="y"):
+def sigmoid_model_fixed(coef_means, coef_sds, observation_sd, coef_labels="w", observation_label="y"):
 
     if not isinstance(coef_means, list):
         coef_means = [coef_means]
@@ -171,7 +171,7 @@ def sigmoid_model_fixed(coef_means, coef_sds, observation_sd, slope, coef_labels
             obs_sd=observation_sd,
             response="sigmoid",
             response_label=observation_label,
-            k=slope
+            k=torch.tensor(1.)
             )
     model.w_sds = OrderedDict([(label, sd) for label, sd in zip(coef_labels, coef_sds)])
     model.obs_sd = observation_sd
