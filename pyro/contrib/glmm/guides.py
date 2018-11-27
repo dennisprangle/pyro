@@ -71,15 +71,15 @@ class LinearModelGuide(nn.Module):
 
 class SigmoidGuide(LinearModelGuide):
 
-    def __init__(self, d, w_sizes, scale_tril_init=3., mu_init=0., **kwargs):
+    def __init__(self, d, w_sizes, scale_tril_init=3., mu_delta_init=25., **kwargs):
         super(SigmoidGuide, self).__init__(d, w_sizes, scale_tril_init=scale_tril_init,
                                            **kwargs)
         self.mu0 = {l: nn.Parameter(
-                mu_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
+                -mu_delta_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
         self._registered_mu0 = nn.ParameterList(self.mu0.values())
 
         self.mu1 = {l: nn.Parameter(
-                mu_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
+                mu_delta_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
         self._registered_mu1 = nn.ParameterList(self.mu1.values())
 
         self.scale_tril0 = {l: nn.Parameter(
@@ -108,10 +108,12 @@ class SigmoidGuide(LinearModelGuide):
 
         # Now deal with clipping- values equal to 0 or 1
         for l in mu.keys():
-            mu[l][mask0, :] = self.mu0[l].expand(mu[l].shape)[mask0, :]
-            mu[l][mask1, :] = self.mu1[l].expand(mu[l].shape)[mask1, :]
-            scale_tril[l][mask0, :, :] = rtril(self.scale_tril0[l].expand(scale_tril[l].shape))[mask0, :, :]
-            scale_tril[l][mask1, :, :] = rtril(self.scale_tril1[l].expand(scale_tril[l].shape))[mask1, :, :]
+            # print(self.mu1[l])
+            # print(self.scale_tril1[l])
+            mu[l][mask0, :] += self.mu0[l].expand(mu[l].shape)[mask0, :]
+            mu[l][mask1, :] += self.mu1[l].expand(mu[l].shape)[mask1, :]
+            scale_tril[l][mask0, :, :] += rtril(self.scale_tril0[l].expand(scale_tril[l].shape))[mask0, :, :]
+            scale_tril[l][mask1, :, :] += rtril(self.scale_tril1[l].expand(scale_tril[l].shape))[mask1, :, :]
 
         return mu, scale_tril
 
