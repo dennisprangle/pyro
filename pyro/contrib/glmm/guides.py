@@ -106,6 +106,9 @@ class SigmoidGuide(LinearModelGuide):
 
         # Now deal with clipping- values equal to 0 or 1
         for l in mu.keys():
+            print('mu[l].shape', mu[l].shape)
+            print('self.mu0[l].shape', self.mu0[l].shape)
+            print('mask0.shape', mask0.shape)
             mu[l][mask0, :] = self.mu0[l].expand(mu[l].shape)[mask0, :]
             mu[l][mask1, :] = self.mu1[l].expand(mu[l].shape)[mask1, :]
             scale_tril[l][mask0, :, :] = rtril(self.scale_tril0[l].expand(scale_tril[l].shape))[mask0, :, :]
