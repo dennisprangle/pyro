@@ -183,47 +183,6 @@ T = namedtuple("CompareEstimatorsExample", [
 
 TRUTH_TEST_CASES = [
     T(
-        "Normal inverse gamma model, information on w, tau",
-        nig_2p_linear_model_3_2,
-        AB_test_11d_10n_2p,
-        "y",
-        ["w", "tau"],
-        [
-            (naive_rainforth_eig, [110*110, 110]),
-            (ba_eig_mc,
-             [10, 800, nig_2p_ba_mf_guide((NREPS, 11)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (gibbs_y_eig,
-             [10, 1200, normal_response_est((NREPS, 11)),
-              optim.Adam({"lr": 0.05}), False, None, 500]),
-            # For validating the ground truth-
-            # (ba_eig_mc,
-            #  [20, 1300, nig_2p_ba_guide((1, 11)), optim.Adam({"lr": 0.05}),
-            #   False, None, 500]),
-            (normal_inverse_gamma_ground_truth, [])
-        ]
-    ),
-    T(
-        "Normal inverse gamma model, information on w only",
-        nig_2p_linear_model_3_2,
-        AB_test_11d_10n_2p,
-        "y",
-        "w",
-        [
-            # Caution, Rainforth does not work correctly in this case because we must
-            # compute p(psi | theta)
-            # Use LFIRE instead
-            (naive_rainforth_eig, [70*70, 70]),
-            (ba_eig_mc,
-             [10, 800, basic_2p_ba_guide((NREPS, 11)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (gibbs_y_re_eig,
-             [10, 1200, normal_response_est((NREPS, 11)), normal_likelihood_est2((10, 11)),
-              optim.Adam({"lr": 0.05}), False, None, 500]),
-            (linear_model_ground_truth, [])
-        ]
-    ),
-    T(
         "Sigmoid with random effects",
         sigmoid_re_model,
         loc_15d_1n_2p,
@@ -232,12 +191,12 @@ TRUTH_TEST_CASES = [
         [  
             #(naive_rainforth_eig, [300*300, 300, 300, True]),
             (naive_rainforth_eig, [50*50, 50, 50, True]),
-            (gibbs_y_re_eig,
-             [10, 3000, sigmoid_response_est((10, 15)), sigmoid_likelihood_est((10, 15)),
-              optim.Adam({"lr": 0.05}), False, None, 500]),
             (ba_eig_mc,
-             [10, 1500, sigmoid_random_effect_guide((10, 15)), optim.Adam({"lr": 0.05}),
+             [10, 10000, sigmoid_random_effect_guide((NREPS, 15)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
+            (gibbs_y_re_eig,
+             [20, 2500, sigmoid_response_est((NREPS, 15)), sigmoid_likelihood_est((10, 15)),
+              optim.Adam({"lr": 0.05}), False, None, 500]),
             (naive_rainforth_eig, [150*150, 150, 150, True]),
         ]
     ),  
@@ -248,14 +207,55 @@ TRUTH_TEST_CASES = [
         "y",
         "w",
         [
-            (naive_rainforth_eig, [70*70, 70]),
+            (naive_rainforth_eig, [75*75, 75]),
             (ba_eig_mc,
-             [10, 400, sigmoid_high_guide((10, 15)), optim.Adam({"lr": 0.05}),
+             [10, 10000, sigmoid_high_guide((NREPS, 15)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             (gibbs_y_eig,
-             [20, 4000, sigmoid_response_est((10, 15)), optim.Adam({"lr": 0.05}),
+             [20, 5000, sigmoid_response_est((NREPS, 15)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             (naive_rainforth_eig, [300*300, 300]),
+        ]
+    ),
+    T(
+        "Normal inverse gamma model, treating emission variance as random effect",
+        nig_2p_linear_model_3_2,
+        AB_test_11d_10n_2p,
+        "y",
+        "w",
+        [
+            # Caution, Rainforth does not work correctly in this case because we must
+            # compute p(psi | theta)
+            # Use LFIRE instead
+            (naive_rainforth_eig, [60*60, 60, 60, True]),
+            (ba_eig_mc,
+             [10, 900, basic_2p_ba_guide((NREPS, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (gibbs_y_re_eig,
+             [10, 600, normal_response_est((NREPS, 11)), normal_likelihood_est2((10, 11)),
+              optim.Adam({"lr": 0.05}), False, None, 500]),
+            (linear_model_ground_truth, [])
+        ]
+    ),
+    T(
+        "Normal inverse gamma model, including information on emission variance",
+        nig_2p_linear_model_3_2,
+        AB_test_11d_10n_2p,
+        "y",
+        ["w", "tau"],
+        [
+            (naive_rainforth_eig, [110*110, 110]),
+            (ba_eig_mc,
+             [10, 800, nig_2p_ba_mf_guide((10, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (gibbs_y_eig,
+             [10, 1200, normal_response_est((10, 11)),
+              optim.Adam({"lr": 0.05}), False, None, 500]),
+            # For validating the ground truth-
+            # (ba_eig_mc,
+            #  [20, 1300, nig_2p_ba_guide((1, 11)), optim.Adam({"lr": 0.05}),
+            #   False, None, 500]),
+            (normal_inverse_gamma_ground_truth, [])
         ]
     ),
     T(

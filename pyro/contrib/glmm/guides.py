@@ -90,14 +90,16 @@ class SigmoidGuide(LinearModelGuide):
                 scale_tril_init*torch.ones(*d, p, p)) for l, p in w_sizes.items()}
         self._registered1 = nn.ParameterList(self.scale_tril1.values())
 
+        # TODO read from torch float specs
+        self.epsilon = torch.tensor(2**-24)
 
     def get_params(self, y_dict, design, target_labels):
 
         # For values in (0, 1), we can perfectly invert the transformation
         y = torch.cat(list(y_dict.values()), dim=-1)
-        mask0 = (y < 1e-35).squeeze(-1)
-        mask1 = (1.-y < 1e-35).squeeze(-1)
-        y, y1m = y.clamp(1e-35, 1), (1.-y).clamp(1e-35, 1)
+        mask0 = (y <= self.epsilon).squeeze(-1)
+        mask1 = (1.-y <= self.epsilon).squeeze(-1)
+        y, y1m = y.clamp(self.epsilon, 1), (1.-y).clamp(self.epsilon, 1)
         logited = y.log() - y1m.log()
         y_trans = logited
 
