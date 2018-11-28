@@ -183,12 +183,29 @@ T = namedtuple("CompareEstimatorsExample", [
 
 TRUTH_TEST_CASES = [
     T(
+        "Sigmoid regression model",
+        sigmoid_2p_model,
+        loc_15d_1n_2p,
+        "y",
+        "w",
+        [
+            (naive_rainforth_eig, [75*75, 75]),
+            (ba_eig_mc,
+             [10, 1600, sigmoid_high_guide((NREPS, 15)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (gibbs_y_eig,
+             [10, 1000, sigmoid_response_est((NREPS, 15)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (naive_rainforth_eig, [200*200, 200]),
+        ]
+    ),
+    T(
         "Sigmoid with random effects",
         sigmoid_re_model,
         loc_15d_1n_2p,
         "y",
         "loc",
-        [  
+        [
             #(naive_rainforth_eig, [300*300, 300, 300, True]),
             (naive_rainforth_eig, [50*50, 50, 50, True]),
             (ba_eig_mc,
@@ -198,23 +215,6 @@ TRUTH_TEST_CASES = [
              [10, 1000, sigmoid_response_est((NREPS, 15)), sigmoid_likelihood_est((NREPS, 15)),
               optim.Adam({"lr": 0.05}), False, None, 500]),
             (naive_rainforth_eig, [150*150, 150, 150, True]),
-        ]
-    ),
-    T(
-        "Sigmoid regression model",
-        sigmoid_2p_model,
-        loc_15d_1n_2p,
-        "y",
-        "w",
-        [
-            (naive_rainforth_eig, [75*75, 75]),
-            (ba_eig_mc,
-             [10, 600, sigmoid_high_guide((NREPS, 15)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (gibbs_y_eig,
-             [10, 1000, sigmoid_response_est((NREPS, 15)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (naive_rainforth_eig, [300*300, 300]),
         ]
     ),
     T(

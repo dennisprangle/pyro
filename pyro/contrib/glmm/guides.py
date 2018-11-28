@@ -7,7 +7,7 @@ from torch.distributions.transforms import AffineTransform, SigmoidTransform
 import pyro
 import pyro.distributions as dist
 from pyro import poutine
-from pyro.contrib.util import get_indices, tensor_to_dict, rmv, rvv, rtril, rdiag
+from pyro.contrib.util import get_indices, tensor_to_dict, rmv, rvv, rtril, rdiag, lexpand
 from pyro.ops.linalg import rinverse
 
 
@@ -19,7 +19,7 @@ class LinearModelGuide(nn.Module):
         Amortisation over data is taken care of by analytic formulae for
         linear models (heavy use of truth).
 
-        :param int d: the number of designs
+        :param tuple d: the number of designs
         :param dict w_sizes: map from variable string names to int.
         :param float tikhonov_init: initial value for `tikhonov_diag` parameter.
         :param float scale_tril_init: initial value for `scale_tril` parameter.
@@ -32,7 +32,7 @@ class LinearModelGuide(nn.Module):
                 tikhonov_init*torch.ones(*d, sum(w_sizes.values())))
         self.scaled_prior_mean = nn.Parameter(torch.zeros(*d, sum(w_sizes.values())))
         self.scale_tril = {l: nn.Parameter(
-                scale_tril_init*torch.ones(*d, p, p)) for l, p in w_sizes.items()}
+                scale_tril_init*lexpand(torch.eye(p), *d)) for l, p in w_sizes.items()}
         # This registers the dict values in pytorch
         # Await new version to use nn.ParamterDict
         self._registered = nn.ParameterList(self.scale_tril.values())
@@ -83,11 +83,11 @@ class SigmoidGuide(LinearModelGuide):
         self._registered_mu1 = nn.ParameterList(self.mu1.values())
 
         self.scale_tril0 = {l: nn.Parameter(
-                scale_tril_init*torch.ones(*d, p, p)) for l, p in w_sizes.items()}
+                scale_tril_init*lexpand(torch.eye(p), *d)) for l, p in w_sizes.items()}
         self._registered0 = nn.ParameterList(self.scale_tril0.values())
 
         self.scale_tril1 = {l: nn.Parameter(
-                scale_tril_init*torch.ones(*d, p, p)) for l, p in w_sizes.items()}
+                scale_tril_init*lexpand(torch.eye(p), *d)) for l, p in w_sizes.items()}
         self._registered1 = nn.ParameterList(self.scale_tril1.values())
 
         # TODO read from torch float specs
@@ -108,12 +108,12 @@ class SigmoidGuide(LinearModelGuide):
 
         # Now deal with clipping- values equal to 0 or 1
         for l in mu.keys():
-            # print(self.mu1[l])
-            # print(self.scale_tril1[l])
+            print(self.mu1[l])
+            print(self.scale_tril1[l])
             mu[l][mask0, :] += self.mu0[l].expand(mu[l].shape)[mask0, :]
             mu[l][mask1, :] += self.mu1[l].expand(mu[l].shape)[mask1, :]
-            scale_tril[l][mask0, :, :] += rtril(self.scale_tril0[l].expand(scale_tril[l].shape))[mask0, :, :]
-            scale_tril[l][mask1, :, :] += rtril(self.scale_tril1[l].expand(scale_tril[l].shape))[mask1, :, :]
+            scale_tril[l][mask0, :, :] = rtril(self.scale_tril0[l].expand(scale_tril[l].shape))[mask0, :, :]
+            scale_tril[l][mask1, :, :] = rtril(self.scale_tril1[l].expand(scale_tril[l].shape))[mask1, :, :]
 
         return mu, scale_tril
 
