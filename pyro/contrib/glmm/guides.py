@@ -7,7 +7,7 @@ from torch.distributions.transforms import AffineTransform, SigmoidTransform
 import pyro
 import pyro.distributions as dist
 from pyro import poutine
-from pyro.contrib.util import get_indices, tensor_to_dict, rmv, rvv, rtril, rdiag, lexpand
+from pyro.contrib.util import get_indices, tensor_to_dict, rmv, rvv, rtril, rdiag, lexpand, rexpand
 from pyro.ops.linalg import rinverse
 
 
@@ -68,18 +68,21 @@ class LinearModelGuide(nn.Module):
             w_dist = dist.MultivariateNormal(mu[l], scale_tril=scale_tril[l])
             pyro.sample(l, w_dist)
 
+    def initialize(self, theta_dict, y_dict):
+        pass
+
 
 class SigmoidGuide(LinearModelGuide):
 
-    def __init__(self, d, w_sizes, scale_tril_init=3., mu_delta_init=25., **kwargs):
+    def __init__(self, d, w_sizes, scale_tril_init=3., mu_init=0., **kwargs):
         super(SigmoidGuide, self).__init__(d, w_sizes, scale_tril_init=scale_tril_init,
                                            **kwargs)
         self.mu0 = {l: nn.Parameter(
-                -mu_delta_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
+                mu_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
         self._registered_mu0 = nn.ParameterList(self.mu0.values())
 
         self.mu1 = {l: nn.Parameter(
-                mu_delta_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
+                mu_init*torch.ones(*d, p)) for l, p in w_sizes.items()}
         self._registered_mu1 = nn.ParameterList(self.mu1.values())
 
         self.scale_tril0 = {l: nn.Parameter(
@@ -108,14 +111,29 @@ class SigmoidGuide(LinearModelGuide):
 
         # Now deal with clipping- values equal to 0 or 1
         for l in mu.keys():
-            print(self.mu1[l])
-            print(self.scale_tril1[l])
-            mu[l][mask0, :] += self.mu0[l].expand(mu[l].shape)[mask0, :]
-            mu[l][mask1, :] += self.mu1[l].expand(mu[l].shape)[mask1, :]
+            mu[l][mask0, :] = self.mu0[l].expand(mu[l].shape)[mask0, :]
+            mu[l][mask1, :] = self.mu1[l].expand(mu[l].shape)[mask1, :]
             scale_tril[l][mask0, :, :] = rtril(self.scale_tril0[l].expand(scale_tril[l].shape))[mask0, :, :]
             scale_tril[l][mask1, :, :] = rtril(self.scale_tril1[l].expand(scale_tril[l].shape))[mask1, :, :]
 
         return mu, scale_tril
+
+    def initialize(self, theta_dict, y_dict):
+        # Set mu0, mu1 from data for faster learning
+
+        y = torch.cat(list(y_dict.values()), dim=-1)
+        mask0 = (y <= self.epsilon).squeeze(-1).float()
+        mask1 = (1.-y <= self.epsilon).squeeze(-1).float()
+
+        for l in theta_dict:
+            theta = theta_dict[l].detach()
+            ct0 = rexpand(mask0, theta.shape[-1]).sum(0)
+            ct1 = rexpand(mask1, theta.shape[-1]).sum(0)
+            self.mu0[l].data[ct0 > 0] = ((theta*rexpand(mask0, theta.shape[-1])).sum(0)/ct0)[ct0 > 0]
+            self.mu1[l].data[ct1 > 0] = ((theta*rexpand(mask1, theta.shape[-1])).sum(0)/ct1)[ct1 > 0]
+            if theta.shape[-1] == 1:
+                self.scale_tril0[l].data[ct0 > 1, :] = rexpand(torch.sqrt((((theta-self.mu0[l])**2*rexpand(mask0, theta.shape[-1])).sum(0)/ct0))[ct0 > 1], 1)
+                self.scale_tril1[l].data[ct1 > 1, :] = rexpand(torch.sqrt((((theta-self.mu1[l])**2*rexpand(mask1, theta.shape[-1])).sum(0)/ct1))[ct1 > 1], 1)
 
 
 class LogisticGuide(LinearModelGuide):
@@ -178,6 +196,7 @@ class SigmoidResponseEst(nn.Module):
         pyro.module("gibbs_y_guide", self)
 
         for l in observation_labels:
+            # print('marginal', self.mu, self.sigma)
             self.sample_sigmoid(l, self.mu[l], self.sigma[l])
 
     def sample_sigmoid(self, label, mu, sigma):
@@ -245,6 +264,10 @@ class SigmoidLikelihoodEst(SigmoidResponseEst):
         pyro.module("gibbs_y_re_guide", self)
 
         for l in observation_labels:
+            if torch.isnan(self.mu[l]).any():
+                self.mu[l].data[...] = 0.
+            if torch.isnan(self.sigma[l]).any():
+                self.sigma[l].data[...] = 20.
             self.sample_sigmoid(l, centre + self.mu[l], self.sigma[l])
 
 

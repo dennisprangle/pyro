@@ -285,7 +285,8 @@ def donsker_varadhan_eig(model, design, observation_labels, target_labels,
 
 def barber_agakov_ape(model, design, observation_labels, target_labels,
                       num_samples, num_steps, guide, optim, return_history=False,
-                      final_design=None, final_num_samples=None, *args, **kwargs):
+                      final_design=None, final_num_samples=None, initial_num_samples=None,
+                      *args, **kwargs):
     """
     Barber-Agakov estimate of average posterior entropy (APE).
 
@@ -327,7 +328,7 @@ def barber_agakov_ape(model, design, observation_labels, target_labels,
         target_labels = [target_labels]
     loss = barber_agakov_loss(model, guide, observation_labels, target_labels, *args, **kwargs)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
-                            final_design, final_num_samples)
+                            final_design, final_num_samples, initial_num_samples)
 
 
 def gibbs_y_eig(model, design, observation_labels, target_labels,
@@ -366,15 +367,18 @@ def gibbs_y_re_eig(model, design, observation_labels, target_labels,
 
 
 def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_history=False,
-                     final_design=None, final_num_samples=None):
+                     final_design=None, final_num_samples=None, initial_num_samples=None):
 
     if final_design is None:
         final_design = design
     if final_num_samples is None:
         final_num_samples = num_samples
+    if initial_num_samples is None:
+        initial_num_samples = num_samples
 
     params = None
     history = []
+    loss_fn(design, initial_num_samples, initialization=True)
     for step in range(num_steps):
         if params is not None:
             pyro.infer.util.zero_grads(params)
@@ -435,7 +439,7 @@ def donsker_varadhan_loss(model, T, observation_labels, target_labels):
 
 def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic_entropy=False):
 
-    def loss_fn(design, num_particles, evaluation=False, **kwargs):
+    def loss_fn(design, num_particles, initialization=False, evaluation=False, **kwargs):
 
         expanded_design = lexpand(design, num_particles)
 
@@ -445,6 +449,8 @@ def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic
         theta_dict = {l: trace.nodes[l]["value"] for l in target_labels}
 
         # Run through q(theta | y, d)
+        if initialization:
+            guide.initialize(theta_dict, y_dict)
         conditional_guide = pyro.condition(guide, data=theta_dict)
         cond_trace = poutine.trace(conditional_guide).get_trace(
             y_dict, expanded_design, observation_labels, target_labels)

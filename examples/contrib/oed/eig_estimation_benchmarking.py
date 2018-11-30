@@ -137,8 +137,7 @@ logistic_response_est = lambda d: LogisticResponseEst(d, ["y"])
 logistic_likelihood_est = lambda d: LogisticLikelihoodEst(d, {"coef": 1, "loc": 1}, ["y"])
 sigmoid_response_est = lambda d: SigmoidResponseEst(d, ["y"])
 sigmoid_likelihood_est = lambda d: SigmoidLikelihoodEst(d, {"coef": 1, "loc": 1}, ["y"])
-sigmoid_low_guide = lambda d: SigmoidGuide(d, {"w": 2})  # noqa: E731
-sigmoid_high_guide = lambda d: SigmoidGuide(d, {"w": 2})  # noqa: E731
+sigmoid_guide = lambda d: SigmoidGuide(d, {"w": 2})  # noqa: E731
 sigmoid_random_effect_guide = lambda d: SigmoidGuide(d, {"coef": 1, "loc": 1})
 
 ########################################################################################
@@ -147,7 +146,7 @@ sigmoid_random_effect_guide = lambda d: SigmoidGuide(d, {"coef": 1, "loc": 1})
 
 elbo = TraceEnum_ELBO(strict_enumeration_warning=False).differentiable_loss
 
-NREPS = 2
+NREPS = 6
 
 def zerofn(*args, **kwargs):
     return torch.tensor(0.)
@@ -183,6 +182,23 @@ T = namedtuple("CompareEstimatorsExample", [
 
 TRUTH_TEST_CASES = [
     T(
+        "Sigmoid regression model with random effects",
+        sigmoid_re_model,
+        loc_15d_1n_2p,
+        "y",
+        "loc",
+        [
+            (naive_rainforth_eig, [55*55, 55, 55, True]),
+            (ba_eig_mc,
+             [10, 500, sigmoid_random_effect_guide((NREPS, 15)), optim.Adam({"lr": 0.05}),
+              False, None, 500, 250]),
+            (gibbs_y_re_eig,
+             [10, 3200, sigmoid_response_est((NREPS, 15)), sigmoid_likelihood_est((NREPS, 15)),
+              optim.Adam({"lr": 0.05}), False, None, 500]),
+            (naive_rainforth_eig, [160*160, 160, 160, True]),
+        ]
+    ),
+    T(
         "Sigmoid regression model",
         sigmoid_2p_model,
         loc_15d_1n_2p,
@@ -191,30 +207,12 @@ TRUTH_TEST_CASES = [
         [
             (naive_rainforth_eig, [75*75, 75]),
             (ba_eig_mc,
-             [10, 1600, sigmoid_high_guide((NREPS, 15)), optim.Adam({"lr": 0.05}),
+             [10, 1600, sigmoid_guide((NREPS, 15)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             (gibbs_y_eig,
              [10, 1000, sigmoid_response_est((NREPS, 15)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             (naive_rainforth_eig, [200*200, 200]),
-        ]
-    ),
-    T(
-        "Sigmoid with random effects",
-        sigmoid_re_model,
-        loc_15d_1n_2p,
-        "y",
-        "loc",
-        [
-            #(naive_rainforth_eig, [300*300, 300, 300, True]),
-            (naive_rainforth_eig, [50*50, 50, 50, True]),
-            (ba_eig_mc,
-             [5, 600, sigmoid_random_effect_guide((NREPS, 15)), optim.Adam({"lr": 0.05}),
-              False, None, 500]),
-            (gibbs_y_re_eig,
-             [10, 1000, sigmoid_response_est((NREPS, 15)), sigmoid_likelihood_est((NREPS, 15)),
-              optim.Adam({"lr": 0.05}), False, None, 500]),
-            (naive_rainforth_eig, [150*150, 150, 150, True]),
         ]
     ),
     T(
@@ -332,7 +330,7 @@ CMP_TEST_CASES = [
              [20, 2800, sigmoid_response_est((10, 15)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             (ba_eig_mc,
-             [10, 180, sigmoid_high_guide((10, 15)), optim.Adam({"lr": 0.05}),
+             [10, 180, sigmoid_guide((10, 15)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             #(donsker_varadhan_eig,
             # [400, 80, GuideDV(sigmoid_high_guide(15)),
@@ -665,7 +663,7 @@ CONV_TEST_CASES = [
         barber_agakov_ape,
         linear_model_ground_truth,
         {"num_steps": 800, "num_samples": 40, "optim": optim.Adam({"lr": 0.05}),
-         "guide": sigmoid_high_guide((4,)), "final_num_samples": 1000},
+         "guide": sigmoid_guide((4,)), "final_num_samples": 1000},
         {"eig": False}
     ),
     U(
