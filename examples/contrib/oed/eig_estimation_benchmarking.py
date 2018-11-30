@@ -146,7 +146,7 @@ sigmoid_random_effect_guide = lambda d: SigmoidGuide(d, {"coef": 1, "loc": 1})
 
 elbo = TraceEnum_ELBO(strict_enumeration_warning=False).differentiable_loss
 
-NREPS = 6
+NREPS = 10
 
 def zerofn(*args, **kwargs):
     return torch.tensor(0.)
@@ -195,7 +195,7 @@ TRUTH_TEST_CASES = [
             (gibbs_y_re_eig,
              [10, 3200, sigmoid_response_est((NREPS, 15)), sigmoid_likelihood_est((NREPS, 15)),
               optim.Adam({"lr": 0.05}), False, None, 500]),
-            (naive_rainforth_eig, [160*160, 160, 160, True]),
+            (naive_rainforth_eig, [300*300, 300, 300, True]),
         ]
     ),
     T(
