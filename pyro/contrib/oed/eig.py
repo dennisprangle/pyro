@@ -449,6 +449,7 @@ def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic
         theta_dict = {l: trace.nodes[l]["value"] for l in target_labels}
 
         # Run through q(theta | y, d)
+        # print('theta', theta_dict['loc'][0, 0, 7, ...])
         if initialization:
             guide.initialize(theta_dict, y_dict)
         conditional_guide = pyro.condition(guide, data=theta_dict)

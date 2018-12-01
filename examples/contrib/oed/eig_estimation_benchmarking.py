@@ -146,7 +146,7 @@ sigmoid_random_effect_guide = lambda d: SigmoidGuide(d, {"coef": 1, "loc": 1})
 
 elbo = TraceEnum_ELBO(strict_enumeration_warning=False).differentiable_loss
 
-NREPS = 10
+NREPS = 5
 
 def zerofn(*args, **kwargs):
     return torch.tensor(0.)
@@ -188,14 +188,14 @@ TRUTH_TEST_CASES = [
         "y",
         "loc",
         [
-            (naive_rainforth_eig, [55*55, 55, 55, True]),
+            (naive_rainforth_eig, [60*60, 60, 60, True]),
             (ba_eig_mc,
-             [10, 500, sigmoid_random_effect_guide((NREPS, 15)), optim.Adam({"lr": 0.05}),
+             [10, 900, sigmoid_random_effect_guide((NREPS, 15)), optim.Adam({"lr": 0.05}),
               False, None, 500, 250]),
             (gibbs_y_re_eig,
              [10, 3200, sigmoid_response_est((NREPS, 15)), sigmoid_likelihood_est((NREPS, 15)),
               optim.Adam({"lr": 0.05}), False, None, 500]),
-            (naive_rainforth_eig, [300*300, 300, 300, True]),
+            (naive_rainforth_eig, [160*160, 160, 160, True]),
         ]
     ),
     T(
@@ -525,6 +525,10 @@ def test_eig_ground_truth(title, model, design, observation_label, target_label,
     print(title)
     for n, (estimator, args) in enumerate(arglist):
         y, elapsed = time_eig(estimator, model, lexpand(design, NREPS) if n<(len(arglist)-1) else lexpand(design,1), observation_label, target_label, args)
+        if n < len(arglist) -1:
+            #raise
+            ymore, elmore = time_eig(estimator, model, lexpand(design, NREPS) if n<(len(arglist)-1) else lexpand(design,1), observation_label, target_label, args)
+            y = torch.cat([y, ymore])
         y = y.detach().numpy()
         y[np.isinf(y)] = np.nan
         ys.append(y)

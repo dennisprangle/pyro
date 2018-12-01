@@ -46,14 +46,24 @@ class LinearModelGuide(nn.Module):
 
     def linear_model_formula(self, y, design, target_labels):
 
-        tikhonov_diag = rdiag(self.softplus(self.tikhonov_diag))
+        tikhonov_diag = rdiag(torch.exp(self.tikhonov_diag))
         xtx = torch.matmul(design.transpose(-1, -2), design) + tikhonov_diag
         xtxi = rinverse(xtx, sym=True)
         mu = rmv(xtxi, rmv(design.transpose(-1, -2), y) + self.scaled_prior_mean)
 
+        #print('tikhonov', self.softplus(self.tikhonov_diag))
+        #print('prior mean', self.scaled_prior_mean)
+        #print('st', self.softplus(self.scale_tril['loc']))
+
         # Extract sub-indices
         mu = tensor_to_dict(self.w_sizes, mu, subset=target_labels)
-        scale_tril = {l: rtril(self.scale_tril[l]) for l in target_labels}
+        #print('y', y[0,0,7,...])
+        #print('mu', mu['loc'][0,0,7,...])
+
+
+        scale_tril = {l: rtril(self.softplus(self.scale_tril[l])) for l in target_labels}
+
+        #print('var', scale_tril['loc'][0, 7, ...])
 
         return mu, scale_tril
 
@@ -65,6 +75,9 @@ class LinearModelGuide(nn.Module):
         mu, scale_tril = self.get_params(y_dict, design, target_labels)
 
         for l in target_labels:
+            #print('final mu', mu[l][0,0,7,...])
+            #print('final std', scale_tril[l][0,0,7,...])
+            #print()
             w_dist = dist.MultivariateNormal(mu[l], scale_tril=scale_tril[l])
             pyro.sample(l, w_dist)
 
@@ -102,19 +115,46 @@ class SigmoidGuide(LinearModelGuide):
         y = torch.cat(list(y_dict.values()), dim=-1)
         mask0 = (y <= self.epsilon).squeeze(-1)
         mask1 = (1.-y <= self.epsilon).squeeze(-1)
-        y, y1m = y.clamp(self.epsilon, 1), (1.-y).clamp(self.epsilon, 1)
-        logited = y.log() - y1m.log()
+        # print(y[mask0])
+        # print(y[mask1])
+        # print(y[((y > self.epsilon) & (1.-y > self.epsilon))])
+        logited = y.log() - (1.-y).log()
         y_trans = logited
+        # print(y_trans)
 
         mu, scale_tril = self.linear_model_formula(y_trans, design, target_labels)
+        #print(scale_tril['loc'].shape)
         scale_tril = {l: scale_tril[l].expand(mu[l].shape + (mu[l].shape[-1], )) for l in scale_tril}
+        #print(scale_tril['loc'].shape)
+        #print(self.scale_tril1['loc'].shape)
 
         # Now deal with clipping- values equal to 0 or 1
         for l in mu.keys():
+            #print(mask0[0,0,7])
+            #print(mask1[0,0,7])
+            #print(mask0.shape)
+
+            #print('left', scale_tril[l][mask0, :, :].shape)
+            #print('right', rtril(self.scale_tril0[l].expand(scale_tril[l].shape))[mask0, :, :].shape)
+            #print(scale_tril['loc'][0,0,7,...])
+            # scale_tril[l][mask0, :, :] = self.scale_tril0[l].expand(scale_tril[l].shape)[mask0, :, :]
+            scale_tril[l] = scale_tril[l] - scale_tril[l]*rexpand(mask0.float(), 1, 1)
+            #print(rexpand(mask0.float(), 1, 1)[0,0,7,...])
+            #print(scale_tril[l].shape)
+            #print(rexpand(mask0.float(), 1, 1).shape)
+            #print((scale_tril[l]*rexpand(mask0.float(), 1, 1)).shape)
+            #print('should be scalar', (scale_tril[l]*rexpand(mask0.float(), 1, 1))[0,0,7,...])
+            #print(scale_tril['loc'][0,0,7,...])
+            scale_tril[l] = scale_tril[l] + self.scale_tril0[l]*rexpand(mask0.float(), 1, 1)
+            #print(scale_tril)
+            #print(scale_tril['loc'][0,0,7,...])
+            # scale_tril[l][mask1, :, :] = self.scale_tril1[l].expand(scale_tril[l].shape)[mask1, :, :]
+            scale_tril[l] = scale_tril[l] - scale_tril[l]*rexpand(mask1.float(), 1, 1)
+            scale_tril[l] = scale_tril[l] + self.scale_tril1[l]*rexpand(mask1.float(), 1, 1)
+            #print(scale_tril['loc'][0,0,7,...])
+
             mu[l][mask0, :] = self.mu0[l].expand(mu[l].shape)[mask0, :]
             mu[l][mask1, :] = self.mu1[l].expand(mu[l].shape)[mask1, :]
-            scale_tril[l][mask0, :, :] = rtril(self.scale_tril0[l].expand(scale_tril[l].shape))[mask0, :, :]
-            scale_tril[l][mask1, :, :] = rtril(self.scale_tril1[l].expand(scale_tril[l].shape))[mask1, :, :]
 
         return mu, scale_tril
 
@@ -264,9 +304,9 @@ class SigmoidLikelihoodEst(SigmoidResponseEst):
         pyro.module("gibbs_y_re_guide", self)
 
         for l in observation_labels:
-            if torch.isnan(self.mu[l]).any():
+            if torch.isnan(self.mu[l]).any() or (self.mu[l] == float('-inf')).any() or (self.mu[l] == float('inf')).any():
                 self.mu[l].data[...] = 0.
-            if torch.isnan(self.sigma[l]).any():
+            if torch.isnan(self.sigma[l]).any() or (self.mu[l] == float('-inf')).any() or (self.mu[l] == float('inf')).any():
                 self.sigma[l].data[...] = 20.
             self.sample_sigmoid(l, centre + self.mu[l], self.sigma[l])
 
