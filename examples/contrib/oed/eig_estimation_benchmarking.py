@@ -105,7 +105,7 @@ normal_re = group_linear_model(torch.tensor(0.), torch.tensor([10., .1]), torch.
                                torch.ones(10), torch.tensor(1.), coef1_label="ab", coef2_label="re")
 group_2p_guide = group_normal_guide(torch.tensor(1.), (1,), (1,))
 group_2p_ba_guide = lambda d: LinearModelGuide(d, {"w1": 1, "w2": 1})  # noqa: E731
-nig_2p_linear_model_3_2 = normal_inverse_gamma_linear_model(torch.tensor(0.), torch.tensor([.1, 10.]),
+nig_2p_linear_model_3_2 = normal_inverse_gamma_linear_model(torch.tensor(0.), torch.tensor([.1, 1./1.9]),
                                                             torch.tensor([3.]), torch.tensor([2.]))
 nig_2p_linear_model_15_14 = normal_inverse_gamma_linear_model(torch.tensor(0.), torch.tensor([.1, 10.]),
                                                               torch.tensor([15.]), torch.tensor([14.]))
@@ -147,7 +147,7 @@ sigmoid_random_effect_guide = lambda d: SigmoidGuide(d, {"coef": 1, "loc": 1})
 
 elbo = TraceEnum_ELBO(strict_enumeration_warning=False).differentiable_loss
 
-NREPS = 2
+NREPS = 4
 
 def zerofn(*args, **kwargs):
     return torch.tensor(0.)
@@ -183,18 +183,18 @@ T = namedtuple("CompareEstimatorsExample", [
 
 TRUTH_TEST_CASES = [
     T(
-        "Normal inverse gamma model, information on w, tau",
+        "Normal inverse gamma model",
         nig_2p_linear_model_3_2,
         AB_test_11d_10n_2p,
         "y",
         ["w", "tau"],
         [
-            (naive_rainforth_eig, [110*110, 110]),
+            #(naive_rainforth_eig, [110*110, 110]),
             (ba_eig_mc,
-             [10, 800, nig_2p_ba_mf_guide((NREPS, 11)), optim.Adam({"lr": 0.05}),
+             [10, 500, nig_2p_ba_mf_guide((NREPS, 11)), optim.Adam({"lr": 0.05}),
               False, None, 500]),
             (gibbs_y_eig,
-             [10, 1200, normal_response_est((NREPS, 11)),
+             [10, 1800, normal_response_est((NREPS, 11)),
               optim.Adam({"lr": 0.05}), False, None, 500]),
             # For validating the ground truth-
             # (ba_eig_mc,
@@ -320,6 +320,27 @@ TRUTH_TEST_CASES = [
 ]
 
 CMP_TEST_CASES = [
+    T(
+        "Normal inverse gamma model, information on w, tau",
+        nig_2p_linear_model_3_2,
+        AB_test_11d_10n_2p,
+        "y",
+        ["w", "tau"],
+        [
+            (naive_rainforth_eig, [110*110, 110]),
+            (ba_eig_mc,
+             [10, 800, nig_2p_ba_mf_guide((NREPS, 11)), optim.Adam({"lr": 0.05}),
+              False, None, 500]),
+            (gibbs_y_eig,
+             [10, 1200, normal_response_est((NREPS, 11)),
+              optim.Adam({"lr": 0.05}), False, None, 500]),
+            # For validating the ground truth-
+            # (ba_eig_mc,
+            #  [20, 1300, nig_2p_ba_guide((1, 11)), optim.Adam({"lr": 0.05}),
+            #   False, None, 500]),
+            (normal_inverse_gamma_ground_truth, [])
+        ]
+    ),
     T(
         "Sigmoid regression model",
         sigmoid_2p_model,
@@ -543,13 +564,13 @@ def test_eig_ground_truth(title, model, design, observation_label, target_label,
         import matplotlib.pyplot as plt
         plt.figure(figsize=(10, 5))
         x = np.arange(0, means[0].shape[0])
-        for n, (y, s) in enumerate(zip(means[:-1], sds[:-1])):
-            plt.errorbar(x+n*ep, y-means[-1], yerr=s, linestyle='-', marker=markers[n], markersize=10)
+        for n, (y, s) in enumerate(zip(means, sds)):
+            plt.errorbar(x+n*ep, y, yerr=s, linestyle='-', marker=markers[n], markersize=10)
         plt.title(title, fontsize=18)
-        plt.legend(names, loc=2, fontsize=16)
+        plt.legend(names, loc=4, fontsize=16)
         plt.axhline(color='k')
         plt.xlabel("Design", fontsize=18)
-        plt.ylabel("EIG estimation error", fontsize=18)
+        plt.ylabel("EIG estimate", fontsize=18)
         plt.show()
 
         # newx = np.arange(0, len(elapseds))
