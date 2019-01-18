@@ -79,3 +79,32 @@ class LinearModelClassifier(nn.Module):
 
         a = rmv(rtril(self.bilinear), y - self.offset)
         return self.bias - rvv(a, a)
+
+
+class SigmoidLocationClassifier(nn.Module):
+
+    def __init__(self, d, ntheta, w_sizes, y_sizes, multiplier, scale_tril_init=3., **kwargs):
+        super(SigmoidLocationClassifier, self).__init__()
+        n = sum(y_sizes.values())
+        self.w_sizes = w_sizes
+        self.bias = nn.Parameter(torch.zeros(ntheta, *d))
+        self.bias0 = nn.Parameter(torch.zeros(ntheta, *d))
+        self.bias1 = nn.Parameter(torch.zeros(ntheta, *d))
+        self.offset = nn.Parameter(torch.zeros(ntheta, *d, n))
+        self.bilinear = nn.Parameter(scale_tril_init * lexpand(torch.eye(n), ntheta, *d))
+        self.multiplier = multiplier
+
+        # TODO read from torch float specs
+        self.epsilon = torch.tensor(2 ** -24)
+
+    def forward(self, design, trace, observation_labels, target_labels):
+        y_dict = {l: trace.nodes[l]["value"] for l in observation_labels}
+        test_point = rvv(design, self.multiplier)
+        y = torch.cat(list(y_dict.values()), dim=-1)
+        mask0 = (y <= self.epsilon).squeeze(-1).float()
+        mask1 = (1. - y <= self.epsilon).squeeze(-1).float()
+        y_trans = y.log() - (1. - y).log()
+        eta = test_point - y_trans
+
+        a = rmv(rtril(self.bilinear), eta - self.offset)
+        return self.bias - rvv(a, a) + mask0 * self.bias0 + mask1 * self.bias1

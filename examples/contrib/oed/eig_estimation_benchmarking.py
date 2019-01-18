@@ -28,7 +28,9 @@ from pyro.contrib.glmm.guides import (
     LogisticMarginalGuide, LogisticLikelihoodGuide, SigmoidMarginalGuide, SigmoidLikelihoodGuide,
     NormalMarginalGuide, NormalLikelihoodGuide, SigmoidLocationPosteriorGuide
 )
-from pyro.contrib.glmm.classifiers import LinearModelAmortizedClassifier, LinearModelBootstrapClassifier, LinearModelClassifier
+from pyro.contrib.glmm.classifiers import (
+    LinearModelAmortizedClassifier, LinearModelBootstrapClassifier, LinearModelClassifier, SigmoidLocationClassifier
+)
 
 """
 Expected information gain estimation benchmarking
@@ -293,7 +295,7 @@ CASES = [
     # Sigmoid regression location finding
     #############################################################################################################
     Case(
-        "Sigmoid regression model",
+        "Location finding with a sigmoid model",
         (sigmoid_location_model, {"loc_mean": torch.tensor([-20.]),
                                   "loc_sd": torch.tensor([20.]),
                                   "multiplier": torch.tensor([1.]),
@@ -302,15 +304,13 @@ CASES = [
         "y",
         "loc",
         [
-            (nmc, {"N": 50*50, "M": 50}),
+            (nmc, {"N": 60*60, "M": 60}),
             (posterior_mc,
-             {"num_samples": 10, "num_steps": 500, "final_num_samples": 500,
+             {"num_samples": 10, "num_steps": 1000, "final_num_samples": 500,
               "guide": (SigmoidLocationPosteriorGuide, {"prior_mean": torch.tensor([-20.]),
                                                         "scale_tril_init": 20.,
                                                         "multiplier": torch.tensor([1.])}),
-               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            # # TODO why is iwae performance here worse than NMC? Must be a badly chosen posterior
-            # # Yes look at the prior means!
+              "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (iwae,
              {"num_samples": [10, 1], "num_steps": 200, "final_num_samples": [100, 50],
               "guide": (SigmoidLocationPosteriorGuide, {"prior_mean": torch.tensor([-20.]),
@@ -320,6 +320,11 @@ CASES = [
             (marginal,
              {"num_samples": 10, "num_steps": 2000, "final_num_samples": 500,
               "guide": (SigmoidMarginalGuide, {"mu_init": 0., "sigma_init": 20.}),
+              "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
+            (lfire,
+             {"num_theta_samples": 60, "num_y_samples": 2, "num_steps": 500, "final_num_samples": 100,
+              "classifier": (SigmoidLocationClassifier, {"scale_tril_init": 1 / 20., "ntheta": 60,
+                                                         "multiplier": torch.tensor([1.])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
         ],
         ["sigmoid", "no_re", "location", "explicit_grid"]

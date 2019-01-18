@@ -5,6 +5,7 @@ from torch.distributions.utils import _sum_rightmost
 from pyro.distributions.torch_distribution import TorchDistribution
 
 
+# Deprecated
 class CensoredDistribution(TorchDistribution):
 
     def __init__(self, base_distribution, upper_lim=float('inf'), lower_lim=float('-inf'), validate_args=None):

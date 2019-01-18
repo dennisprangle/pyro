@@ -69,6 +69,7 @@ class LinearModelPosteriorGuide(nn.Module):
             pyro.sample(l, w_dist)
 
 
+# Deprecated
 class SigmoidPosteriorGuide(LinearModelPosteriorGuide):
 
     def __init__(self, d, w_sizes, scale_tril_init=3., mu_init=0., **kwargs):
