@@ -2,6 +2,7 @@ from __future__ import absolute_import, division, print_function
 
 from collections import OrderedDict
 import torch
+import pyro
 
 
 def get_indices(labels, sizes=None, tensors=None):
@@ -63,3 +64,9 @@ def rdiag(v):
 def rtril(M, diagonal=0):
     """Takes the lower-triangular of the rightmost 2 dimensions."""
     return M*torch.tril(torch.ones(M.shape[-2], M.shape[-1]), diagonal=diagonal)
+
+
+def iter_iaranges_to_shape(shape):
+    # Go backwards (right to left)
+    for i, s in enumerate(shape[::-1]):
+        yield pyro.iarange("iarange_" + str(i), s)

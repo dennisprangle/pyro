@@ -14,8 +14,8 @@ import pyro
 import pyro.distributions as dist
 from pyro import optim
 from pyro import poutine
-from pyro.contrib.util import rmv, rexpand, lexpand, rtril
-from pyro.contrib.glmm import iter_iaranges_to_shape, broadcast_cat
+from pyro.contrib.util import rmv, rexpand, lexpand, rtril, iter_iaranges_to_shape
+from pyro.contrib.glmm import broadcast_cat
 from pyro.contrib.oed.eig import naive_rainforth_eig, gibbs_y_eig, gibbs_y_re_eig, elbo_learn
 from pyro.contrib.glmm.guides import SigmoidMarginalGuide, SigmoidLikelihoodGuide
 

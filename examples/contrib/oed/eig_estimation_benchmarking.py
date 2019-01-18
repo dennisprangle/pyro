@@ -31,6 +31,7 @@ from pyro.contrib.glmm.guides import (
 from pyro.contrib.glmm.classifiers import (
     LinearModelAmortizedClassifier, LinearModelBootstrapClassifier, LinearModelClassifier, SigmoidLocationClassifier
 )
+from examples.contrib.oed.nonlinear_regression import sinusoid_regression, gk_regression
 
 """
 Expected information gain estimation benchmarking
@@ -87,7 +88,11 @@ X_circle_5d_1n_2p = torch.stack([item_thetas_small.cos(), -item_thetas_small.sin
 # Location finding designs
 loc_15d_1n_2p = torch.stack([torch.linspace(-30., 30., 15), torch.ones(15)], dim=-1).unsqueeze(-2)
 loc_4d_1n_2p = torch.tensor([[-5., 1], [-4.9, 1.], [4.9, 1], [5., 1.]]).unsqueeze(-2)
-loc_15d_1n_1p = torch.linspace(-80., 80., 20).unsqueeze(-1).unsqueeze(-1)
+loc_20d_1n_1p = torch.linspace(-80., 80., 20).unsqueeze(-1).unsqueeze(-1)
+
+# Nonlinear regression
+line_40d_1p = torch.linspace(0., 4*np.pi, 40).unsqueeze(-1).unsqueeze(-1)
+short_line_20d_1p = torch.linspace(-1., 1., 20).unsqueeze(-1).unsqueeze(-1)
 
 ########################################################################################
 # Aux
@@ -300,7 +305,7 @@ CASES = [
                                   "loc_sd": torch.tensor([20.]),
                                   "multiplier": torch.tensor([1.]),
                                   "observation_sd": torch.tensor(1.)}),
-        loc_15d_1n_1p,
+        loc_20d_1n_1p,
         "y",
         "loc",
         [
@@ -460,6 +465,65 @@ CASES = [
             (truth_lm, {})
         ],
         ["lm", "ground_truth", "re", "circle", "small_n"]
+    ),
+    #############################################################################################################
+    # Nonlinear regression
+    #############################################################################################################
+    Case(
+        "Nonlinear regression with sinusoid",
+        (sinusoid_regression, {"amplitude_alpha": torch.tensor(3.),
+                               "amplitude_beta": torch.tensor(3.),
+                               "shift_mean": torch.tensor(0.),
+                               "shift_sd": torch.tensor(.1),
+                               "observation_sd": torch.tensor(.025)}),
+        line_20d_1p,
+        "y",
+        ["amplitude", "shift"],
+        [
+            (nmc, {"N": 100*100, "M": 100}),
+            # (posterior_lm,
+            #  {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500,
+            #   "guide": (LinearModelPosteriorGuide, {"tikhonov_init": -2., "scale_tril_init": 3.}),
+            #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
+            # (iwae,
+            #  {"num_samples": 10, "num_steps": 800, "final_num_samples": 500, "M": 1,
+            #   "guide": (LinearModelPosteriorGuide, {"tikhonov_init": -2., "scale_tril_init": 3.}),
+            #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
+            (marginal,
+             {"num_samples": 10, "num_steps": 2000, "final_num_samples": 500,
+              "guide": (NormalMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
+              "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
+            # (truth_lm, {})
+        ],
+        ["no_re", "nonlinear", "sinusoid"]
+    ),
+    Case(
+        "Nonlinear regression with Gaussian kernel",
+        (gk_regression, {"centre_mean": torch.tensor([1.]),
+                         "centre_scale_tril": torch.tensor([[.1]]),
+                         "scale_alpha": torch.tensor(.0001),
+                         "scale_beta": torch.tensor(0.01),
+                         "observation_sd": torch.tensor(2.)}),
+        short_line_20d_1p,
+        "y",
+        ["centre", "scale"],
+        [
+            (nmc, {"N": 100*100, "M": 100}),
+            # (posterior_lm,
+            #  {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500,
+            #   "guide": (LinearModelPosteriorGuide, {"tikhonov_init": -2., "scale_tril_init": 3.}),
+            #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
+            # (iwae,
+            #  {"num_samples": 10, "num_steps": 800, "final_num_samples": 500, "M": 1,
+            #   "guide": (LinearModelPosteriorGuide, {"tikhonov_init": -2., "scale_tril_init": 3.}),
+            #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
+            (marginal,
+             {"num_samples": 10, "num_steps": 2000, "final_num_samples": 500,
+              "guide": (NormalMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
+              "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
+            # (truth_lm, {})
+        ],
+        ["no_re", "nonlinear", "gk"]
     ),
 ]
 

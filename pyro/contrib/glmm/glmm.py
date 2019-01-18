@@ -10,7 +10,7 @@ from torch.distributions.utils import _broadcast_shape
 
 import pyro
 import pyro.distributions as dist
-from pyro.contrib.util import rmv, rvv
+from pyro.contrib.util import rmv, rvv, iter_iaranges_to_shape
 
 try:
     from contextlib import ExitStack  # python 3
@@ -452,12 +452,6 @@ def analytic_posterior_cov(prior_cov, x, obs_sd):
     posterior_cov = prior_cov - torch.inverse(
         SigmaXX + (obs_sd**2)*torch.eye(p)).mm(SigmaXX.mm(prior_cov))
     return posterior_cov
-
-
-def iter_iaranges_to_shape(shape):
-    # Go backwards (right to left)
-    for i, s in enumerate(shape[::-1]):
-        yield pyro.iarange("iarange_" + str(i), s)
 
 
 def broadcast_cat(ws):
