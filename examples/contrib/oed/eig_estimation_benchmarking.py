@@ -475,8 +475,8 @@ CASES = [
                                "amplitude_beta": torch.tensor(3.),
                                "shift_mean": torch.tensor(0.),
                                "shift_sd": torch.tensor(.1),
-                               "observation_sd": torch.tensor(.025)}),
-        line_20d_1p,
+                               "observation_sd": torch.tensor(.01)}),
+        line_40d_1p,
         "y",
         ["amplitude", "shift"],
         [
@@ -491,11 +491,10 @@ CASES = [
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (marginal,
              {"num_samples": 10, "num_steps": 2000, "final_num_samples": 500,
-              "guide": (NormalMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
+              "guide": (NormalMarginalGuide, {"mu_init": 0., "sigma_init": 1.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            # (truth_lm, {})
         ],
-        ["no_re", "nonlinear", "sinusoid"]
+        ["no_re", "nonlinear", "sinusoid", "explicit_grid"]
     ),
     Case(
         "Nonlinear regression with Gaussian kernel",
@@ -521,7 +520,6 @@ CASES = [
              {"num_samples": 10, "num_steps": 2000, "final_num_samples": 500,
               "guide": (NormalMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            # (truth_lm, {})
         ],
         ["no_re", "nonlinear", "gk"]
     ),
