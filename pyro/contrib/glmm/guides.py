@@ -114,6 +114,47 @@ class SigmoidPosteriorGuide(LinearModelPosteriorGuide):
         return mu, scale_tril
 
 
+class SigmoidLocationPosteriorGuide(nn.Module):
+
+    def __init__(self, d, w_sizes, scale_tril_init, multiplier, prior_mean, **kwargs):
+        assert len(w_sizes) == 1
+        super(SigmoidLocationPosteriorGuide, self).__init__()
+        self.label, p = list(w_sizes.items())[0]
+
+        self.multiplier = multiplier
+        self.weights = nn.Parameter(torch.zeros(*d, p))
+        self.mean_offsets = nn.ParameterList([nn.Parameter(torch.zeros(*d, p)), nn.Parameter(torch.zeros(*d, p))])
+        self.scale_trils = nn.ParameterList([nn.Parameter(scale_tril_init * lexpand(torch.eye(p), *d)),
+                                             nn.Parameter(scale_tril_init * lexpand(torch.eye(p), *d)),
+                                             nn.Parameter(scale_tril_init * lexpand(torch.eye(p), *d))])
+        self.prior_mean = prior_mean
+
+        # TODO read from torch float specs
+        self.epsilon = torch.tensor(2 ** -24)
+
+    def forward(self, y_dict, design, observation_labels, target_labels):
+        test_point = rvv(design, self.multiplier)
+        # For values in (0, 1), we can perfectly invert the transformation
+        y = torch.cat(list(y_dict.values()), dim=-1)
+        mask0 = (y <= self.epsilon).squeeze(-1)
+        mask1 = (1. - y <= self.epsilon).squeeze(-1)
+        y_trans = y.log() - (1. - y).log()
+        eta = test_point - y_trans
+
+        mu = self.weights * eta + (1 - self.weights) * self.prior_mean
+        scale_tril = self.scale_trils[1]
+
+        mu = mu + self.mean_offsets[0] * rexpand(mask0.float(), 1) + self.mean_offsets[1] * rexpand(mask1.float(), 1)
+        scale_tril = scale_tril + (-scale_tril + self.scale_trils[0]) * rexpand(mask0.float(), 1, 1)
+        scale_tril = scale_tril + (-scale_tril + self.scale_trils[2]) * rexpand(mask1.float(), 1, 1)
+        scale_tril = rtril(scale_tril)
+
+        pyro.module("posterior_guide", self)
+
+        w_dist = dist.MultivariateNormal(mu, scale_tril=scale_tril)
+        pyro.sample(self.label, w_dist)
+
+
 class LogisticPosteriorGuide(LinearModelPosteriorGuide):
 
     def __init__(self, d, w_sizes, scale_tril_init=3., mu_init=0., **kwargs):

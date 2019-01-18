@@ -709,9 +709,10 @@ def iwae_eig_loss(model, guide, observation_labels, target_labels):
         model_trace = poutine.trace(modelp).get_trace(reexpanded_design)
         model_trace.compute_log_prob()
 
-        terms = sum(guide_trace.nodes[l]["log_prob"] for l in target_labels).sum(0)/M
-        terms -= sum(model_trace.nodes[l]["log_prob"] for l in target_labels).sum(0)/M
-        terms -= sum(model_trace.nodes[l]["log_prob"] for l in observation_labels).sum(0)/M
+        terms = -sum(guide_trace.nodes[l]["log_prob"] for l in target_labels)
+        terms += sum(model_trace.nodes[l]["log_prob"] for l in target_labels)
+        terms += sum(model_trace.nodes[l]["log_prob"] for l in observation_labels)
+        terms = -logsumexp(terms, 0) + np.log(M)
 
         # At eval time, add p(y | theta, d) terms
         if evaluation:
@@ -740,8 +741,9 @@ def logsumexp(inputs, dim=None, keepdim=False):
         dim = 0
     s, _ = torch.max(inputs, dim=dim, keepdim=True)
     j = (inputs - s).exp()
+    # This fix breaks gradients through logsumexp
     # Fix so that exp(-inf) = 0. rather than nan.
-    j[(inputs - s) == float('-inf')] = 0.
+    # j[(inputs - s) == float('-inf')] = 0.
     outputs = s + j.sum(dim=dim, keepdim=True).log()
     if not keepdim:
         outputs = outputs.squeeze(dim)

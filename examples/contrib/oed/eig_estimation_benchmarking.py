@@ -21,12 +21,12 @@ from pyro.contrib.oed.util import (
 )
 from pyro.contrib.glmm import (
     group_assignment_matrix, normal_inverse_gamma_linear_model, sigmoid_model_fixed, known_covariance_linear_model,
-    logistic_regression_model
+    logistic_regression_model, sigmoid_location_model
 )
 from pyro.contrib.glmm.guides import (
     LinearModelPosteriorGuide, NormalInverseGammaPosteriorGuide, SigmoidPosteriorGuide, GuideDV, LogisticPosteriorGuide,
     LogisticMarginalGuide, LogisticLikelihoodGuide, SigmoidMarginalGuide, SigmoidLikelihoodGuide,
-    NormalMarginalGuide, NormalLikelihoodGuide
+    NormalMarginalGuide, NormalLikelihoodGuide, SigmoidLocationPosteriorGuide
 )
 from pyro.contrib.glmm.classifiers import LinearModelAmortizedClassifier, LinearModelBootstrapClassifier, LinearModelClassifier
 
@@ -85,6 +85,7 @@ X_circle_5d_1n_2p = torch.stack([item_thetas_small.cos(), -item_thetas_small.sin
 # Location finding designs
 loc_15d_1n_2p = torch.stack([torch.linspace(-30., 30., 15), torch.ones(15)], dim=-1).unsqueeze(-2)
 loc_4d_1n_2p = torch.tensor([[-5., 1], [-4.9, 1.], [4.9, 1], [5., 1.]]).unsqueeze(-2)
+loc_15d_1n_1p = torch.linspace(-80., 80., 20).unsqueeze(-1).unsqueeze(-1)
 
 ########################################################################################
 # Aux
@@ -293,31 +294,32 @@ CASES = [
     #############################################################################################################
     Case(
         "Sigmoid regression model",
-        (sigmoid_model_fixed, {"coef_means": torch.tensor([1., 10.]),
-                               "coef_sds": torch.tensor([.25, 8.]),
-                               "observation_sd": torch.tensor(2.)}),
-        loc_15d_1n_2p,
+        (sigmoid_location_model, {"loc_mean": torch.tensor([-20.]),
+                                  "loc_sd": torch.tensor([20.]),
+                                  "multiplier": torch.tensor([1.]),
+                                  "observation_sd": torch.tensor(1.)}),
+        loc_15d_1n_1p,
         "y",
-        "w",
+        "loc",
         [
-            (nmc, {"N": 80*80, "M": 80}),
+            (nmc, {"N": 50*50, "M": 50}),
             (posterior_mc,
-             {"num_samples": 10, "num_steps": 1500, "final_num_samples": 500,
-              "guide": (SigmoidPosteriorGuide, {"mu_init": torch.tensor([1., 10.]),
-                                                "scale_tril_init": torch.tensor([[1., 0.], [0., 20.]]),
-                                                "tikhonov_init": -2.}),
-              "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            # TODO why is iwae performance here worse than NMC? Must be a badly chosen posterior
-            # Yes look at the prior means!
+             {"num_samples": 10, "num_steps": 500, "final_num_samples": 500,
+              "guide": (SigmoidLocationPosteriorGuide, {"prior_mean": torch.tensor([-20.]),
+                                                        "scale_tril_init": 20.,
+                                                        "multiplier": torch.tensor([1.])}),
+               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
+            # # TODO why is iwae performance here worse than NMC? Must be a badly chosen posterior
+            # # Yes look at the prior means!
             (iwae,
-             {"num_samples": [5, 1], "num_steps": 1000, "final_num_samples": [20*20, 60],
-              "guide": (SigmoidPosteriorGuide, {"mu_init": torch.tensor([1., 10.]),
-                                                "scale_tril_init": torch.tensor([[1., 0.], [0., 20.]]),
-                                                "tikhonov_init": -2.}),
+             {"num_samples": [10, 1], "num_steps": 200, "final_num_samples": [100, 50],
+              "guide": (SigmoidLocationPosteriorGuide, {"prior_mean": torch.tensor([-20.]),
+                                                        "scale_tril_init": 20.,
+                                                        "multiplier": torch.tensor([1.])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (marginal,
-             {"num_samples": 10, "num_steps": 3000, "final_num_samples": 500,
-              "guide": (SigmoidMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
+             {"num_samples": 10, "num_steps": 2000, "final_num_samples": 500,
+              "guide": (SigmoidMarginalGuide, {"mu_init": 0., "sigma_init": 20.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
         ],
         ["sigmoid", "no_re", "location", "explicit_grid"]
