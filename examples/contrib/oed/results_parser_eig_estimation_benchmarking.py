@@ -85,6 +85,7 @@ def main(fnames, findices, plot):
     else:
         print(reformed)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="EIG estimation benchmarking experiment design results parser")
     parser.add_argument("--fnames", nargs="?", default="", type=str)

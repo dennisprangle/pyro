@@ -106,18 +106,18 @@ Estimator = namedtuple("EIGEstimator",[
     "method"
 ])
 
-truth_lm = Estimator("Ground truth", ["truth", "lm", "standard"], linear_model_ground_truth)
-truth_nigam = Estimator("Ground truth", ["truth", "nigam", "standard"], normal_inverse_gamma_ground_truth)
-nmc = Estimator("Nested Monte Carlo", ["nmc", "naive_rainforth", "standard"], naive_rainforth_eig)
-nnmc = Estimator("Non-nested Monte Carlo", ["nnmc", "accelerated_rainforth", "standard"], accelerated_rainforth_eig)
-posterior_lm = Estimator("Posterior", ["posterior", "gibbs", "ba", "lm", "standard"], ba_eig_lm)
-posterior_mc = Estimator("Posterior", ["posterior", "gibbs", "ba", "standard"], ba_eig_mc)
-marginal = Estimator("Marginal", ["marginal", "gibbs", "standard"], gibbs_y_eig)
-marginal_re = Estimator("Marginal + likelihood", ["marginal_re", "marginal_likelihood", "gibbs", "standard"],
+truth_lm = Estimator("Ground truth", ["truth", "lm", "explicit"], linear_model_ground_truth)
+truth_nigam = Estimator("Ground truth", ["truth", "nigam", "explicit"], normal_inverse_gamma_ground_truth)
+nmc = Estimator("Nested Monte Carlo", ["nmc", "naive_rainforth", "explicit"], naive_rainforth_eig)
+nnmc = Estimator("Non-nested Monte Carlo", ["nnmc", "accelerated_rainforth", "explicit"], accelerated_rainforth_eig)
+posterior_lm = Estimator("Posterior", ["posterior", "gibbs", "ba", "lm", "explicit", "implicit"], ba_eig_lm)
+posterior_mc = Estimator("Posterior", ["posterior", "gibbs", "ba", "explicit", "implicit"], ba_eig_mc)
+marginal = Estimator("Marginal", ["marginal", "gibbs", "explicit"], gibbs_y_eig)
+marginal_re = Estimator("Marginal + likelihood", ["marginal_re", "marginal_likelihood", "gibbs", "implicit"],
                         gibbs_y_re_eig)
 alfire = Estimator("Amortized LFIRE", ["alfire"], amortized_lfire_eig)
-lfire = Estimator("LFIRE", ["lfire"], lfire_eig)
-iwae = Estimator("IWAE", ["iwae"], iwae_eig)
+lfire = Estimator("LFIRE", ["lfire", "implicit"], lfire_eig)
+iwae = Estimator("IWAE", ["iwae", "explicit"], iwae_eig)
 
 Case = namedtuple("EIGBenchmarkingCase", [
     "title",
@@ -143,21 +143,21 @@ CASES = [
         "y",
         ["w", "tau"],
         [
-            (nmc, {"N": 120*120, "M": 120}),
+            (nmc, {"N": 132*132, "M": 132}),
             (posterior_mc,
-             {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500,
+             {"num_samples": 10, "num_steps": 2200, "final_num_samples": 500,
               "guide": (NormalInverseGammaPosteriorGuide, {"mf": True, "correct_gamma": False, "alpha_init": 3.,
                                                            "b0_init": 2., "tikhonov_init": -2.,
                                                            "scale_tril_init": torch.tensor([[10., 0.], [0., 1/.55]])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (iwae,
-             {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500, "M": 1,
+             {"num_samples": [10, 1], "num_steps": 1300, "final_num_samples": [500, 1],
               "guide": (NormalInverseGammaPosteriorGuide, {"mf": True, "correct_gamma": False, "alpha_init": 3.,
                                                            "b0_init": 2., "tikhonov_init": -2.,
                                                            "scale_tril_init": torch.tensor([[10., 0.], [0., 1/.55]])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (marginal,
-             {"num_samples": 10, "num_steps": 1500, "final_num_samples": 500,
+             {"num_samples": 10, "num_steps": 2200, "final_num_samples": 500,
               "guide": (NormalMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (lfire,
