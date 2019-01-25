@@ -53,6 +53,7 @@ def main(fnames, findices, plot):
         raise ValueError("No matching files found")
 
     results_dict = defaultdict(lambda: defaultdict(dict))
+    designs = {}
     for fname in fnames:
         with open(fname, 'rb') as results_file:
             try:
@@ -62,6 +63,7 @@ def main(fnames, findices, plot):
                     estimator = results['estimator_name']
                     run_num = results['run_num']
                     results_dict[case][estimator][run_num] = results['surface']
+                    designs[case] = results['design']
             except EOFError:
                 continue
 
@@ -77,13 +79,13 @@ def main(fnames, findices, plot):
         for case, d in reformed.items():
             plt.figure(figsize=(10, 5))
             for k, (lower, centre, upper) in d.items():
-                x = np.arange(0, centre.shape[0])
+                x = designs[case][:,0,0].numpy()
                 plt.plot(x, centre, linestyle='-', markersize=6, color=COLOURS[k], marker='o')
                 plt.fill_between(x, upper, lower, color=COLOURS[k]+[.2])
             plt.title(case, fontsize=18)
-            plt.legend(d.keys(), loc=1, fontsize=16)
-            plt.xlabel("Design", fontsize=18)
-            plt.ylabel("EIG", fontsize=18)
+            plt.legend(d.keys(), loc=2, fontsize=14)
+            plt.xlabel("Design $d$", fontsize=18)
+            plt.ylabel("EIG estimate", fontsize=18)
             plt.xticks(fontsize=14)
             plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
             plt.yticks(fontsize=14)
