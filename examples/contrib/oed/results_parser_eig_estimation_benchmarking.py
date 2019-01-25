@@ -33,6 +33,12 @@ def upper_lower(array):
     return lower, centre, upper
 
 
+def bias_variance(array):
+    mean = array.mean(0).mean(0)
+    var = (array.std(0)**2).mean(0)
+    return mean, var
+
+
 def main(fnames, findices, plot):
     fnames = fnames.split(",")
     findices = map(int, findices.split(","))
@@ -76,7 +82,7 @@ def main(fnames, findices, plot):
                 plt.fill_between(x, upper, lower, color=COLOURS[k]+[.2])
             plt.title(case, fontsize=18)
             plt.legend(d.keys(), loc=1, fontsize=16)
-            plt.xlabel("Step", fontsize=18)
+            plt.xlabel("Design", fontsize=18)
             plt.ylabel("EIG", fontsize=18)
             plt.xticks(fontsize=14)
             plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -84,6 +90,13 @@ def main(fnames, findices, plot):
             plt.show()
     else:
         print(reformed)
+        # truth = {case: torch.cat([d["Ground truth"][run] for run in d["Ground truth"]]) for case, d in results_dict.items()}
+        # bias_var = {case: OrderedDict([
+        #                 (estimator, bias_variance((torch.cat([v[run] for run in v]) - truth[case]).detach().numpy()))
+        #                 for estimator, v in sorted(d.items())])
+        #             for case, d in results_dict.items()
+        #             }
+        # print(bias_var)
 
 
 if __name__ == "__main__":
