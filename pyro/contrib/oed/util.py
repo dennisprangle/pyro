@@ -6,7 +6,7 @@ import math
 import pyro
 from pyro.contrib.util import get_indices, lexpand
 from pyro.contrib.glmm import analytic_posterior_cov
-from pyro.contrib.oed.eig import barber_agakov_ape, vi_ape
+from pyro.contrib.oed.eig import barber_agakov_ape, vi_ape, laplace_vi_ape
 
 
 def normal_inverse_gamma_ground_truth(model, design, observation_labels, target_labels, eig=True):
@@ -66,6 +66,26 @@ def vi_eig_lm(model, design, observation_labels, target_labels, *args, **kwargs)
     ape = vi_ape(model, design, observation_labels, target_labels, *args, **kwargs)
     prior_entropy = lm_H_prior(model, design, observation_labels, target_labels)
     return prior_entropy - ape
+
+
+def vi_eig_mc(model, design, observation_labels, target_labels, *args, **kwargs):
+    # Compute the prior entropy by Monte Carlo, then uses vi_ape
+    if "num_hprior_samples" in kwargs:
+        hprior = mc_H_prior(model, design, observation_labels, target_labels, kwargs["num_hprior_samples"])
+    else:
+        hprior = mc_H_prior(model, design, observation_labels, target_labels)
+    ape = vi_ape(model, design, observation_labels, target_labels, *args, **kwargs)
+    return hprior - ape
+
+
+def laplace_vi_eig_mc(model, design, observation_labels, target_labels, *args, **kwargs):
+    # Compute the prior entropy by Monte Carlo, then uses vi_ape
+    if "num_hprior_samples" in kwargs:
+        hprior = mc_H_prior(model, design, observation_labels, target_labels, kwargs["num_hprior_samples"])
+    else:
+        hprior = mc_H_prior(model, design, observation_labels, target_labels)
+    ape = laplace_vi_ape(model, design, observation_labels, target_labels, *args, **kwargs)
+    return hprior - ape
 
 
 def ba_eig_lm(model, design, observation_labels, target_labels, *args, **kwargs):

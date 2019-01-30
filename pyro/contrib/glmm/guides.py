@@ -6,9 +6,16 @@ from torch import nn
 import pyro
 import pyro.distributions as dist
 from pyro import poutine
-from pyro.contrib.util import get_indices, tensor_to_dict, rmv, rvv, rtril, rdiag, lexpand, rexpand
+from pyro.contrib.util import (
+    get_indices, tensor_to_dict, rmv, rvv, rtril, rdiag, lexpand, rexpand, iter_iaranges_to_shape
+)
 from pyro.ops.linalg import rinverse
 from pyro.util import is_bad
+
+try:
+    from contextlib import ExitStack  # python 3
+except ImportError:
+    from contextlib2 import ExitStack  # python 2
 
 
 class LinearModelPosteriorGuide(nn.Module):
@@ -28,6 +35,8 @@ class LinearModelPosteriorGuide(nn.Module):
         # Represent each parameter group as independent Gaussian
         # Making a weak mean-field assumption
         # To avoid this- combine labels
+        if not isinstance(d, (tuple, list, torch.Tensor)):
+            d = (d,)
         self.tikhonov_diag = nn.Parameter(
                 tikhonov_init*torch.ones(*d, sum(w_sizes.values())))
         self.scaled_prior_mean = nn.Parameter(torch.zeros(*d, sum(w_sizes.values())))
@@ -67,6 +76,101 @@ class LinearModelPosteriorGuide(nn.Module):
         for l in target_labels:
             w_dist = dist.MultivariateNormal(mu[l], scale_tril=scale_tril[l])
             pyro.sample(l, w_dist)
+
+
+class LinearModelLaplaceGuide(nn.Module):
+    """
+    Laplace approximation for a (G)LM
+    """
+    def __init__(self, d, w_sizes, **kwargs):
+        super(LinearModelLaplaceGuide, self).__init__()
+        # start in train mode
+        self.train()
+        if not isinstance(d, (tuple, list, torch.Tensor)):
+            d = (d,)
+        self.means = {}
+        for l, mu_l in tensor_to_dict(w_sizes, 0.01*torch.ones(*d, sum(w_sizes.values()))).items():
+            self.means[l] = nn.Parameter(mu_l)
+        self._registered = nn.ParameterList(self.means.values())
+        self.scale_trils = {}
+        self.w_sizes = w_sizes
+
+    @staticmethod
+    def _hessian_diag(y, x, event_shape):
+        batch_shape = x.shape[:-len(event_shape)]
+        assert tuple(x.shape) == tuple(batch_shape) + tuple(event_shape)
+
+        dy = torch.autograd.grad(y, [x,], create_graph=True)[0]
+        H = []
+
+        # collapse independent dimensions into a single one,
+        # and dependent dimensions into another single one
+        batch_size = 1
+        for batch_shape_dim in batch_shape:
+            batch_size *= batch_shape_dim
+
+        event_size = 1
+        for event_shape_dim in event_shape:
+            event_size *= event_shape_dim
+
+        flat_dy = dy.reshape(batch_size, event_size)
+
+        # loop over dependent part
+        for i in range(flat_dy.shape[-1]):
+            dyi = flat_dy.index_select(-1, torch.tensor([i]))
+            Hi = torch.autograd.grad([dyi], [x,], grad_outputs=[torch.ones_like(dyi)], retain_graph=True)[0]
+            H.append(Hi)
+        H = torch.stack(H, -1).reshape(*(x.shape + event_shape))
+        return H
+
+    @staticmethod
+    def _batch_potrf_compat(x, **kwargs):
+        # TODO update this code to Pyro dev and remove in favor of .cholesky()
+        flat_x = x.reshape(-1, x.shape[-2], x.shape[-1])
+        potrfs = torch.stack([flat_xi.potrf(**kwargs) for flat_xi in flat_x])
+        return potrfs.reshape(*tuple(x.shape))
+
+    def finalize(self, loss, target_labels):
+        """
+        Compute the Hessian of the parameters wrt ``loss``
+
+        Usage::
+
+            >>> guide = LinearModelLaplace(...)
+            >>> guide.finalize(loss)
+        """
+        # set self.training = False
+        self.eval()
+        for l, mu_l in self.means.items():
+            if l not in target_labels:
+                continue
+            hess_l = self._hessian_diag(loss, mu_l, event_shape=(self.w_sizes[l],))
+            cov_l = rinverse(hess_l)
+            self.scale_trils[l] = rtril(self._batch_potrf_compat(cov_l, upper=False))
+
+    def forward(self, design, target_labels=None):
+        """
+        Sample the posterior
+        """
+        if target_labels is None:
+            target_labels = list(self.w_sizes.keys())
+
+        pyro.module("laplace_guide", self)
+        with ExitStack() as stack:
+            stack.enter_context(poutine.broadcast())
+            for iarange in iter_iaranges_to_shape(design.shape[:-2]):
+                stack.enter_context(iarange)
+
+            if self.training:
+                # MAP via Delta guide
+                for l in target_labels:
+                    w_dist = dist.Delta(self.means[l]).independent(1)
+                    pyro.sample(l, w_dist)
+            else:
+                # Laplace approximation via MVN with hessian
+                for l in target_labels:
+                    w_dist = dist.MultivariateNormal(self.means[l], scale_tril=self.scale_trils[l])
+                    pyro.sample(l, w_dist)
 
 
 # Deprecated

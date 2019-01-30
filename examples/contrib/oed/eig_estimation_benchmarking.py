@@ -13,11 +13,12 @@ from pyro import optim
 from pyro.infer import TraceEnum_ELBO
 from pyro.contrib.oed.eig import (
     vi_ape, naive_rainforth_eig, accelerated_rainforth_eig, donsker_varadhan_eig, gibbs_y_eig,
-    gibbs_y_re_eig, amortized_lfire_eig, lfire_eig, iwae_eig
+    gibbs_y_re_eig, amortized_lfire_eig, lfire_eig, iwae_eig, laplace_vi_ape
 )
 from pyro.contrib.util import lexpand
 from pyro.contrib.oed.util import (
-    linear_model_ground_truth, vi_eig_lm, ba_eig_lm, ba_eig_mc, normal_inverse_gamma_ground_truth
+    linear_model_ground_truth, vi_eig_lm, vi_eig_mc, ba_eig_lm, ba_eig_mc, normal_inverse_gamma_ground_truth,
+    laplace_vi_eig_mc, 
 )
 from pyro.contrib.glmm import (
     group_assignment_matrix, normal_inverse_gamma_linear_model, sigmoid_model_fixed, known_covariance_linear_model,
@@ -26,7 +27,7 @@ from pyro.contrib.glmm import (
 from pyro.contrib.glmm.guides import (
     LinearModelPosteriorGuide, NormalInverseGammaPosteriorGuide, SigmoidPosteriorGuide, GuideDV, LogisticPosteriorGuide,
     LogisticMarginalGuide, LogisticLikelihoodGuide, SigmoidMarginalGuide, SigmoidLikelihoodGuide,
-    NormalMarginalGuide, NormalLikelihoodGuide, SigmoidLocationPosteriorGuide
+    NormalMarginalGuide, NormalLikelihoodGuide, SigmoidLocationPosteriorGuide, LinearModelLaplaceGuide,
 )
 from pyro.contrib.glmm.classifiers import (
     LinearModelAmortizedClassifier, LinearModelBootstrapClassifier, LinearModelClassifier, SigmoidLocationClassifier
@@ -118,6 +119,7 @@ marginal_re = Estimator("Marginal + likelihood", ["marginal_re", "marginal_likel
 alfire = Estimator("Amortized LFIRE", ["alfire"], amortized_lfire_eig)
 lfire = Estimator("LFIRE", ["lfire", "implicit"], lfire_eig)
 iwae = Estimator("IWAE", ["iwae", "explicit"], iwae_eig)
+laplace = Estimator("Laplace", ["laplace", "diag_laplace", "explicit"], laplace_vi_eig_mc)
 
 Case = namedtuple("EIGBenchmarkingCase", [
     "title",
@@ -241,7 +243,13 @@ CASES = [
              {"num_theta_samples": 60, "num_y_samples": 2, "num_steps": 1200, "final_num_samples": 100,
               "classifier": (LinearModelClassifier, {"scale_tril_init": 1/3., "ntheta": 60}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            (truth_lm, {})
+            (truth_lm, {}),
+            (laplace,
+             {"num_steps": 1000, 
+              "optim": (optim.Adam, {"optim_args": {"lr": 0.05}}),
+              "loss": TraceEnum_ELBO(max_iarange_nesting=2).differentiable_loss,
+              "guide": (LinearModelLaplaceGuide, {}),
+              "final_num_samples": 10}),
         ],
         ["lm", "ground_truth", "no_re", "ab_test", "small_n", "lmab"]
     ),

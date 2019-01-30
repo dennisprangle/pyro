@@ -11,6 +11,42 @@ from pyro.contrib.autoguide import mean_field_guide_entropy
 from pyro.contrib.util import lexpand, rexpand
 
 
+def laplace_vi_ape(model, design, observation_labels, target_labels,
+                   guide, loss, optim, num_steps,
+                   final_num_samples, y_dist=None):
+    """
+    Laplace approximation
+    """
+    if isinstance(observation_labels, str):
+        observation_labels = [observation_labels]
+    if target_labels is not None and isinstance(target_labels, str):
+        target_labels = [target_labels]
+
+    def posterior_entropy(y_dist, design):
+        # Important that y_dist is sampled *within* the function
+        y = pyro.sample("conditioning_y", y_dist)
+        y_dict = {label: y[i, ...] for i, label in enumerate(observation_labels)}
+        conditioned_model = pyro.condition(model, data=y_dict)
+        # Here just using SVI to run the MAP optimization
+        SVI(conditioned_model, guide=guide, loss=loss, optim=optim, num_steps=num_steps, num_samples=1).run(design)
+        # Recover the entropy
+        with poutine.block():
+            final_loss = loss(conditioned_model, guide, design)
+            guide.finalize(final_loss, target_labels)
+            entropy = mean_field_guide_entropy(guide, [design], whitelist=target_labels)
+        return entropy
+
+    if y_dist is None:
+        y_dist = EmpiricalMarginal(Importance(model, num_samples=final_num_samples).run(design),
+                                   sites=observation_labels)
+
+    # Calculate the expected posterior entropy under this distn of y
+    loss_dist = EmpiricalMarginal(Search(posterior_entropy).run(y_dist, design))
+    loss = loss_dist.mean
+
+    return loss
+
+
 def vi_ape(model, design, observation_labels, target_labels,
            vi_parameters, is_parameters, y_dist=None):
     """Estimates the average posterior entropy (APE) loss function using
@@ -62,7 +98,11 @@ def vi_ape(model, design, observation_labels, target_labels,
         conditioned_model = pyro.condition(model, data=y_dict)
         SVI(conditioned_model, **vi_parameters).run(design)
         # Recover the entropy
-        return mean_field_guide_entropy(vi_parameters["guide"], [design], whitelist=target_labels)
+        with poutine.block():
+            guide = vi_parameters["guide"]
+            final_loss = vi_parameters["loss"](conditioned_model, guide, design)
+            entropy = mean_field_guide_entropy(guide, [design], whitelist=target_labels)
+        return entropy
 
     if y_dist is None:
         y_dist = EmpiricalMarginal(Importance(model, **is_parameters).run(design),
@@ -158,7 +198,7 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
         - np.log(M)
 
     terms = conditional_lp - marginal_lp
-    nonnan = (~torch.isnan(terms)).sum(0).float()
+    nonnan = (~torch.isnan(terms)).sum(0).type_as(terms)
     terms[torch.isnan(terms)] = 0.
     return terms.sum(0)/nonnan
 
@@ -524,7 +564,7 @@ def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic
 
 def safe_mean_terms(terms):
     mask = torch.isnan(terms) | (terms == float('-inf')) | (terms == float('inf'))
-    nonnan = (~mask).sum(0).float()
+    nonnan = (~mask).sum(0).as_type(terms)
     terms[mask] = 0.
     loss = terms.sum(0) / nonnan
     agg_loss = loss.sum()
