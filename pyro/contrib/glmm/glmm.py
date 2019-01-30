@@ -280,24 +280,22 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
     """
     # design is size batch x n x p
     # tau is size batch
-    tau_shape = design.shape[:-2]
+    batch_shape = design.shape[:-2]
     with ExitStack() as stack:
-        for iarange in iter_iaranges_to_shape(tau_shape):
+        for iarange in iter_iaranges_to_shape(batch_shape):
             stack.enter_context(iarange)
 
         if obs_sd is None:
             # First, sample tau (observation precision)
-            tau_prior = dist.Gamma(alpha_0.expand(tau_shape),
-                                   beta_0.expand(tau_shape))
+            tau_prior = dist.Gamma(alpha_0.expand(batch_shape).unsqueeze(-1),
+                                   beta_0.expand(batch_shape).unsqueeze(-1)).independent(1)
             tau = pyro.sample("tau", tau_prior)
+            #print("model tau", tau)
             obs_sd = 1./torch.sqrt(tau)
 
         elif alpha_0 is not None or beta_0 is not None:
             warnings.warn("Values of `alpha_0` and `beta_0` unused becased"
                           "`obs_sd` was specified already.")
-
-        # response will be shape batch x n
-        obs_sd = obs_sd.expand(tau_shape).unsqueeze(-1)
 
         # Build the regression coefficient
         w = []
@@ -313,11 +311,11 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
             # Sample `G` once for this group
             alpha, beta = re_alphas[name], re_betas[name]
             group_p = alpha.shape[-1]
-            G_prior = dist.Gamma(alpha.expand(tau_shape + (group_p,)),
-                                 beta.expand(tau_shape + (group_p,)))
+            G_prior = dist.Gamma(alpha.expand(batch_shape + (group_p,)),
+                                 beta.expand(batch_shape + (group_p,)))
             G = 1./torch.sqrt(pyro.sample("G_" + name, G_prior))
             # Repeat `G` for each group
-            repeat_shape = tuple(1 for _ in tau_shape) + (group_size,)
+            repeat_shape = tuple(1 for _ in batch_shape) + (group_size,)
             u_prior = dist.Normal(torch.tensor(0.), G.repeat(repeat_shape)).independent(1)
             w.append(pyro.sample(name, u_prior))
         # Regression coefficient `w` is batch x p

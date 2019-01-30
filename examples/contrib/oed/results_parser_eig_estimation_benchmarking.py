@@ -16,7 +16,7 @@ output_dir = "./run_outputs/eig_benchmark/"
 COLOURS = {
            "Ground truth": [0., 0., 0.],
            "Nested Monte Carlo": [1, .6, 0],
-           "Posterior": [1, .4, .4],
+           "Posterior": [1, .5, .4],
            "Marginal": [.5, .5, 1.],
            "Marginal + likelihood": [.1, .7, .4],
            "Amortized LFIRE": [.66, .82, .43],
@@ -24,7 +24,20 @@ COLOURS = {
            "LFIRE": [.78, .78, .60],
            "LFIRE 2": [.78, .40, .8],
            "IWAE": [.7, .4, 1.],
-           "Laplace": [.9, .2, .3],
+           "Laplace": [.9, 0., .3],
+}
+MARKERS = {
+           "Ground truth": 'x',
+           "Nested Monte Carlo": 'v',
+           "Posterior": 'o',
+           "Marginal": 's',
+           "Marginal + likelihood": 's',
+           "Amortized LFIRE": 'D',
+           "ALFIRE 2": 'D',
+           "LFIRE": 'D',
+           "LFIRE 2": 'D',
+           "IWAE": '+',
+           "Laplace": '*',
 }
 
 
@@ -80,8 +93,9 @@ def main(fnames, findices, plot):
         for case, d in reformed.items():
             plt.figure(figsize=(10, 5))
             for k, (lower, centre, upper) in d.items():
-                x = designs[case][:,0,0].numpy()
-                plt.plot(x, centre, linestyle='-', markersize=6, color=COLOURS[k], marker='o')
+                # x = designs[case][:,0,0].numpy()
+                x = np.arange(0, centre.shape[0])
+                plt.plot(x, centre, linestyle='-', markersize=6, color=COLOURS[k], marker=MARKERS[k])
                 plt.fill_between(x, upper, lower, color=COLOURS[k]+[.2])
             plt.title(case, fontsize=18)
             plt.legend(d.keys(), loc=2, fontsize=14)

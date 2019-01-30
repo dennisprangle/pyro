@@ -28,6 +28,7 @@ def laplace_vi_ape(model, design, observation_labels, target_labels,
         y_dict = {label: y[i, ...] for i, label in enumerate(observation_labels)}
         conditioned_model = pyro.condition(model, data=y_dict)
         # Here just using SVI to run the MAP optimization
+        guide.train()
         SVI(conditioned_model, guide=guide, loss=loss, optim=optim, num_steps=num_steps, num_samples=1).run(design)
         # Recover the entropy
         with poutine.block():
@@ -564,7 +565,7 @@ def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic
 
 def safe_mean_terms(terms):
     mask = torch.isnan(terms) | (terms == float('-inf')) | (terms == float('inf'))
-    nonnan = (~mask).sum(0).as_type(terms)
+    nonnan = (~mask).sum(0).float()
     terms[mask] = 0.
     loss = terms.sum(0) / nonnan
     agg_loss = loss.sum()

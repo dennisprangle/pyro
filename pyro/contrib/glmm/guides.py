@@ -82,13 +82,15 @@ class LinearModelLaplaceGuide(nn.Module):
     """
     Laplace approximation for a (G)LM
     """
-    def __init__(self, d, w_sizes, **kwargs):
+    def __init__(self, d, w_sizes, tau_label=None, **kwargs):
         super(LinearModelLaplaceGuide, self).__init__()
         # start in train mode
         self.train()
         if not isinstance(d, (tuple, list, torch.Tensor)):
             d = (d,)
         self.means = {}
+        if tau_label is not None:
+            w_sizes[tau_label] = 1
         for l, mu_l in tensor_to_dict(w_sizes, 0.01*torch.ones(*d, sum(w_sizes.values()))).items():
             self.means[l] = nn.Parameter(mu_l)
         self._registered = nn.ParameterList(self.means.values())
@@ -153,7 +155,7 @@ class LinearModelLaplaceGuide(nn.Module):
         Sample the posterior
         """
         if target_labels is None:
-            target_labels = list(self.w_sizes.keys())
+            target_labels = list(self.means.keys())
 
         pyro.module("laplace_guide", self)
         with ExitStack() as stack:
@@ -164,12 +166,22 @@ class LinearModelLaplaceGuide(nn.Module):
             if self.training:
                 # MAP via Delta guide
                 for l in target_labels:
-                    w_dist = dist.Delta(self.means[l]).independent(1)
+                    if l == "tau":
+                        mean = torch.nn.functional.softplus(self.means[l])
+                    else:
+                        mean = self.means[l]
+                    #print('delta', l, mean)
+                    w_dist = dist.Delta(mean).independent(1)
                     pyro.sample(l, w_dist)
             else:
                 # Laplace approximation via MVN with hessian
                 for l in target_labels:
-                    w_dist = dist.MultivariateNormal(self.means[l], scale_tril=self.scale_trils[l])
+                    if l == "tau":
+                        mean = torch.nn.functional.softplus(self.means[l])
+                    else:
+                        mean = self.means[l]
+                    #print('mvn', l, mean)
+                    w_dist = dist.MultivariateNormal(mean, scale_tril=self.scale_trils[l])
                     pyro.sample(l, w_dist)
 
 
@@ -336,9 +348,9 @@ class NormalInverseGammaPosteriorGuide(LinearModelPosteriorGuide):
         mu, scale_tril, alpha, beta = self.get_params(y_dict, design, target_labels)
 
         if self.tau_label in target_labels:
-            tau_dist = dist.Gamma(alpha, beta)
+            tau_dist = dist.Gamma(alpha.unsqueeze(-1), beta.unsqueeze(-1)).independent(1)
             tau = pyro.sample(self.tau_label, tau_dist)
-            obs_sd = 1./tau.sqrt().unsqueeze(-1).unsqueeze(-1)
+            obs_sd = 1./tau.sqrt().unsqueeze(-1)
 
         for label in target_labels:
             if label != self.tau_label:
