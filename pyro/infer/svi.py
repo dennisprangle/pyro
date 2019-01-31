@@ -64,7 +64,6 @@ class SVI(TracePosterior):
             with poutine.block():
                 for i in range(self.num_steps):
                     self.step(*args, **kwargs)
-                    print(i)
         return super(SVI, self).run(*args, **kwargs)
 
     def _traces(self, *args, **kwargs):

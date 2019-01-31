@@ -55,7 +55,7 @@ class LinearModelPosteriorGuide(nn.Module):
 
     def linear_model_formula(self, y, design, target_labels):
 
-        tikhonov_diag = rdiag(self.softplus(self.tikhonov_diag))
+        tikhonov_diag = rdiag(torch.exp(self.tikhonov_diag))
         xtx = torch.matmul(design.transpose(-1, -2), design) + tikhonov_diag
         xtxi = rinverse(xtx, sym=True)
         mu = rmv(xtxi, rmv(design.transpose(-1, -2), y) + self.scaled_prior_mean)
@@ -82,7 +82,7 @@ class LinearModelLaplaceGuide(nn.Module):
     """
     Laplace approximation for a (G)LM
     """
-    def __init__(self, d, w_sizes, tau_label=None, **kwargs):
+    def __init__(self, d, w_sizes, tau_label=None, init_value=0.1, **kwargs):
         super(LinearModelLaplaceGuide, self).__init__()
         # start in train mode
         self.train()
@@ -91,7 +91,7 @@ class LinearModelLaplaceGuide(nn.Module):
         self.means = {}
         if tau_label is not None:
             w_sizes[tau_label] = 1
-        for l, mu_l in tensor_to_dict(w_sizes, 0.01*torch.ones(*d, sum(w_sizes.values()))).items():
+        for l, mu_l in tensor_to_dict(w_sizes, init_value*torch.ones(*d, sum(w_sizes.values()))).items():
             self.means[l] = nn.Parameter(mu_l)
         self._registered = nn.ParameterList(self.means.values())
         self.scale_trils = {}
@@ -166,22 +166,12 @@ class LinearModelLaplaceGuide(nn.Module):
             if self.training:
                 # MAP via Delta guide
                 for l in target_labels:
-                    if l == "tau":
-                        mean = torch.nn.functional.softplus(self.means[l])
-                    else:
-                        mean = self.means[l]
-                    #print('delta', l, mean)
-                    w_dist = dist.Delta(mean).independent(1)
+                    w_dist = dist.Delta(self.means[l]).independent(1)
                     pyro.sample(l, w_dist)
             else:
                 # Laplace approximation via MVN with hessian
                 for l in target_labels:
-                    if l == "tau":
-                        mean = torch.nn.functional.softplus(self.means[l])
-                    else:
-                        mean = self.means[l]
-                    #print('mvn', l, mean)
-                    w_dist = dist.MultivariateNormal(mean, scale_tril=self.scale_trils[l])
+                    w_dist = dist.MultivariateNormal(self.means[l], scale_tril=self.scale_trils[l])
                     pyro.sample(l, w_dist)
 
 

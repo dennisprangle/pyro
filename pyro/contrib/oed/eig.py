@@ -43,9 +43,9 @@ def laplace_vi_ape(model, design, observation_labels, target_labels,
 
     # Calculate the expected posterior entropy under this distn of y
     loss_dist = EmpiricalMarginal(Search(posterior_entropy).run(y_dist, design))
-    loss = loss_dist.mean
+    ape = loss_dist.mean
 
-    return loss
+    return ape
 
 
 def vi_ape(model, design, observation_labels, target_labels,

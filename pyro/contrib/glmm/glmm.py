@@ -297,6 +297,8 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
             warnings.warn("Values of `alpha_0` and `beta_0` unused becased"
                           "`obs_sd` was specified already.")
 
+        obs_sd = obs_sd.expand(batch_shape + (1,))
+
         # Build the regression coefficient
         w = []
         # Allow different names for different coefficient groups
@@ -329,7 +331,6 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
         elif response == "bernoulli":
             return pyro.sample(response_label, dist.Bernoulli(logits=prediction_mean).independent(1))
         elif response == "sigmoid":
-            base_dist = dist.Normal(prediction_mean, obs_sd)
             # You can add loc via the linear model itself
             k = k.expand(prediction_mean.shape)
             response_dist = dist.CensoredSigmoidNormal(
