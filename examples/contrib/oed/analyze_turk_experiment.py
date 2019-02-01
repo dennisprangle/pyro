@@ -10,7 +10,16 @@ import torch
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
-from pyro.contrib.util import rmv
+import pyro
+import pyro.distributions as dist
+from pyro.contrib.util import rmv, rmm, rtril, iter_iaranges_to_shape, rexpand
+from pyro.ops.linalg import rinverse
+from pyro.contrib.oed.eig import elbo_learn
+
+try:
+    from contextlib import ExitStack  # python 3
+except ImportError:
+    from contextlib2 import ExitStack  # python 2
 
 output_dir = "./run_outputs/turk_simulation/"
 COLOURS = [[1, .6, 0], [1, .4, .4], [.5, .5, 1.], [1., .5, .5]]
@@ -18,6 +27,7 @@ VALUE_LABELS = {"Entropy": "Posterior entropy on fixed effects",
                 "L2 distance": "Expected L2 distance from posterior to truth",
                 "Optimized EIG": "Maximized EIG",
                 "EIG gap": "Difference between maximum and mean EIG"}
+EPSILON = torch.tensor(2 ** -24)
 
 
 def upper_lower(array):
@@ -43,8 +53,77 @@ def rtrace(M):
     bound = torch.stack(traces)
     return bound.view(old_shape)
 
+div = 6
+
+
+def model(full_design):
+
+    X, slope_design = full_design[..., :div], full_design[..., div:]
+    batch_shape = X.shape[:-2]
+    with ExitStack() as stack:
+        for iarange in iter_iaranges_to_shape(batch_shape):
+            stack.enter_context(iarange)
+
+        fixed_effect_mean = torch.tensor([0.,0.,0.,0.,0.,0.])
+        fixed_effect_scale_tril = 20.*torch.eye(6)
+        fixed_effect_dist = dist.MultivariateNormal(
+                    fixed_effect_mean.expand(batch_shape + (fixed_effect_mean.shape[-1],)),
+                    scale_tril=rtril(fixed_effect_scale_tril))
+        w = pyro.sample("fixed_effects", fixed_effect_dist)
+
+        ##############
+        # Random slope
+        ##############
+        slope_precision_dist = dist.Gamma(
+            torch.tensor(100.).expand(batch_shape),
+            torch.tensor(10.).expand(batch_shape))
+        slope_precision = pyro.sample("random_slope_precision", slope_precision_dist)
+        slope_sd = rexpand(1./torch.sqrt(slope_precision), slope_design.shape[-1])
+        slope_dist = dist.LogNormal(0., slope_sd).independent(1)
+        slope = rmv(slope_design, pyro.sample("random_slope", slope_dist))
+
+        obs_sd = torch.tensor(4.)
+        prediction_mean = rmv(X, w)
+        response_dist = dist.CensoredSigmoidNormal(
+            loc=slope*prediction_mean, scale=slope*obs_sd,
+            upper_lim=1.-EPSILON, lower_lim=EPSILON).independent(1)
+        return pyro.sample("y", response_dist)
+
+
+def guide(full_design):
+
+    X, slope_design = full_design[..., :div], full_design[..., div:]
+    batch_shape = X.shape[:-2]
+    with ExitStack() as stack:
+        for iarange in iter_iaranges_to_shape(batch_shape):
+            stack.enter_context(iarange)
+
+        mean = pyro.param("fixed_effect_mean", torch.tensor([0.,0.,0.,0.,0.,0.]))
+        scale_tril = pyro.param("fixed_effect_scale_tril", 10.*torch.eye(6))
+        pyro.sample("fixed_effects", dist.MultivariateNormal(
+            mean.expand(batch_shape + (mean.shape[-1],)), scale_tril=rtril(scale_tril)))
+
+        ##############
+        # Random slope
+        ##############
+        slope_prec_alpha = pyro.param("slope_precision_alpha", torch.tensor(100.)).expand(batch_shape)
+        slope_prec_alpha.register_hook(print)
+        slope_precision_dist = dist.Gamma(
+            slope_prec_alpha,
+            pyro.param("slope_precision_beta", torch.tensor(10.)).expand(batch_shape))
+        pyro.sample("random_slope_precision", slope_precision_dist)
+        # Sample random slope from its own, independent distribution
+        target_shape = batch_shape + (slope_design.shape[-1],)
+        slope_mean = pyro.param("slope_mean", torch.tensor([0.,0.,0.,0.]))
+        slope_mean.register_hook(print)
+        print('hook here')
+        slope_dist = dist.LogNormal(slope_mean.expand(target_shape),
+                                    pyro.param("slope_sd", torch.ones(4)).expand(target_shape)).independent(1)
+        slope = rmv(slope_design, pyro.sample("random_slope", slope_dist))
+
 
 def main(fnames, findices, plot):
+
     make_mean = torch.cat([torch.cat([(1./3)*torch.ones(3, 3), torch.zeros(3, 3)], dim=0),
                            torch.cat([torch.zeros(3, 3), (1./3)*torch.ones(3, 3)], dim=0)], dim=1)
 
@@ -61,33 +140,33 @@ def main(fnames, findices, plot):
         raise ValueError("No matching files found")
 
     results_dict = defaultdict(lambda : defaultdict(list))
+    X = torch.tensor([])
+    y = torch.tensor([])
     for fname in fnames:
         with open(fname, 'rb') as results_file:
             try:
                 while True:
                     results = pickle.load(results_file)
-                    # Compute entropy and L2 distance to the true fixed effects
-                    st = results["model_fixed_effect_scale_tril"]
-                    covm = torch.matmul(st, st.transpose(-1, -2))
-                    entropy = .5*rlogdet(2*np.pi*np.e*covm).squeeze(-1)
-                    centered_fixed_effects = results["model_fixed_effect_mean"] - rmv(make_mean, results["model_fixed_effect_mean"])
-                    trace = rtrace(covm)
-                    output = {"Entropy": entropy}
-                    if "true_fixed_effects" in results:
-                        l2d = torch.norm(centered_fixed_effects - results["true_fixed_effects"], dim=-1)
-                        el2d = torch.sqrt(l2d**2 + trace)
-                        output["L2 distance"] = el2d.squeeze(-1)
-                    if 'estimation_surface' in results and results['estimation_surface'] is not None:
-                        eig_star, _ = torch.max(results['estimation_surface'], dim=1)
-                        eig_star = eig_star
-                        eig_mean = results['estimation_surface'].mean(1)
-                        output['Optimized EIG'] = eig_star
-                        output["EIG gap"] = eig_star - eig_mean
-                    # TODO deal with incorrect order of stream
-                    results_dict[results['typ']][results['run']].append(output)
+                    if results['typ'] == 'rand':
+                        X = torch.cat([X, results['d_star_design']], dim=0)
+                        y = torch.cat([y, results['y']], dim=0)
             except EOFError:
                 continue
 
+    X, y = X.squeeze(), y.squeeze()
+    X_fix = X[0:40, 0:6]
+    X_fix2 = torch.cat([X[0:40, 0:6], X[0:40, -8:-4]], dim=1)
+    y = y[0:40]
+    yt = y.log() - (1. - y).log()
+    print(X.shape, y.shape, X_fix.shape)
+    beta_hat = rmv(rinverse(rmm(X_fix.transpose(0,1), X_fix) + 0.01*torch.eye(6)), rmv(X_fix.transpose(0,1), yt))
+    print(beta_hat)
+
+    elbo_learn(model, X_fix2, ["y"], ["fixed_effects"], 10, 1000,
+               guide, {"y": y}, pyro.optim.Adam({"lr": 0.05}))
+    print(pyro.param("fixed_effect_mean") - rmv(make_mean, pyro.param("fixed_effect_mean")))
+    print(pyro.param("slope_mean"))
+    print(pyro.param("slope_sd"))
     # Get results into better format
     # First, concat across runs
     possible_stats = list(set().union(a for v in results_dict.values() for a in v[1][0].keys()))

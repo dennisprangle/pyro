@@ -89,8 +89,8 @@ def main(fnames, findices, plot):
     # Get results into better format
     # First, concat across runs
     print(results_dict)
-    reformed = OrderedDict([(num_steps, (np.array([k for k in d]), upper_lower(torch.stack([v for v in d.values()], dim=-1).squeeze().detach().numpy())))
-                            for num_steps, d in results_dict.items()])
+    reformed = OrderedDict([(num_steps, (np.array([k for k in sorted(d)]), upper_lower(torch.stack([v[1] for v in sorted(d.items())], dim=-1).squeeze().detach().numpy())))
+                            for num_steps, d in sorted(results_dict.items())])
     print(reformed)
 
     if plot:
@@ -100,10 +100,11 @@ def main(fnames, findices, plot):
             plt.plot(x, centre, linestyle='-', markersize=6, color=COLOURS[num_steps], marker='x')
             plt.fill_between(x, upper, lower, color=COLOURS[num_steps]+[.15])
 
-        plt.legend([str(x) + " steps" for x in reformed.keys()], loc=1, fontsize=14)
+        plt.legend([str(x) + " steps" for x in sorted(reformed.keys())], loc=1, fontsize=14)
         plt.xlabel("$M$", fontsize=18)
         plt.ylabel("EIG estimate", fontsize=18)
         plt.xticks(fontsize=14)
+        plt.axhline(4.5267, color="k", linestyle='--')
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.yticks(fontsize=14)
         plt.yscale('log')

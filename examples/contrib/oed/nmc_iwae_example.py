@@ -8,6 +8,7 @@ import pyro
 import pyro.optim as optim
 
 from pyro.contrib.oed.eig import iwae_eig
+from pyro.contrib.oed.util import linear_model_ground_truth
 from pyro.contrib.util import lexpand
 from pyro.contrib.glmm import group_assignment_matrix, known_covariance_linear_model
 from pyro.contrib.glmm.guides import LinearModelPosteriorGuide
@@ -21,6 +22,8 @@ if __name__ == '__main__':
                                              "observation_sd": torch.tensor(1.)})
 
     optim = optim.Adam({"lr": 0.05})
+    print(linear_model_ground_truth(model, AB_test_1d_10n_2p, 'y', 'w'))
+    raise
 
     for num_steps in [0, 125, 250]:
         print("Num steps", num_steps)
