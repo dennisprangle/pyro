@@ -118,6 +118,7 @@ def main(fnames, findices, plot):
     else:
         print(descript)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sigmoid iterated experiment design results parser")
     parser.add_argument("--fnames", nargs="?", default="", type=str)

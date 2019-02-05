@@ -53,6 +53,7 @@ def rtrace(M):
     bound = torch.stack(traces)
     return bound.view(old_shape)
 
+
 div = 6
 
 
@@ -75,14 +76,14 @@ def model(full_design):
         # Random slope
         ##############
         slope_precision_dist = dist.Gamma(
-            torch.tensor(100.).expand(batch_shape),
-            torch.tensor(10.).expand(batch_shape))
+            torch.tensor(1.).expand(batch_shape),
+            torch.tensor(1.).expand(batch_shape))
         slope_precision = pyro.sample("random_slope_precision", slope_precision_dist)
         slope_sd = rexpand(1./torch.sqrt(slope_precision), slope_design.shape[-1])
-        slope_dist = dist.LogNormal(0., slope_sd).independent(1)
+        slope_dist = dist.LogNormal(-.5*slope_sd.pow(2), slope_sd).independent(1)
         slope = rmv(slope_design, pyro.sample("random_slope", slope_dist))
 
-        obs_sd = torch.tensor(4.)
+        obs_sd = torch.tensor(10.)
         prediction_mean = rmv(X, w)
         response_dist = dist.CensoredSigmoidNormal(
             loc=slope*prediction_mean, scale=slope*obs_sd,
@@ -106,20 +107,26 @@ def guide(full_design):
         ##############
         # Random slope
         ##############
-        slope_prec_alpha = pyro.param("slope_precision_alpha", torch.tensor(100.)).expand(batch_shape)
-        slope_prec_alpha.register_hook(print)
-        slope_precision_dist = dist.Gamma(
-            slope_prec_alpha,
-            pyro.param("slope_precision_beta", torch.tensor(10.)).expand(batch_shape))
+        slope_prec_alpha = pyro.param("slope_precision_alpha", torch.tensor(1.)).expand(batch_shape)
+        slope_prec_beta = pyro.param("slope_precision_beta", torch.tensor(1.)).expand(batch_shape)
+        slope_precision_dist = dist.Gamma(slope_prec_alpha, slope_prec_beta)
         pyro.sample("random_slope_precision", slope_precision_dist)
         # Sample random slope from its own, independent distribution
         target_shape = batch_shape + (slope_design.shape[-1],)
-        slope_mean = pyro.param("slope_mean", torch.tensor([0.,0.,0.,0.]))
-        slope_mean.register_hook(print)
-        print('hook here')
+        slope_mean = pyro.param("slope_mean", torch.zeros(slope_design.shape[-1]))
+        slope_sd = pyro.param("slope_sd", 4.*torch.ones(slope_design.shape[-1]))
+
         slope_dist = dist.LogNormal(slope_mean.expand(target_shape),
-                                    pyro.param("slope_sd", torch.ones(4)).expand(target_shape)).independent(1)
-        slope = rmv(slope_design, pyro.sample("random_slope", slope_dist))
+                                    slope_sd.expand(target_shape)).independent(1)
+        pyro.sample("random_slope", slope_dist)
+
+
+def log_check_pyro_param_store(output):
+    for name in sorted(pyro.get_param_store().get_all_param_names()):
+        value = pyro.param(name)
+        output[name] = value.clone()
+        if torch.isnan(value).any() or (value == float('inf')).any() or (value == float('-inf')).any():
+            raise ArithmeticError("Found invalid param value {} {}".format(name, value))
 
 
 def main(fnames, findices, plot):
@@ -139,7 +146,6 @@ def main(fnames, findices, plot):
     if not fnames:
         raise ValueError("No matching files found")
 
-    results_dict = defaultdict(lambda : defaultdict(list))
     X = torch.tensor([])
     y = torch.tensor([])
     for fname in fnames:
@@ -153,49 +159,50 @@ def main(fnames, findices, plot):
             except EOFError:
                 continue
 
-    X, y = X.squeeze(), y.squeeze()
-    X_fix = X[0:40, 0:6]
-    X_fix2 = torch.cat([X[0:40, 0:6], X[0:40, -8:-4]], dim=1)
-    y = y[0:40]
-    yt = y.log() - (1. - y).log()
-    print(X.shape, y.shape, X_fix.shape)
-    beta_hat = rmv(rinverse(rmm(X_fix.transpose(0,1), X_fix) + 0.01*torch.eye(6)), rmv(X_fix.transpose(0,1), yt))
-    print(beta_hat)
+    hist = defaultdict(dict)
+    for i in [40, 42, 45, 50, 52, 55, 60, 62, 65, 70, 75, 80]:
+        X, y = X.squeeze(), y.squeeze()
+        X_fix = X[0:i, 0:6]
+        X_fix2 = torch.cat([X[0:i, 0:6], X[0:i, -8:]], dim=1)
+        y_fix = y[0:i]
+        yt = y_fix.log() - (1. - y_fix).log()
 
-    elbo_learn(model, X_fix2, ["y"], ["fixed_effects"], 10, 1000,
-               guide, {"y": y}, pyro.optim.Adam({"lr": 0.05}))
-    print(pyro.param("fixed_effect_mean") - rmv(make_mean, pyro.param("fixed_effect_mean")))
-    print(pyro.param("slope_mean"))
-    print(pyro.param("slope_sd"))
-    # Get results into better format
-    # First, concat across runs
-    possible_stats = list(set().union(a for v in results_dict.values() for a in v[1][0].keys()))
-    reformed = {statistic: {
-                    k: torch.stack([torch.cat([v[run][i][statistic] for run in v]) for i in range(len(v[1]))])
-                    for k, v in results_dict.items() if statistic in v[1][0]}
-                for statistic in possible_stats}
-    descript = OrderedDict([(statistic,
-                    OrderedDict([(k, upper_lower(v.detach().numpy())) for k, v in sorted(sts.items())]))
-                for statistic, sts in sorted(reformed.items())])
+        print(X.shape, y_fix.shape, X_fix.shape)
+        beta_hat = rmv(rinverse(rmm(X_fix.transpose(0,1), X_fix) + 0.01*torch.eye(6)), rmv(X_fix.transpose(0,1), yt))
+        hist[i]["beta hat"] = beta_hat
+        print('fixed effects ridge', beta_hat)
+
+        elbo_learn(model, X_fix2, ["y"], ["fixed_effects", "random_slope_precision", "random_slope"], 10, 600,
+                   guide, {"y": y_fix}, pyro.optim.Adam({"lr": 0.05}))
+
+        log_check_pyro_param_store(hist[i])
+        st = pyro.param("fixed_effect_scale_tril")
+        covm = torch.matmul(st, st.transpose(-1, -2))
+        hist[i]['entropy'] = .5 * rlogdet(2 * np.pi * np.e * covm).squeeze(-1)
+
+    for k, v in hist.items():
+        print(k)
+        for j, w in v.items():
+            print(j, w)
 
     if plot:
-        for k, r in descript.items():
-            value_label = VALUE_LABELS[k]
-            plt.figure(figsize=(10, 5))
-            for i, (lower, centre, upper) in enumerate(r.values()):
-                x = np.arange(0, centre.shape[0])
-                plt.plot(x, centre, linestyle='-', markersize=6, color=COLOURS[i], marker='o')
-                plt.fill_between(x, upper, lower, color=COLOURS[i]+[.2])
-            # plt.title(value_label, fontsize=18)
-            plt.legend(r.keys(), loc=1, fontsize=16)
-            plt.xlabel("Step", fontsize=18)
-            plt.ylabel(value_label, fontsize=18)
-            plt.xticks(fontsize=14)
-            plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
-            plt.yticks(fontsize=14)
-            plt.show()
-    else:
-        print(descript)
+        pass
+        # for k, r in descript.items():
+        #     value_label = VALUE_LABELS[k]
+        #     plt.figure(figsize=(10, 5))
+        #     for i, (lower, centre, upper) in enumerate(r.values()):
+        #         x = np.arange(0, centre.shape[0])
+        #         plt.plot(x, centre, linestyle='-', markersize=6, color=COLOURS[i], marker='o')
+        #         plt.fill_between(x, upper, lower, color=COLOURS[i]+[.2])
+        #     # plt.title(value_label, fontsize=18)
+        #     plt.legend(r.keys(), loc=1, fontsize=16)
+        #     plt.xlabel("Step", fontsize=18)
+        #     plt.ylabel(value_label, fontsize=18)
+        #     plt.xticks(fontsize=14)
+        #     plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+        #     plt.yticks(fontsize=14)
+        #     plt.show()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sigmoid iterated experiment design results parser")
