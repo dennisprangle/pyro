@@ -66,7 +66,7 @@ def model(full_design):
             stack.enter_context(iarange)
 
         fixed_effect_mean = torch.tensor([0.,0.,0.,0.,0.,0.])
-        fixed_effect_scale_tril = 20.*torch.eye(6)
+        fixed_effect_scale_tril = 10.*torch.eye(6)
         fixed_effect_dist = dist.MultivariateNormal(
                     fixed_effect_mean.expand(batch_shape + (fixed_effect_mean.shape[-1],)),
                     scale_tril=rtril(fixed_effect_scale_tril))
@@ -160,7 +160,7 @@ def main(fnames, findices, plot):
                 continue
 
     hist = defaultdict(dict)
-    for i in [40, 42, 45, 50, 52, 55, 60, 62, 65, 70, 75, 80]:
+    for i in [1,2,3,4,5, 10, 15, 20, 30, 40, 42, 45, 50, 52, 55, 60, 62, 65, 70, 75, 80]:
         X, y = X.squeeze(), y.squeeze()
         X_fix = X[0:i, 0:6]
         X_fix2 = torch.cat([X[0:i, 0:6], X[0:i, -8:]], dim=1)
