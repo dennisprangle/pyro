@@ -13,11 +13,14 @@ from matplotlib.ticker import MaxNLocator
 from pyro.contrib.util import rmv
 
 output_dir = "./run_outputs/turk_simulation/"
-COLOURS = [[1, .6, 0], [1, .4, .4], [.5, .5, 1.], [1., .5, .5]]
+COLOURS = [[227/255,26/255,28/255], [31/255,120/255,180/255], [51/255,160/255,44/255], [177/255,89/255,40/255],
+           [106 / 255, 61 / 255, 154 / 255], [255/255,127/255,0], [.22, .22, .22]]
 VALUE_LABELS = {"Entropy": "Posterior entropy on fixed effects",
                 "L2 distance": "Expected L2 distance from posterior to truth",
                 "Optimized EIG": "Maximized EIG",
-                "EIG gap": "Difference between maximum and mean EIG"}
+                "EIG gap": "Difference between maximum and mean EIG",
+                "Fixed effects": "Fixed effects index 1",
+                "Fixed effects2": "Fixed effects index 4"}
 
 
 def upper_lower(array):
@@ -60,7 +63,7 @@ def main(fnames, findices, plot):
     if not fnames:
         raise ValueError("No matching files found")
 
-    results_dict = defaultdict(lambda : defaultdict(list))
+    results_dict = defaultdict(lambda: defaultdict(list))
     for fname in fnames:
         with open(fname, 'rb') as results_file:
             try:
@@ -73,10 +76,17 @@ def main(fnames, findices, plot):
                     centered_fixed_effects = results["model_fixed_effect_mean"] - rmv(make_mean, results["model_fixed_effect_mean"])
                     trace = rtrace(covm)
                     output = {"Entropy": entropy}
+                    # print(results['guide_fixed_effect_mean'])
+                    # print(results['guide_slope_mean'])
+                    # print(results['guide_slope_precision_beta']/(results['guide_slope_precision_alpha']-1))
+                    # print(results['guide_random_effect_mean'])
+                    # print(results['guide_random_effect_precision_beta'] / (results['guide_random_effect_precision_alpha'] - 1))
                     if "true_fixed_effects" in results:
                         l2d = torch.norm(centered_fixed_effects - results["true_fixed_effects"], dim=-1)
                         el2d = torch.sqrt(l2d**2 + trace)
                         output["L2 distance"] = el2d.squeeze(-1)
+                    output['Fixed effects'] = centered_fixed_effects[..., 0, 0]
+                    output['Fixed effects2'] = centered_fixed_effects[..., 0, 3]
                     if 'estimation_surface' in results and results['estimation_surface'] is not None:
                         eig_star, _ = torch.max(results['estimation_surface'], dim=1)
                         eig_star = eig_star
@@ -96,8 +106,8 @@ def main(fnames, findices, plot):
                     for k, v in results_dict.items() if statistic in v[1][0]}
                 for statistic in possible_stats}
     descript = OrderedDict([(statistic,
-                    OrderedDict([(k, upper_lower(v.detach().numpy())) for k, v in sorted(sts.items())]))
-                for statistic, sts in sorted(reformed.items())])
+                             OrderedDict([(k, upper_lower(v.detach().numpy())) for k, v in sorted(sts.items())]))
+                            for statistic, sts in sorted(reformed.items())])
 
     if plot:
         for k, r in descript.items():
@@ -126,6 +136,6 @@ if __name__ == "__main__":
     feature_parser = parser.add_mutually_exclusive_group(required=False)
     feature_parser.add_argument('--plot', dest='plot', action='store_true')
     feature_parser.add_argument('--no-plot', dest='plot', action='store_false')
-    parser.set_defaults(feature=True)
+    parser.set_defaults(plot=True)
     args = parser.parse_args()
     main(args.fnames, args.findices, args.plot)

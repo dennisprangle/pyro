@@ -78,8 +78,15 @@ class CensoredSigmoidNormal(TorchDistribution):
 
         # Fill in the log_prob as the log_cdf in appropriate places
         log_prob[value == self.upper_lim] = upper_cdf.expand_as(log_prob)[value == self.upper_lim]
+        if is_bad(log_prob):
+            print(value, is_bad(value))
+            raise ArithmeticError("NaN in log_prob")
         log_prob[value > self.upper_lim] = float('-inf')
+        if is_bad(log_prob):
+            raise ArithmeticError("NaN in log_prob")
         log_prob[value == self.lower_lim] = lower_cdf.expand_as(log_prob)[value == self.lower_lim]
+        if is_bad(log_prob):
+            raise ArithmeticError("NaN in log_prob")
         log_prob[value < self.lower_lim] = float('-inf')
         if is_bad(log_prob):
             raise ArithmeticError("NaN in log_prob")

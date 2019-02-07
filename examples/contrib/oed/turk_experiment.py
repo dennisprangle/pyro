@@ -1,6 +1,5 @@
 from __future__ import absolute_import, division, print_function
 
-import sys
 import argparse
 import itertools
 import logging
@@ -83,8 +82,8 @@ class NewParticipantModel:
                 pyro.param(self.prefix+"slope_precision_beta").expand(batch_shape))
             slope_precision = pyro.sample("random_slope_precision", slope_precision_dist)
             slope_sd = rexpand(1./torch.sqrt(slope_precision), slope_design.shape[-1])
-            slope_dist = dist.LogNormal(-.5*slope_sd**2, slope_sd).independent(1)
-            slope = 1e-5 + (1 - 1e-5)*rmv(slope_design, pyro.sample("random_slope", slope_dist))
+            slope_dist = dist.LogNormal(0., slope_sd).independent(1)
+            slope = rmv(slope_design, pyro.sample("random_slope", slope_dist)).clamp(1e-5, 1e5)
 
             return w, slope
 
@@ -168,7 +167,7 @@ class OldParticipantModel(NewParticipantModel):
             target_shape = batch_shape + (slope_design.shape[-1],)
             slope_dist = dist.LogNormal(pyro.param(self.prefix+"slope_mean").expand(target_shape),
                                         pyro.param(self.prefix+"slope_sd").expand(target_shape)).independent(1)
-            slope = 1e-5 + (1 - 1e-5)*rmv(slope_design, pyro.sample("random_slope", slope_dist))
+            slope = rmv(slope_design, pyro.sample("random_slope", slope_dist)).clamp(1e-5, 1e5)
 
             return w, slope
 
@@ -251,8 +250,8 @@ def true_model(p, p_re, num_participants):
     # Random slope
     ##############
     # Slope is batch x num_participants
-    slope_alpha_expanded = rexpand(pyro.param("true_slope_alpha"), num_participants)
-    slope_dist = dist.Gamma(slope_alpha_expanded, slope_alpha_expanded).independent(1)
+    slope_sd_expanded = rexpand(pyro.param("true_slope_sd"), num_participants)
+    slope_dist = dist.LogNormal(0., slope_sd_expanded).independent(1)
     slope = pyro.sample("true_random_slope", slope_dist)
 
     def inner_true_model(full_design):
@@ -292,12 +291,13 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
         experiment_name = output_dir+"{}".format(datetime.datetime.now().isoformat())
     else:
         experiment_name = output_dir+experiment_name
-    logging.basicConfig(filename=experiment_name+'.log',level=logging.DEBUG)
+    logging.basicConfig(filename=experiment_name+'.log', level=logging.DEBUG)
     # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
     results_file = experiment_name+'.result_stream.pickle'
 
     print("Experiment", experiment_name)
-    typs = ['oed', 'oed_no_re', 'rand']
+    #typs = ['hist'+SRC]
+    typs = ['oed_no_re', 'oed', 'rand']
     logging.info("Types: {}, num runs: {}, num_parallel: {}, "
                  "num participants: {}, num questions: {}".format(
                     typs, num_runs, num_parallel, num_participants, num_questions
@@ -323,40 +323,40 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
             pyro.clear_param_store()
             # Fixed parameters
             pyro.param("true_re_sigma", lexpand(torch.tensor(2.), num_parallel, 1))
-            pyro.param("true_slope_alpha", lexpand(torch.tensor(2.), num_parallel, 1))
-            pyro.param("true_obs_sd", lexpand(torch.tensor(1.), num_parallel, 1))
+            pyro.param("true_slope_sd", lexpand(torch.tensor(2.), num_parallel, 1))
+            pyro.param("true_obs_sd", lexpand(torch.tensor(10.), num_parallel, 1))
             pyro.param("true_fixed_effects", lexpand(true_effects, num_parallel, 1))
             pyro.param("prior_fixed_effect_mean", lexpand(torch.zeros(p), num_parallel, 1))
-            pyro.param("prior_fixed_effect_scale_tril", 20. * lexpand(torch.eye(p), num_parallel, 1))
+            pyro.param("prior_fixed_effect_scale_tril", 10. * lexpand(torch.eye(p), num_parallel, 1))
             pyro.param("prior_random_effect_mean", lexpand(torch.zeros(p_re), num_parallel, 1))
-            pyro.param("prior_random_effect_precision_alpha", lexpand(torch.tensor(2.), num_parallel, 1))
-            pyro.param("prior_random_effect_precision_beta", lexpand(torch.tensor(2.), num_parallel, 1))
-            pyro.param("prior_slope_precision_alpha", lexpand(torch.tensor(2.), num_parallel, 1))
-            pyro.param("prior_slope_precision_beta", lexpand(torch.tensor(2.), num_parallel, 1))
+            pyro.param("prior_random_effect_precision_alpha", lexpand(torch.tensor(2.5), num_parallel, 1))
+            pyro.param("prior_random_effect_precision_beta", lexpand(torch.tensor(2.5), num_parallel, 1))
+            pyro.param("prior_slope_precision_alpha", lexpand(torch.tensor(2.5), num_parallel, 1))
+            pyro.param("prior_slope_precision_beta", lexpand(torch.tensor(2.5), num_parallel, 1))
             pyro.param("prior_obs_sd", lexpand(torch.tensor(10.), num_parallel, 1))
             # Variables
             pyro.param("model_fixed_effect_mean", lexpand(torch.zeros(p), num_parallel, 1))
-            pyro.param("model_fixed_effect_scale_tril", 20. * lexpand(torch.eye(p), num_parallel, 1))
+            pyro.param("model_fixed_effect_scale_tril", 10. * lexpand(torch.eye(p), num_parallel, 1))
             pyro.param("model_random_effect_mean", lexpand(torch.zeros(p_re), num_parallel, 1))
-            pyro.param("model_random_effect_precision_alpha", lexpand(torch.tensor(2.), num_parallel, 1))
-            pyro.param("model_random_effect_precision_beta", lexpand(torch.tensor(2.), num_parallel, 1))
-            pyro.param("model_slope_precision_alpha", lexpand(torch.tensor(2.), num_parallel, 1))
-            pyro.param("model_slope_precision_beta", lexpand(torch.tensor(2.), num_parallel, 1))
+            pyro.param("model_random_effect_precision_alpha", lexpand(torch.tensor(2.5), num_parallel, 1))
+            pyro.param("model_random_effect_precision_beta", lexpand(torch.tensor(2.5), num_parallel, 1))
+            pyro.param("model_slope_precision_alpha", lexpand(torch.tensor(2.5), num_parallel, 1))
+            pyro.param("model_slope_precision_beta", lexpand(torch.tensor(2.5), num_parallel, 1))
             pyro.param("model_obs_sd", lexpand(torch.tensor(10.), num_parallel, 1))
             pyro.param("model_random_effect_scale_tril", lexpand(torch.eye(p_re, p_re), num_parallel, 1))
             pyro.param("model_slope_mean", lexpand(torch.zeros(num_participants), num_parallel, 1))
             pyro.param("model_slope_sd", lexpand(4.*torch.ones(num_participants), num_parallel, 1))
             pyro.param("model_mixing_matrix", lexpand(torch.zeros(p_re, p), num_parallel, 1))
             pyro.param("guide_fixed_effect_mean", lexpand(torch.zeros(p), num_parallel, 1))
-            pyro.param("guide_fixed_effect_scale_tril", 20. * lexpand(torch.eye(p), num_parallel, 1))
+            pyro.param("guide_fixed_effect_scale_tril", 10. * lexpand(torch.eye(p), num_parallel, 1))
             pyro.param("guide_random_effect_mean", lexpand(torch.zeros(p_re), num_parallel, 1))
-            pyro.param("guide_random_effect_precision_alpha", lexpand(torch.tensor(2.), num_parallel, 1),
+            pyro.param("guide_random_effect_precision_alpha", lexpand(torch.tensor(2.5), num_parallel, 1),
                        constraint=constraints.positive)
-            pyro.param("guide_random_effect_precision_beta", lexpand(torch.tensor(2.), num_parallel, 1),
+            pyro.param("guide_random_effect_precision_beta", lexpand(torch.tensor(2.5), num_parallel, 1),
                        constraint=constraints.positive)
-            pyro.param("guide_slope_precision_alpha", lexpand(torch.tensor(2.), num_parallel, 1),
+            pyro.param("guide_slope_precision_alpha", lexpand(torch.tensor(2.5), num_parallel, 1),
                        constraint=constraints.positive)
-            pyro.param("guide_slope_precision_beta", lexpand(torch.tensor(2.), num_parallel, 1),
+            pyro.param("guide_slope_precision_beta", lexpand(torch.tensor(2.5), num_parallel, 1),
                        constraint=constraints.positive)
             pyro.param("guide_random_effect_scale_tril", lexpand(
                 torch.eye(p_re, p_re), num_parallel, 1))
@@ -369,8 +369,8 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
             marginal_mu_init, marginal_sigma_init = 0., 25.
             like_mu_init, like_sigma_init = 0., 10.
             rainforth_m = 100
-            oed_n_samples, oed_n_steps, oed_final_n_samples, oed_lr = 20, 900, 2000, 0.05
-            oednore_n_samples, oednore_n_steps, oednore_final_n_samples, oednore_lr = 20, 500, 2000, 0.05
+            oed_n_samples, oed_n_steps, oed_final_n_samples, oed_lr = 10, 1500, 2000, 0.05
+            oednore_n_samples, oednore_n_steps, oednore_final_n_samples, oednore_lr = 10, 750, 2000, 0.05
             elbo_n_samples, elbo_n_steps, elbo_lr = 5, 500, 0.06
 
             logging.info("Parameter initial values")
@@ -464,7 +464,7 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
                     elif typ == 'rand':
                         d_star_index = torch.randint(N_DESIGNS, (num_parallel, )).long()
 
-                    elif typ == 'hist':
+                    elif typ.startswith('hist'):
                         hist = pickle.load(hist_file)
                         d_star_index = hist['d_star_index']
 
@@ -473,7 +473,7 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
                     d_star_design = design[d_star_index, ...].unsqueeze(1)
                     results['d_star_design'] = d_star_design
                     d_star_designs = torch.cat([d_star_designs, d_star_design], dim=-2)
-                    if typ == 'hist':
+                    if typ.startswith('hist'):
                         y = hist['y']
                     else:
                         y = participant_true_model(d_star_design)
