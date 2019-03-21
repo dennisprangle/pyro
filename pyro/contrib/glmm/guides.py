@@ -7,7 +7,7 @@ import pyro
 import pyro.distributions as dist
 from pyro import poutine
 from pyro.contrib.util import (
-    get_indices, tensor_to_dict, rmv, rvv, rtril, rdiag, lexpand, rexpand, iter_iaranges_to_shape
+    get_indices, tensor_to_dict, rmv, rvv, rtril, rdiag, lexpand, rexpand, iter_plates_to_shape
 )
 from pyro.ops.linalg import rinverse
 from pyro.util import is_bad
@@ -158,13 +158,13 @@ class LinearModelLaplaceGuide(nn.Module):
         pyro.module("laplace_guide", self)
         with ExitStack() as stack:
             stack.enter_context(poutine.broadcast())
-            for iarange in iter_iaranges_to_shape(design.shape[:-2]):
-                stack.enter_context(iarange)
+            for plate in iter_plates_to_shape(design.shape[:-2]):
+                stack.enter_context(plate)
 
             if self.training:
                 # MAP via Delta guide
                 for l in target_labels:
-                    w_dist = dist.Delta(self.means[l]).independent(1)
+                    w_dist = dist.Delta(self.means[l]).to_event(1)
                     pyro.sample(l, w_dist)
             else:
                 # Laplace approximation via MVN with hessian
@@ -304,7 +304,7 @@ class NormalInverseGammaPosteriorGuide(LinearModelPosteriorGuide):
         mu, scale_tril, alpha, beta = self.get_params(y_dict, design, target_labels)
 
         if self.tau_label in target_labels:
-            tau_dist = dist.Gamma(alpha.unsqueeze(-1), beta.unsqueeze(-1)).independent(1)
+            tau_dist = dist.Gamma(alpha.unsqueeze(-1), beta.unsqueeze(-1)).to_event(1)
             tau = pyro.sample(self.tau_label, tau_dist)
             obs_sd = 1./tau.sqrt().unsqueeze(-1)
 
@@ -338,7 +338,7 @@ class LogisticExtrapolationPosteriorGuide(nn.Module):
 
         for l in target_labels:
 
-            dst = dist.Bernoulli(logits=y * self.logit1[l] + (1. - y)*self.logit0[l]).independent(1)
+            dst = dist.Bernoulli(logits=y * self.logit1[l] + (1. - y)*self.logit0[l]).to_event(1)
             pyro.sample(l, dst)
 
 
@@ -411,7 +411,7 @@ class SigmoidMarginalGuide(nn.Module):
 
             response_dist = dist.CensoredSigmoidNormal(
                 loc=mu, scale=self.softplus(sigma), upper_lim=1.-self.epsilon, lower_lim=self.epsilon
-            ).independent(1)
+            ).to_event(1)
             pyro.sample(label, response_dist)
 
 
@@ -455,7 +455,7 @@ class LogisticMarginalGuide(nn.Module):
         pyro.module("marginal_guide", self)
 
         for l in observation_labels:
-            y_dist = dist.Bernoulli(logits=self.logits[l]).independent(1)
+            y_dist = dist.Bernoulli(logits=self.logits[l]).to_event(1)
             pyro.sample(l, y_dist)
 
 
@@ -487,7 +487,7 @@ class LogisticLikelihoodGuide(nn.Module):
         for l in observation_labels:
             p = .5*(self.sigmoid(scaled_centre + self.logit_offset[l] + self.softplus(self.logit_correction[l]))
                     + self.sigmoid(scaled_centre + self.logit_offset[l] - self.softplus(self.logit_correction[l])))
-            y_dist = dist.Bernoulli(p).independent(1)
+            y_dist = dist.Bernoulli(p).to_event(1)
             pyro.sample(l, y_dist)
 
 

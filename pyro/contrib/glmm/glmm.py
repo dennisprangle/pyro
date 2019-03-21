@@ -9,7 +9,7 @@ from torch.distributions import constraints
 
 import pyro
 import pyro.distributions as dist
-from pyro.contrib.util import rmv, rvv, iter_iaranges_to_shape
+from pyro.contrib.util import rmv, rvv, iter_plates_to_shape
 
 try:
     from contextlib import ExitStack  # python 3
@@ -151,13 +151,13 @@ def sigmoid_location_model(loc_mean, loc_sd, multiplier, observation_sd, loc_lab
     def model(design):
         batch_shape = design.shape[:-2]
         with ExitStack() as stack:
-            for iarange in iter_iaranges_to_shape(batch_shape):
-                stack.enter_context(iarange)
+            for plate in iter_plates_to_shape(batch_shape):
+                stack.enter_context(plate)
             loc_shape = batch_shape + (design.shape[-1],)
             loc = pyro.sample(loc_label, dist.Normal(loc_mean.expand(loc_shape),
-                                                     loc_sd.expand(loc_shape)).independent(1))
+                                                     loc_sd.expand(loc_shape)).to_event(1))
             mean = rvv(design, multiplier) - loc
-            emission_dist = dist.CensoredSigmoidNormal(mean, observation_sd, 1 - epsilon, epsilon).independent(1)
+            emission_dist = dist.CensoredSigmoidNormal(mean, observation_sd, 1 - epsilon, epsilon).to_event(1)
             y = pyro.sample(observation_label, emission_dist)
             return y
 
@@ -204,8 +204,8 @@ def logistic_extrapolation(coef_means, coef_sds, target_design, coef_labels="w",
     def model(design):
         batch_shape = design.shape[:-2]
         with ExitStack() as stack:
-            for iarange in iter_iaranges_to_shape(batch_shape):
-                stack.enter_context(iarange)
+            for plate in iter_plates_to_shape(batch_shape):
+                stack.enter_context(plate)
 
             # Build the regression coefficient
             w = []
@@ -214,16 +214,16 @@ def logistic_extrapolation(coef_means, coef_sds, target_design, coef_labels="w",
             for name, coef_mean, coef_sd in zip(coef_labels, coef_means, coef_sds):
                 shape = batch_shape + (coef_mean.shape[-1],)
                 # Place a normal prior on the regression coefficient
-                w_prior = dist.Normal(coef_mean.expand(shape), coef_sd.expand(shape)).independent(1)
+                w_prior = dist.Normal(coef_mean.expand(shape), coef_sd.expand(shape)).to_event(1)
                 w.append(pyro.sample(name, w_prior))
 
             # Regression coefficient `w` is batch x p
             w = broadcast_cat(w)
             # Sample the target
             td_shape = batch_shape + target_design.shape[-2:]
-            pyro.sample(target_label, dist.Bernoulli(logits=rmv(target_design.expand(td_shape), w)).independent(1))
+            pyro.sample(target_label, dist.Bernoulli(logits=rmv(target_design.expand(td_shape), w)).to_event(1))
             # Sample the observation
-            return pyro.sample(observation_label, dist.Bernoulli(logits=rmv(design, w)).independent(1))
+            return pyro.sample(observation_label, dist.Bernoulli(logits=rmv(design, w)).to_event(1))
 
     model.w_sds = OrderedDict([(label, sd) for label, sd in zip(coef_labels, coef_sds)])
     model.w_sizes = OrderedDict([(label, sd.shape[-1]) for label, sd in zip(coef_labels, coef_sds)])
@@ -322,13 +322,13 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
     # tau is size batch
     batch_shape = design.shape[:-2]
     with ExitStack() as stack:
-        for iarange in iter_iaranges_to_shape(batch_shape):
-            stack.enter_context(iarange)
+        for plate in iter_plates_to_shape(batch_shape):
+            stack.enter_context(plate)
 
         if obs_sd is None:
             # First, sample tau (observation precision)
             tau_prior = dist.Gamma(alpha_0.expand(batch_shape).unsqueeze(-1),
-                                   beta_0.expand(batch_shape).unsqueeze(-1)).independent(1)
+                                   beta_0.expand(batch_shape).unsqueeze(-1)).to_event(1)
             tau = pyro.sample("tau", tau_prior)
             #print("model tau", tau)
             obs_sd = 1./torch.sqrt(tau)
@@ -375,7 +375,7 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
             k = k.expand(prediction_mean.shape)
             response_dist = dist.CensoredSigmoidNormal(
                 loc=k * prediction_mean, scale=k * obs_sd, upper_lim=1. - epsilon, lower_lim=epsilon
-            ).independent(1)
+            ).to_event(1)
             return pyro.sample(response_label, response_dist)
         else:
             raise ValueError("Unknown response distribution: '{}'".format(response))

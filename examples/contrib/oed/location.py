@@ -8,7 +8,7 @@ import pyro.optim as optim
 import pyro.distributions as dist
 from pyro.contrib.glmm.glmm import sigmoid_location_model
 from pyro.contrib.glmm.guides import SigmoidMarginalGuide
-from pyro.contrib.util import iter_iaranges_to_shape, lexpand
+from pyro.contrib.util import iter_plates_to_shape, lexpand
 from pyro.contrib.oed.eig import gibbs_y_eig, elbo_learn
 
 try:
@@ -21,11 +21,11 @@ def prior_factory(mean, sd):
     def f(design):
         batch_shape = design.shape[:-2]
         with ExitStack() as stack:
-            for iarange in iter_iaranges_to_shape(batch_shape):
-                stack.enter_context(iarange)
+            for plate in iter_plates_to_shape(batch_shape):
+                stack.enter_context(plate)
             loc_shape = batch_shape + (design.shape[-1],)
             pyro.sample("loc", dist.Normal(mean.expand(loc_shape),
-                                           sd.expand(loc_shape)).independent(1))
+                                           sd.expand(loc_shape)).to_event(1))
     return f
 
 

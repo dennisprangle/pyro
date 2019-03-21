@@ -79,7 +79,7 @@ def hessian(y, xs):
     return H
 
 
-def iter_iaranges_to_shape(shape):
+def iter_plates_to_shape(shape):
     # Go backwards (right to left)
     for i, s in enumerate(shape[::-1]):
-        yield pyro.iarange("iarange_" + str(i), s)
+        yield pyro.plate("plate_" + str(i), s)
