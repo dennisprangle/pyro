@@ -2,6 +2,7 @@ from __future__ import absolute_import, division, print_function
 
 import pickle
 import torch
+import math
 
 import pyro
 from pyro import poutine
