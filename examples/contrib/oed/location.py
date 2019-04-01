@@ -2,6 +2,7 @@ import torch
 import argparse
 import datetime
 import pickle
+from functools import partial
 
 import pyro
 import pyro.optim as optim
@@ -93,7 +94,7 @@ def main(num_steps, num_parallel, experiment_name):
 
             elbo_learn(
                 prior, d_star_designs, ["y"], ["loc"], elbo_n_samples, elbo_n_steps,
-                elboguide, {"y": ys}, optim.Adam({"lr": elbo_lr})
+                partial(elboguide, dim=num_parallel), {"y": ys}, optim.Adam({"lr": elbo_lr})
             )
             print("mean", mean, "sd", sd)
             results['mean'] = mean
