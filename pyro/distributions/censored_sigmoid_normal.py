@@ -21,6 +21,17 @@ class CensoredSigmoidNormal(TorchDistribution):
         super(CensoredSigmoidNormal, self).__init__(self.base_dist.batch_shape, self.base_dist.event_shape,
                                                     validate_args=validate_args)
 
+    def expand(self, batch_shape, _instance=None):
+        new = self._get_checked_instance(CensoredSigmoidNormal, _instance)
+        batch_shape = torch.Size(batch_shape)
+        new.upper_lim = self.upper_lim
+        new.lower_lim = self.lower_lim
+        new.transform = self.transform
+        new.base_dist = self.base_dist.expand(batch_shape)
+        super(CensoredSigmoidNormal, new).__init__(batch_shape, validate_args=False)
+        new._validate_args = self._validate_args
+        return new
+
     def z(self, value):
         return (self.transform.inv(value) - self.base_dist.base_dist.loc) / self.base_dist.base_dist.scale
 
