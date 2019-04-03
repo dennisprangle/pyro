@@ -13,13 +13,13 @@ import pyro.distributions as dist
 from pyro import optim
 from pyro.contrib.glmm import (
     zero_mean_unit_obs_sd_lm, group_assignment_matrix,
-    group_linear_model, group_normal_guide
+    group_linear_model, group_normal_guide, known_covariance_linear_model
 )
 from pyro.contrib.glmm.guides import LinearModelLaplaceGuide, LinearModelPosteriorGuide, GuideDV
 from pyro.contrib.oed.eig import (
     vi_ape, naive_rainforth_eig, donsker_varadhan_eig, barber_agakov_ape, laplace_vi_ape
 )
-from pyro.contrib.oed.util import linear_model_ground_truth
+from pyro.contrib.oed.util import linear_model_ground_truth, ba_eig_lm
 from pyro.infer import TraceEnum_ELBO
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # All design tensors have shape: batch x n x p
 # AB test
 AB_test_2d_10n_2p = torch.stack([group_assignment_matrix(torch.tensor([n, 10-n])) for n in [0, 5]])
+AB_test_11d_10n_2p = torch.stack([group_assignment_matrix(torch.tensor([n, 10-n])) for n in range(0, 11)])
 
 # Design on S^1
 item_thetas_small = torch.linspace(0., np.pi/2, 5).unsqueeze(-1)
@@ -47,6 +48,11 @@ group_2p_linear_model_sds_10_2pt5 = group_linear_model(torch.tensor(0.), torch.t
                                                        torch.tensor([2.5]), torch.tensor(1.))
 group_2p_guide = group_normal_guide(torch.tensor(1.), (1,), (1,))
 group_2p_ba_guide = lambda d: LinearModelPosteriorGuide(d, OrderedDict([("w1", 1), ("w2", 1)]), {"y": 1})  # noqa: E731
+
+# TODO: Use more sensible name for this:
+foo_model = known_covariance_linear_model(torch.tensor(0.),
+                                          torch.tensor([10., 1/.55]),
+                                          torch.tensor(1.))
 
 ########################################################################################
 # Aux
@@ -239,6 +245,32 @@ TEST_CASES = [
          False, None, 500],
         False,
         0.2
+    ),
+    T(
+        foo_model,
+        AB_test_11d_10n_2p,
+        "y",
+        "w",
+        naive_rainforth_eig,
+        [135, 135*135], #{"N": 132*132, "M": 132}
+        True,
+        0.4 # TODO: Is this tolerance acceptable?
+    ),
+    # TODO: Make this work.
+    pytest.param(
+        foo_model,
+        AB_test_11d_10n_2p,
+        "y",
+        "w",
+        ba_eig_lm,
+        # TODO: Also pass extra guide args:
+        # {"regressor_init": -3.,
+        #  "scale_tril_init": torch.tensor([[10., 0.], [0., 1/.55]])}),
+        [10, 2500, LinearModelPosteriorGuide((5, 11), OrderedDict([('w', 2)]), {'y': 10}),
+         optim.Adam({"lr": 0.05}), False, None, 500],
+        True,
+        0.1,
+        marks=pytest.mark.xfail
     )
 ]
 
