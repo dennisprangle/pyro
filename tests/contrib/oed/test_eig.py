@@ -159,7 +159,7 @@ TEST_CASES = [
         False,
         0.3
     ),
-    T(
+    pytest.param(
         basic_2p_linear_model_sds_10_2pt5,
         X_circle_5d_1n_2p,
         "y",
@@ -168,9 +168,10 @@ TEST_CASES = [
         [200, 800, GuideDV(basic_2p_ba_guide(5)),
          optim.Adam({"lr": 0.025}), False, None, 500],
         True,
-        0.3
+        0.3,
+        marks=pytest.mark.xfail,
     ),
-    T(
+    pytest.param(
         basic_2p_linear_model_sds_10_2pt5,
         AB_test_2d_10n_2p,
         "y",
@@ -179,9 +180,10 @@ TEST_CASES = [
         [20, 400, basic_2p_ba_guide(2), optim.Adam({"lr": 0.05}),
          False, None, 500],
         False,
-        0.2
+        0.2,
+        marks=pytest.mark.xfail,
     ),
-    T(
+    pytest.param(
         basic_2p_linear_model_sds_10_2pt5,
         X_circle_5d_1n_2p,
         "y",
@@ -190,7 +192,8 @@ TEST_CASES = [
         [20, 400, basic_2p_ba_guide(5), optim.Adam({"lr": 0.05}),
          False, None, 500],
         False,
-        0.2
+        0.2,
+        marks=pytest.mark.xfail,
     ),
     T(
         group_2p_linear_model_sds_10_2pt5,
