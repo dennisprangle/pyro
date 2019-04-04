@@ -567,7 +567,10 @@ def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic
 
 def safe_mean_terms(terms):
     mask = torch.isnan(terms) | (terms == float('-inf')) | (terms == float('inf'))
-    nonnan = (~mask).sum(0).float()
+    if terms.dtype is torch.float32:
+        nonnan = (~mask).sum(0).float()
+    elif terms.dtype is torch.float64:
+        nonnan = (~mask).sum(0).double()
     terms[mask] = 0.
     loss = terms.sum(0) / nonnan
     agg_loss = loss.sum()
