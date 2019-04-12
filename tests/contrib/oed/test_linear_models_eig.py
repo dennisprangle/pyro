@@ -27,13 +27,8 @@ def linear_model():
 @pytest.fixture
 def one_point_design():
     X = torch.zeros(3, 2)
-    X[0,0] = X[1,1] = X[2,1] = 1.
+    X[0, 0] = X[1, 1] = X[2, 1] = 1.
     return X
-
-
-# Eight methods to test:
-# posterior, marginal, marginal+likelihood, vnmc
-# nmc, laplace, lfire, dv
 
 
 def posterior_guide(y_dict, design, observation_labels, target_labels):
@@ -93,6 +88,11 @@ def dv_critic(design, trace, observation_labels, target_labels):
 
     B = pyro.param("B", torch.zeros(5, 5))
     return rvv(x, rmv(B, x))
+
+
+########################################################################################################################
+# TESTS
+########################################################################################################################
 
 
 def test_posterior_linear_model(linear_model, one_point_design):
