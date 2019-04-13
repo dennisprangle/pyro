@@ -130,12 +130,12 @@ def test_marginal_likelihood_finite_space_model(finite_space_model, one_point_de
     pyro.clear_param_store()
     # Pre-train (large learning rate)
     gibbs_y_re_eig(finite_space_model, one_point_design, "y", "theta", num_samples=10,
-                num_steps=250, marginal_guide=marginal_guide, likelihood_guide=likelihood_guide,
-                optim=optim.Adam({"lr": 0.1}))
+                   num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
+                   optim=optim.Adam({"lr": 0.1}))
     # Finesse (small learning rate)
     estimated_eig = gibbs_y_re_eig(finite_space_model, one_point_design, "y", "theta", num_samples=10,
-                                num_steps=250, marginal_guide=marginal_guide, likelihood_guide=likelihood_guide,
-                                optim=optim.Adam({"lr": 0.01}), final_num_samples=1000)
+                                   num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
+                                   optim=optim.Adam({"lr": 0.01}), final_num_samples=1000)
     assert_equal(estimated_eig, true_eig, prec=1e-2)
 
 

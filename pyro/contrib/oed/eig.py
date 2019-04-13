@@ -393,7 +393,7 @@ def gibbs_y_eig(model, design, observation_labels, target_labels,
 
 
 def gibbs_y_re_eig(model, design, observation_labels, target_labels,
-                   num_samples, num_steps, marginal_guide, likelihood_guide, optim,
+                   num_samples, num_steps, marginal_guide, cond_guide, optim,
                    return_history=False, final_design=None, final_num_samples=None):
     """Estimate EIG by estimating the marginal entropy, that of :math:`p(y|d)`,
     *and* the conditional entropy, of :math:`p(y|\\theta, d)`, both via Gibbs' Inequality.
@@ -403,7 +403,7 @@ def gibbs_y_re_eig(model, design, observation_labels, target_labels,
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-    loss = gibbs_y_re_loss(model, marginal_guide, likelihood_guide, observation_labels, target_labels)
+    loss = gibbs_y_re_loss(model, marginal_guide, cond_guide, observation_labels, target_labels)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
                             final_design, final_num_samples)
 

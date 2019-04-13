@@ -130,12 +130,12 @@ def test_marginal_likelihood_linear_model(linear_model, one_point_design):
     pyro.clear_param_store()
     # Pre-train (large learning rate)
     gibbs_y_re_eig(linear_model, one_point_design, "y", "w", num_samples=10,
-                num_steps=250, marginal_guide=marginal_guide, likelihood_guide=likelihood_guide,
-                optim=optim.Adam({"lr": 0.1}))
+                   num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
+                   optim=optim.Adam({"lr": 0.1}))
     # Finesse (small learning rate)
     estimated_eig = gibbs_y_re_eig(linear_model, one_point_design, "y", "w", num_samples=10,
-                                num_steps=250, marginal_guide=marginal_guide, likelihood_guide=likelihood_guide,
-                                optim=optim.Adam({"lr": 0.01}), final_num_samples=500)
+                                   num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
+                                   optim=optim.Adam({"lr": 0.01}), final_num_samples=500)
     expected_eig = linear_model_ground_truth(linear_model, one_point_design, "y", "w")
     assert_equal(estimated_eig, expected_eig, prec=5e-2)
 

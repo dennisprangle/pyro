@@ -211,7 +211,7 @@ CASES = [
             (marginal_re,
              {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500,
               "marginal_guide": (NormalMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
-              "likelihood_guide": (NormalLikelihoodGuide, {"mu_init": 0., "sigma_init": 3.}),
+              "cond_guide": (NormalLikelihoodGuide, {"mu_init": 0., "sigma_init": 3.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (truth_lm, {}),
         ],
@@ -252,7 +252,7 @@ CASES = [
             # (marginal_re,
             #  {"num_samples": 10, "num_steps": 600, "final_num_samples": 500,
             #   "marginal_guide": (NormalMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
-            #   "likelihood_guide": (NormalLikelihoodGuide, {"mu_init": 0., "sigma_init": 3.}),
+            #   "cond_guide": (NormalLikelihoodGuide, {"mu_init": 0., "sigma_init": 3.}),
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (alfire,
              {"num_samples": 10, "num_steps": 1500, "final_num_samples": 500,
@@ -299,7 +299,7 @@ CASES = [
             (marginal_re,
              {"num_samples": 10, "num_steps": 600, "final_num_samples": 500,
               "marginal_guide": (NormalMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
-              "likelihood_guide": (NormalLikelihoodGuide, {"mu_init": 0., "sigma_init": 3.}),
+              "cond_guide": (NormalLikelihoodGuide, {"mu_init": 0., "sigma_init": 3.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (truth_lm, {})
         ],
@@ -403,7 +403,7 @@ CASES = [
             (marginal_re,
              {"num_samples": 10, "num_steps": 2000, "final_num_samples": 500,
               "marginal_guide": (SigmoidMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
-              "likelihood_guide": (SigmoidLikelihoodGuide, {"mu_init": 0., "sigma_init": 3.}),
+              "cond_guide": (SigmoidLikelihoodGuide, {"mu_init": 0., "sigma_init": 3.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
         ],
         ["sigmoid", "re", "location"]
@@ -458,7 +458,7 @@ CASES = [
             (marginal_re,
              {"num_samples": 10, "num_steps": 1000, "final_num_samples": 500,
               "marginal_guide": (LogisticMarginalGuide, {"p_logit_init": 0.}),
-              "likelihood_guide": (LogisticLikelihoodGuide, {"p_logit_init": 0.}),
+              "cond_guide": (LogisticLikelihoodGuide, {"p_logit_init": 0.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}
              )
         ],
@@ -511,7 +511,7 @@ CASES = [
             (marginal_re,
              {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500,
               "marginal_guide": (NormalMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
-              "likelihood_guide": (NormalLikelihoodGuide, {"mu_init": 0., "sigma_init": 3.}),
+              "cond_guide": (NormalLikelihoodGuide, {"mu_init": 0., "sigma_init": 3.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (truth_lm, {})
         ],
@@ -593,7 +593,7 @@ CASES = [
             (marginal_re,
              {"num_samples": 10, "num_steps": 4500, "final_num_samples": 1000,
               "marginal_guide": (LogisticMarginalGuide, {"p_logit_init": 0.}),
-              "likelihood_guide": (LogisticExtrapolationLikelihoodGuide, {}),
+              "cond_guide": (LogisticExtrapolationLikelihoodGuide, {}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             # LFIRE  Does not apply: cannot sample y|theta
             (dv,
@@ -622,7 +622,7 @@ CASES = [
             (marginal_re,
              {"num_samples": 10, "num_steps": 5000, "final_num_samples": 5000,
               "marginal_guide": (SigmoidMarginalGuide, {"mu_init": 0., "sigma_init": 30.}),
-              "likelihood_guide": (SigmoidLikelihoodGuide, {"mu_init": 0., "sigma_init": 15.}),
+              "cond_guide": (SigmoidLikelihoodGuide, {"mu_init": 0., "sigma_init": 15.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.025}})}),
             (dv,
              {"num_samples": 40, "num_steps": 750, "final_num_samples": 1000,
