@@ -6,11 +6,10 @@ import pytest
 import pyro
 import pyro.distributions as dist
 import pyro.optim as optim
-from pyro.infer import Trace_ELBO
 from pyro.contrib.oed.eig import (
-    naive_rainforth_eig, barber_agakov_ape, gibbs_y_eig, gibbs_y_re_eig, iwae_eig, laplace_vi_ape, lfire_eig,
+    naive_rainforth_eig, barber_agakov_ape, gibbs_y_eig, gibbs_y_re_eig, iwae_eig, lfire_eig,
     donsker_varadhan_eig)
-from pyro.contrib.util import rvv, iter_iaranges_to_shape
+from pyro.contrib.util import iter_iaranges_to_shape
     
 from tests.common import assert_equal
 
