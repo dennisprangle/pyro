@@ -140,11 +140,11 @@ def test_vnmc_finite_space_model(finite_space_model, one_point_design, true_eig)
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
     # Pre-train (large learning rate)
-    iwae_eig(finite_space_model, one_point_design, "y", "theta", num_samples=[9, 1],
+    iwae_eig(finite_space_model, one_point_design, "y", "theta", num_samples=[9, 3],
              num_steps=250, guide=posterior_guide,
              optim=optim.Adam({"lr": 0.1}))
     # Finesse (small learning rate)
-    estimated_eig = iwae_eig(finite_space_model, one_point_design, "y", "theta", num_samples=[9, 1],
+    estimated_eig = iwae_eig(finite_space_model, one_point_design, "y", "theta", num_samples=[9, 3],
                              num_steps=250, guide=posterior_guide,
                              optim=optim.Adam({"lr": 0.01}), final_num_samples=[1000, 100])
     assert_equal(estimated_eig, true_eig, prec=1e-2)
