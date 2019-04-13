@@ -81,12 +81,15 @@ def make_lfire_classifier(n_theta_samples):
 
 def dv_critic(design, trace, observation_labels, target_labels):
     y_dict = {l: trace.nodes[l]["value"] for l in observation_labels}
+    y = torch.cat(list(y_dict.values()), dim=-1)
     theta_dict = {l: trace.nodes[l]["value"] for l in target_labels}
-    x = torch.cat(list(theta_dict.values()) + list(y_dict.values()), dim=-1)
+    theta = torch.cat(list(theta_dict.values()), dim=-1)
 
-    a, b = pyro.param("a", torch.zeros(2)), pyro.param("b", torch.tensor(0.))
+    w_y = pyro.param("w_y", torch.tensor(0.))
+    w_theta = pyro.param("w_theta", torch.tensor(0.))
+    w_ytheta = pyro.param("w_ytheta", torch.tensor(0.))
 
-    return rvv(a, x) + b
+    return y*w_y + theta*w_theta + y*theta*w_ytheta
 
 
 ########################################################################################################################
@@ -136,6 +139,9 @@ def test_marginal_likelihood_finite_space_model(finite_space_model, one_point_de
     assert_equal(estimated_eig, true_eig, prec=1e-2)
 
 
+# Xfail because bernoullis are not reparametrizable and current VNMC implementation
+# assumes reparametrization
+@pytest.mark.xfail
 def test_vnmc_finite_space_model(finite_space_model, one_point_design, true_eig):
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
@@ -157,23 +163,21 @@ def test_naive_rainforth_eig_finite_space_model(finite_space_model, one_point_de
     assert_equal(estimated_eig, true_eig, prec=1e-2)
 
 
-# def test_lfire_finite_space_model(finite_space_model, one_point_design):
-#     pyro.set_rng_seed(42)
-#     pyro.clear_param_store()
-#     estimated_eig = lfire_eig(finite_space_model, one_point_design, "y", "w", num_y_samples=2, num_theta_samples=50,
-#                               num_steps=1200, classifier=make_lfire_classifier(50), optim=optim.Adam({"lr": 0.0025}),
-#                               final_num_samples=100)
-#     expected_eig = finite_space_model_ground_truth(finite_space_model, one_point_design, "y", "w")
-#     assert_equal(estimated_eig, expected_eig, prec=5e-2)
-#
-#
-# def test_dv_finite_space_model(finite_space_model, one_point_design):
-#     pyro.set_rng_seed(42)
-#     pyro.clear_param_store()
-#     donsker_varadhan_eig(finite_space_model, one_point_design, "y", "w", num_samples=100, num_steps=500, T=dv_critic,
-#                          optim=optim.Adam({"lr": 0.1}))
-#     estimated_eig = donsker_varadhan_eig(finite_space_model, one_point_design, "y", "w", num_samples=100,
-#                                          num_steps=500, T=dv_critic, optim=optim.Adam({"lr": 0.001}),
-#                                          final_num_samples=2000)
-#     expected_eig = finite_space_model_ground_truth(finite_space_model, one_point_design, "y", "w")
-#     assert_equal(estimated_eig, expected_eig, prec=5e-2)
+def test_lfire_finite_space_model(finite_space_model, one_point_design, true_eig):
+    pyro.set_rng_seed(42)
+    pyro.clear_param_store()
+    estimated_eig = lfire_eig(finite_space_model, one_point_design, "y", "theta", num_y_samples=5,
+                              num_theta_samples=50, num_steps=1000, classifier=make_lfire_classifier(50),
+                              optim=optim.Adam({"lr": 0.0025}), final_num_samples=500)
+    assert_equal(estimated_eig, true_eig, prec=1e-2)
+
+
+def test_dv_finite_space_model(finite_space_model, one_point_design, true_eig):
+    pyro.set_rng_seed(42)
+    pyro.clear_param_store()
+    donsker_varadhan_eig(finite_space_model, one_point_design, "y", "theta", num_samples=100,
+                         num_steps=250, T=dv_critic, optim=optim.Adam({"lr": 0.1}))
+    estimated_eig = donsker_varadhan_eig(finite_space_model, one_point_design, "y", "theta", num_samples=100,
+                                         num_steps=250, T=dv_critic, optim=optim.Adam({"lr": 0.01}),
+                                         final_num_samples=2000)
+    assert_equal(estimated_eig, true_eig, prec=1e-2)
