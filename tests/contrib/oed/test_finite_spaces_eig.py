@@ -26,9 +26,9 @@ def finite_space_model():
         with ExitStack() as stack:
             for iarange in iter_iaranges_to_shape(batch_shape):
                 stack.enter_context(iarange)
-        theta = pyro.sample("theta", dist.Bernoulli(.4).expand(batch_shape))
-        y = pyro.sample("y", dist.Bernoulli((design + theta) / 2.))
-        return y
+            theta = pyro.sample("theta", dist.Bernoulli(.4).expand(batch_shape))
+            y = pyro.sample("y", dist.Bernoulli((design + theta) / 2.))
+            return y
     return model
 
 
