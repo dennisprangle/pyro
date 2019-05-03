@@ -149,15 +149,19 @@ def lmer_model(fixed_effects_sd, n_groups, random_effects_alpha, random_effects_
 
 def sigmoid_location_model(loc_mean, loc_sd, multiplier, observation_sd, loc_label="loc", observation_label="y"):
     def model(design):
+        d = pyro.param('d', torch.tensor([[0.]]))
         batch_shape = design.shape[:-2]
         with ExitStack() as stack:
             for iarange in iter_iaranges_to_shape(batch_shape):
                 stack.enter_context(iarange)
-            loc_shape = batch_shape + (design.shape[-1],)
+            loc_shape = batch_shape + (d.shape[-1],)
             loc = pyro.sample(loc_label, dist.Normal(loc_mean.expand(loc_shape),
                                                      loc_sd.expand(loc_shape)).independent(1))
-            mean = rvv(design, multiplier) - loc
-            emission_dist = dist.CensoredSigmoidNormal(mean, observation_sd, 1 - epsilon, epsilon).independent(1)
+            mean = rvv(d, multiplier) - loc
+            # mean.register_hook(print)
+            # sd = observation_sd * torch.sqrt(1. + torch.abs(rvv(d, multiplier)))
+            sd = observation_sd
+            emission_dist = dist.CensoredSigmoidNormal(mean, sd, 1 - epsilon, epsilon).independent(1)
             y = pyro.sample(observation_label, emission_dist)
             return y
 
@@ -320,6 +324,9 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
     """
     # design is size batch x n x p
     # tau is size batch
+    thetas = pyro.param('d', torch.zeros(design.shape[-2]))
+    d = torch.stack([torch.sin(thetas), torch.cos(thetas)], dim=-1)
+    print(d.sum(-2))
     batch_shape = design.shape[:-2]
     with ExitStack() as stack:
         for iarange in iter_iaranges_to_shape(batch_shape):
@@ -364,7 +371,7 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
         w = broadcast_cat(w)
 
         # Run the regressor forward conditioned on inputs
-        prediction_mean = rmv(design, w)
+        prediction_mean = rmv(d, w)
         if response == "normal":
             # y is an n-vector: hence use .independent(1)
             return pyro.sample(response_label, dist.Normal(prediction_mean, obs_sd).independent(1))

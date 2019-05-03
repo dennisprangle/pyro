@@ -114,14 +114,23 @@ def main(fnames, findices, plot):
                     k: torch.stack([torch.cat([v[run][i][statistic] for run in v]) for i in range(len(v[1]))])
                     for k, v in results_dict.items() if statistic in v[1][0]}
                 for statistic in possible_stats}
-    for k, v in reformed["Entropy"].items():
-        print(k, v.shape)
 
     descript = OrderedDict([(statistic,
                              OrderedDict([(k, upper_lower(v.detach().numpy())) for k, v in sorted(sts.items())]))
                             for statistic, sts in sorted(reformed.items())])
-    print(reformed['Entropy']['oed'][-1, ...])
-    print(reformed['Entropy']['rand'][-1, ...])
+    # print(reformed['Entropy']['oed'][-1, ...])
+    # print(reformed['Entropy']['rand'][-1, ...])
+    from scipy import stats
+    a=reformed['Entropy']['oed'][9::10, ...].transpose(0,1)
+    b=reformed['Entropy']['rand'][9::10, ...].transpose(0,1)
+    diff_mean = a.mean(0) - b.mean(0)
+    print(diff_mean)
+    var_est = (1./18)*(9*a.std(0)**2 + 9*b.std(0)**2)
+    print(var_est)
+    t = diff_mean / torch.sqrt(var_est * (1./10 + 1./10))
+    print(t)
+    t2, p2 = stats.ttest_ind(a.detach().numpy(), b.detach().numpy())
+    print(t2, np.round(p2/2, 3))
 
     if plot:
         for k, r in descript.items():

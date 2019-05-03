@@ -17,23 +17,23 @@ except ImportError:
     from contextlib2 import ExitStack  # python 2
 
 
-def prior_factory(mean, sd):
-    def f(design):
-        batch_shape = design.shape[:-2]
-        with ExitStack() as stack:
-            for iarange in iter_iaranges_to_shape(batch_shape):
-                stack.enter_context(iarange)
-            loc_shape = batch_shape + (design.shape[-1],)
-            pyro.sample("loc", dist.Normal(mean.expand(loc_shape),
-                                           sd.expand(loc_shape)).independent(1))
-    return f
+# def prior_factory(mean, sd):
+#     def f(design):
+#
+#     return f
 
 
 def elboguide(design, dim=10):
     mean = pyro.param("mean", lexpand(torch.tensor(0.), dim, 1, 1))
     sd = pyro.param("sd", lexpand(torch.tensor(50.), dim, 1, 1))
-    f = prior_factory(mean, sd)
-    return f(design)
+    print(sd)
+    batch_shape = design.shape[:-2]
+    with ExitStack() as stack:
+        for iarange in iter_iaranges_to_shape(batch_shape):
+            stack.enter_context(iarange)
+        loc_shape = batch_shape + (design.shape[-1],)
+        pyro.sample("loc", dist.Normal(mean.expand(loc_shape),
+                                       sd.expand(loc_shape)).independent(1))
 
 
 def main(num_steps, num_parallel, experiment_name):
@@ -43,7 +43,7 @@ def main(num_steps, num_parallel, experiment_name):
     else:
         experiment_name = output_dir+experiment_name
     results_file = experiment_name + '.result_stream.pickle'
-    typs = ['posterior_mean']
+    typs = ['rand']
     true_model = sigmoid_location_model(lexpand(torch.tensor(44.6), num_parallel, 1, 1), torch.tensor([0.]), torch.tensor([1.]),
                                         torch.tensor(5.))
     for typ in typs:
@@ -61,7 +61,7 @@ def main(num_steps, num_parallel, experiment_name):
         ys = torch.tensor([])
 
         for step in range(num_steps):
-            small_design = torch.linspace(0., 100., 200).unsqueeze(-1).unsqueeze(-1)
+            small_design = torch.linspace(-100., 100., 400).unsqueeze(-1).unsqueeze(-1)
             design = lexpand(small_design, num_parallel)
             model = sigmoid_location_model(mean, sd, torch.tensor([1.]), torch.tensor(5.))
             results = {'typ': typ, 'step': step}
@@ -82,13 +82,17 @@ def main(num_steps, num_parallel, experiment_name):
                 print(d_star_design.shape)
             elif typ == 'posterior_mean':
                 d_star_design = mean.unsqueeze(1)
+            elif typ == 'rand':
+                d_star_index = torch.randint(small_design.shape[0], (num_parallel,)).long()
+                d_star_design = small_design[d_star_index, ...].unsqueeze(1)
 
             results['d_star_design'] = d_star_design
             print('design', d_star_design)
             d_star_designs = torch.cat([d_star_designs, d_star_design], dim=-2)
+            print(d_star_designs.shape)
             y = true_model(d_star_design)
             ys = torch.cat([ys, y], dim=-1)
-            print(ys, ys.shape)
+            print(ys.shape)
             results['y'] = y
 
             elbo_learn(

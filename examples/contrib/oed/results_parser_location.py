@@ -21,8 +21,8 @@ VALUE_LABELS = {"Entropy": "Posterior entropy on fixed effects",
                 "EIG gap": "Difference between maximum and mean EIG",
                 "Fixed effects @0": "Fixed effects index 1",
                 "Fixed effects @3": "Fixed effects index 4"}
-LABELS = {'oed': 'OED', 'posterior_mean': 'Posterior mean'}
-MARKERS = ['o','D']
+LABELS = {'oed': 'OED', 'posterior_mean': 'Posterior mean', 'rand': 'Random'}
+MARKERS = ['o', 'D', '^']
 
 S=3
 
@@ -86,6 +86,9 @@ def main(fnames, findices, plot):
         k: torch.stack([a[statistic] for a in v]).detach().numpy()
         for k, v in results_dict.items() if statistic in v[0]}
         for statistic in possible_stats}
+
+    print(reformed['Entropy']['oed'][-1, ...].squeeze().mean())
+    print(reformed['Entropy']['rand'][-1, ...].squeeze().mean())
 
     if plot:
         # Plot designs and posteriors
