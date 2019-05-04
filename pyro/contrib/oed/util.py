@@ -31,16 +31,17 @@ def linear_model_ground_truth(model, design, observation_labels, target_labels, 
     w_sd = torch.cat(list(model.w_sds.values()), dim=-1)
     prior_cov = torch.diag(w_sd**2)
     design_shape = design.shape
-    posterior_covs = [analytic_posterior_cov(prior_cov, x, model.obs_sd) for x in torch.unbind(design.contiguous().view(-1, design_shape[-2], design_shape[-1]))]
+    posterior_covs = [analytic_posterior_cov(prior_cov, x, model.obs_sd) for x in
+                      torch.unbind(design.contiguous().view(-1, design_shape[-2], design_shape[-1]))]
     target_indices = get_indices(target_labels, tensors=model.w_sds)
     target_posterior_covs = [S[target_indices, :][:, target_indices] for S in posterior_covs]
+    output = torch.tensor([0.5 * torch.logdet(2 * math.pi * math.e * C)
+                           for C in target_posterior_covs])
     if eig:
         prior_entropy = lm_H_prior(model, design, observation_labels, target_labels)
-        return prior_entropy - torch.tensor([0.5 * torch.logdet(2 * math.pi * math.e * C)
-                                             for C in target_posterior_covs])
-    else:
-        return torch.tensor([0.5 * torch.logdet(2 * math.pi * math.e * C)
-                             for C in target_posterior_covs])
+        output = prior_entropy - output
+
+    return output.reshape(design.shape[:-2])
 
 
 def logistic_extrapolation_ground_truth(model, design, observation_labels, target_labels, ythetaspace, num_samples=100):

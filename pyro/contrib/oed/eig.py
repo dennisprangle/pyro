@@ -1,6 +1,5 @@
 from __future__ import absolute_import, division, print_function
 
-import pickle
 import torch
 import math
 
@@ -273,10 +272,10 @@ def accelerated_rainforth_eig(model, design, observation_labels, target_labels,
         retrace = poutine.trace(othermodel).get_trace(reexpanded_design)
         retrace.compute_log_prob()
         relp = logsumexp(sum(retrace.nodes[l]["log_prob"] for l in observation_labels), 0) \
-            - np.log(M_prime)
+            - math.log(M_prime)
         first_term = xexpx(relp).sum(0).sum(0)/N
 
-    second_term = xexpx(logsumexp(lp, 0) - np.log(N)).sum(0)
+    second_term = xexpx(logsumexp(lp, 0) - math.log(N)).sum(0)
     return first_term - second_term
 
 
@@ -772,7 +771,7 @@ def iwae_eig_loss(model, guide, observation_labels, target_labels):
         terms = -sum(guide_trace.nodes[l]["log_prob"] for l in target_labels)
         terms += sum(model_trace.nodes[l]["log_prob"] for l in target_labels)
         terms += sum(model_trace.nodes[l]["log_prob"] for l in observation_labels)
-        terms = -logsumexp(terms, 0) + np.log(M)
+        terms = -logsumexp(terms, 0) + math.log(M)
 
         # At eval time, add p(y | theta, d) terms
         if evaluation:

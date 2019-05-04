@@ -10,8 +10,6 @@ import torch
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
-from pyro.contrib.util import rmv
-
 output_dir = "./run_outputs/eig_benchmark/"
 COLOURS = {
            "Ground truth": [0., 0., 0.],
@@ -105,8 +103,8 @@ def main(fnames, findices, plot):
         for case, d in reformed.items():
             plt.figure(figsize=(8, 5))
             for k, (lower, centre, upper) in d.items():
-                x = designs[case][:,0,0].numpy()
-                #x = np.arange(0, centre.shape[0])
+                #x = designs[case][:,0,0].numpy()
+                x = np.arange(0, centre.shape[0])
                 plt.plot(x, centre, linestyle='-', markersize=8, color=COLOURS[k], marker=MARKERS[k], linewidth=2)
                 #plt.fill_between(x, upper, lower, color=COLOURS[k]+[.15])
             #plt.title(case, fontsize=18)

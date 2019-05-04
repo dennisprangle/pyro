@@ -1,6 +1,5 @@
 from __future__ import absolute_import, division, print_function
 
-import os
 import argparse
 from collections import namedtuple
 import time
@@ -41,37 +40,27 @@ from examples.contrib.oed.turk_benchmark import turk_designs, turk_model
 """
 Expected information gain estimation benchmarking
 -------------------------------------------------
-Dials to turn:
-- the model
-- the design space
-- which parameters to consider as targets
 
 Models:
 - linear model
 - normal-inverse gamma model
-- linear mixed effects
-- logistic regression
-- sigmoid regression
-
-Designs:
-- A/B test
-- location finding
+- mixed effects model
+- sigmoid location model
+- extrapolation
 
 Estimation techniques:
     Core
     - analytic EIG (where available)
     - Nested Monte Carlo
+    - VNMC
     - Posterior
     - Marginal / marginal + likelihood
-
-    Old / deprecated
-    - iterated variational inference
     - Donsker-Varadhan
-
-    TODO
     - Laplace approximation
     - LFIRE
 
+    Old / deprecated
+    - iterated variational inference
 """
 
 #########################################################################################
@@ -158,19 +147,13 @@ CASES = [
             (posterior_mc,
              {"num_samples": 10, "num_steps": 1400, "final_num_samples": 500,
               "guide": (NormalInverseGammaPosteriorGuide, {"mf": True, "correct_gamma": False, "alpha_init": 1.,
-                                                           "b0_init": 1., "tikhonov_init": -2.,
+                                                           "b0_init": 1., "regressor_init": -3.,
                                                            "scale_tril_init": torch.tensor([[10., 0.], [0., 1/.55]])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            # (Estimator("Posterior exact guide", ["posterior", "gibbs", "ba", "explicit", "implicit"], ba_eig_mc),
-            #  {"num_samples": 10, "num_steps": 1800, "final_num_samples": 500,
-            #   "guide": (NormalInverseGammaPosteriorGuide, {"mf": False, "correct_gamma": False, "alpha_init": 3.,
-            #                                                "b0_init": 2., "tikhonov_init": -2.,
-            #                                                "scale_tril_init": torch.tensor([[10., 0.], [0., 1/.55]])}),
-            #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (iwae,
-             {"num_samples": [10, 1], "num_steps": 1000, "final_num_samples": [500, 1],
+             {"num_samples": [10, 2], "num_steps": 1000, "final_num_samples": [500, 2],
               "guide": (NormalInverseGammaPosteriorGuide, {"mf": True, "correct_gamma": False, "alpha_init": 1.,
-                                                           "b0_init": 1., "tikhonov_init": -2.,
+                                                           "b0_init": 1., "regressor_init": -3.,
                                                            "scale_tril_init": torch.tensor([[10., 0.], [0., 1/.55]])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (marginal,
