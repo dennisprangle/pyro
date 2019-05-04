@@ -483,7 +483,7 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
         if params is not None:
             pyro.infer.util.zero_grads(params)
         with poutine.trace(param_only=True) as param_capture:
-            agg_loss, loss = loss_fn(design, num_samples)
+            agg_loss, loss = loss_fn(design, num_samples, evaluation=return_history)
         params = set(site["value"].unconstrained()
                      for site in param_capture.trace.nodes.values())
         if torch.isnan(agg_loss):
