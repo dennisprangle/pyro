@@ -147,7 +147,8 @@ def lmer_model(fixed_effects_sd, n_groups, random_effects_alpha, random_effects_
                    response_label=observation_label)
 
 
-def sigmoid_location_model(loc_mean, loc_sd, multiplier, observation_sd, loc_label="loc", observation_label="y"):
+def sigmoid_location_model(loc_mean, loc_sd, multiplier, observation_sd, loc_label="loc", observation_label="y",
+                           nonuniform_noise=True):
     def model(design):
         batch_shape = design.shape[:-2]
         with ExitStack() as stack:
@@ -157,7 +158,11 @@ def sigmoid_location_model(loc_mean, loc_sd, multiplier, observation_sd, loc_lab
             loc = pyro.sample(loc_label, dist.Normal(loc_mean.expand(loc_shape),
                                                      loc_sd.expand(loc_shape)).to_event(1))
             mean = rvv(design, multiplier) - loc
-            emission_dist = dist.CensoredSigmoidNormal(mean, observation_sd, 1 - epsilon, epsilon).to_event(1)
+            if nonuniform_noise:
+                sd = observation_sd * torch.sqrt(1. + torch.abs(rvv(design, multiplier)))
+            else:
+                sd = observation_sd
+            emission_dist = dist.CensoredSigmoidNormal(mean, sd, 1 - epsilon, epsilon).to_event(1)
             y = pyro.sample(observation_label, emission_dist)
             return y
 
