@@ -213,7 +213,7 @@ CASES = [
         "y",
         "w",
         [
-            (nmc, {"N": 135*135, "M": 135}),
+            (nmc, {"N": 130*130, "M": 130}),
             (posterior_lm,
              {"num_samples": 10, "num_steps": 2500, "final_num_samples": 500,
               "guide": (LinearModelPosteriorGuide, {"regressor_init": -3.,
@@ -257,7 +257,7 @@ CASES = [
               "guide": (LinearModelLaplaceGuide, {}),
               "final_num_samples": 6}),
             (dv,
-             {"num_samples": 40, "num_steps": 550, "final_num_samples": 500,
+             {"num_samples": 100, "num_steps": 1200, "final_num_samples": 500,
               "T": (LinearModelAmortizedClassifier, {"regressor_init": -3.,
                                                      "i_scale_tril_init": torch.tensor([[.1, 0.], [0., .55]])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.01}})}),
