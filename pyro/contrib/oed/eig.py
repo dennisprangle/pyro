@@ -206,6 +206,7 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
     return terms.sum(0)/nonnan
 
 
+# Pre-release
 def accelerated_rainforth_eig(model, design, observation_labels, target_labels,
                               yspace, N=100, M_prime=None):
     """
@@ -408,6 +409,7 @@ def gibbs_y_re_eig(model, design, observation_labels, target_labels,
                             final_design, final_num_samples)
 
 
+# Pre-release
 def amortized_lfire_eig(model, design, observation_labels, target_labels,
                         num_samples, num_steps, classifier, optim, return_history=False,
                         final_design=None, final_num_samples=None):

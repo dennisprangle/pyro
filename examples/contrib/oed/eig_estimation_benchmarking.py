@@ -61,6 +61,10 @@ Estimation techniques:
 
     Old / deprecated
     - iterated variational inference
+
+    Pre-release
+    - NNMC
+    - ALFIRE
 """
 
 #########################################################################################
@@ -370,29 +374,6 @@ CASES = [
               "optim": (optim.Adam, {"optim_args": {"lr": 0.01}})}),
         ],
         ["sigmoid", "no_re", "location", "explicit_grid", "lf"]
-    ),
-    Case(
-        "Sigmoid with random effects",
-        (sigmoid_model_fixed, {"coef_means": [torch.tensor([1.]), torch.tensor([10.])],
-                               "coef_sds": [torch.tensor([.25]), torch.tensor([8.])],
-                               "observation_sd": torch.tensor(2.),
-                               "coef_labels": ["coef", "loc"]}),
-        loc_15d_1n_2p,
-        "y",
-        "loc",
-        [
-            (nmc, {"N": 50, "M": 50, "M_prime": 50, "independent_priors": True}),
-            (posterior_mc,
-             {"num_samples": 10, "num_steps": 1500, "final_num_samples": 500,
-              "guide": (SigmoidPosteriorGuide, {"mu_init": 0., "scale_tril_init": 20., "tikhonov_init": -2.}),
-              "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            (marginal_re,
-             {"num_samples": 10, "num_steps": 2000, "final_num_samples": 500,
-              "marginal_guide": (SigmoidMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
-              "cond_guide": (SigmoidLikelihoodGuide, {"mu_init": 0., "sigma_init": 3.}),
-              "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-        ],
-        ["sigmoid", "re", "location"]
     ),
     #############################################################################################################
     # Logistic regression location finding
