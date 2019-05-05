@@ -7,7 +7,6 @@ import pyro
 from pyro import poutine
 from pyro.contrib.autoguide import mean_field_guide_entropy
 from pyro.contrib.oed.search import Search
-from pyro.contrib.util import lexpand
 from pyro.infer import EmpiricalMarginal, Importance, SVI
 from pyro.util import torch_isnan, torch_isinf
 from pyro.contrib.util import lexpand, rexpand
@@ -50,6 +49,7 @@ def laplace_vi_ape(model, design, observation_labels, target_labels,
     return ape
 
 
+# Deprecated
 def vi_ape(model, design, observation_labels, target_labels,
            vi_parameters, is_parameters, y_dist=None):
     """Estimates the average posterior entropy (APE) loss function using
@@ -119,8 +119,7 @@ def vi_ape(model, design, observation_labels, target_labels,
 
 
 def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
-                        N=100, M=10, M_prime=None, independent_priors=False,
-                        N_seq=1):
+                        N=100, M=10, M_prime=None, independent_priors=False):
     """
     Naive Rainforth (i.e. Nested Monte Carlo) estimate of the expected information
     gain (EIG). The estimate is, when there are not any random effects,
@@ -271,11 +270,11 @@ def accelerated_rainforth_eig(model, design, observation_labels, target_labels,
         reexpanded_design = lexpand(design, M_prime, N, 1)
         retrace = poutine.trace(othermodel).get_trace(reexpanded_design)
         retrace.compute_log_prob()
-        relp = logsumexp(sum(retrace.nodes[l]["log_prob"] for l in observation_labels), 0) \
+        relp = sum(retrace.nodes[l]["log_prob"] for l in observation_labels).logsumexp(0) \
             - math.log(M_prime)
         first_term = xexpx(relp).sum(0).sum(0)/N
 
-    second_term = xexpx(logsumexp(lp, 0) - math.log(N)).sum(0)
+    second_term = xexpx(lp.logsumexp(0) - math.log(N)).sum(0)
     return first_term - second_term
 
 
@@ -566,30 +565,6 @@ def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic
     return loss_fn
 
 
-class _EwmaLogFn(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input, ewma):
-        ctx.save_for_backward(ewma)
-        return input.log()
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        ewma, = ctx.saved_tensors
-        return grad_output / ewma, None
-
-
-_ewma_log_fn = _EwmaLogFn.apply
-
-
-def safe_mean_terms(terms):
-    mask = torch.isnan(terms) | (terms == float('-inf')) | (terms == float('inf'))
-    nonnan = (~mask).sum(0).float()
-    terms[mask] = 0.
-    loss = terms.sum(0) / nonnan
-    agg_loss = loss.sum()
-    return agg_loss, loss
-
-
 def gibbs_y_loss(model, guide, observation_labels, target_labels):
 
     def loss_fn(design, num_particles, evaluation=False, **kwargs):
@@ -771,7 +746,7 @@ def iwae_eig_loss(model, guide, observation_labels, target_labels):
         terms = -sum(guide_trace.nodes[l]["log_prob"] for l in target_labels)
         terms += sum(model_trace.nodes[l]["log_prob"] for l in target_labels)
         terms += sum(model_trace.nodes[l]["log_prob"] for l in observation_labels)
-        terms = -logsumexp(terms, 0) + math.log(M)
+        terms = -terms.logsumexp(0) + math.log(M)
 
         # At eval time, add p(y | theta, d) terms
         if evaluation:
@@ -783,30 +758,13 @@ def iwae_eig_loss(model, guide, observation_labels, target_labels):
     return loss_fn
 
 
-def logsumexp(inputs, dim=None, keepdim=False):
-    """Numerically stable logsumexp.
-
-    Args:
-        inputs: A Variable with any shape.
-
-    Returns:
-        Equivalent of `log(sum(exp(inputs), dim=dim, keepdim=keepdim))`.
-    """
-    # For a 1-D array x (any array along a single dimension),
-    # log sum exp(x) = s + log sum exp(x - s)
-    # with s = max(x) being a common choice.
-    if dim is None:
-        inputs = inputs.view(-1)
-        dim = 0
-    s, _ = torch.max(inputs, dim=dim, keepdim=True)
-    j = (inputs - s).exp()
-    # This fix breaks gradients through logsumexp
-    # Fix so that exp(-inf) = 0. rather than nan.
-    # j[(inputs - s) == float('-inf')] = 0.
-    outputs = s + j.sum(dim=dim, keepdim=True).log()
-    if not keepdim:
-        outputs = outputs.squeeze(dim)
-    return outputs
+def safe_mean_terms(terms):
+    mask = torch.isnan(terms) | (terms == float('-inf')) | (terms == float('inf'))
+    nonnan = (~mask).sum(0).float()
+    terms[mask] = 0.
+    loss = terms.sum(0) / nonnan
+    agg_loss = loss.sum()
+    return agg_loss, loss
 
 
 def xexpx(a):
@@ -824,6 +782,21 @@ def xexpx(a):
     y = a*torch.exp(a)
     y[mask] = 0.
     return y
+
+
+class _EwmaLogFn(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, ewma):
+        ctx.save_for_backward(ewma)
+        return input.log()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        ewma, = ctx.saved_tensors
+        return grad_output / ewma, None
+
+
+_ewma_log_fn = _EwmaLogFn.apply
 
 
 class EwmaLog(object):

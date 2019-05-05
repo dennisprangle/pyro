@@ -8,7 +8,7 @@ import pyro
 import pyro.poutine as poutine
 from pyro.contrib.util import get_indices, lexpand, rexpand
 from pyro.contrib.glmm import analytic_posterior_cov
-from pyro.contrib.oed.eig import barber_agakov_ape, vi_ape, laplace_vi_ape, xexpx, logsumexp
+from pyro.contrib.oed.eig import barber_agakov_ape, vi_ape, laplace_vi_ape, xexpx
 
 
 def normal_inverse_gamma_ground_truth(model, design, observation_labels, target_labels, eig=True):
@@ -60,9 +60,9 @@ def logistic_extrapolation_ground_truth(model, design, observation_labels, targe
     lpj = lpo + lpt
 
     # Joint
-    first_term = xexpx(logsumexp(lpj, 0) - math.log(num_samples)).sum(0)
+    first_term = xexpx(lpj.logsumexp(0) - math.log(num_samples)).sum(0)
     # Product of marginals
-    second_term = xexpx(logsumexp(lpo, 0) - math.log(num_samples)).sum(0)/2 + xexpx(logsumexp(lpt, 0) - math.log(num_samples)).sum(0)/2
+    second_term = xexpx(lpo.logsumexp(0) - math.log(num_samples)).sum(0)/2 + xexpx(lpt.logsumexp(0) - math.log(num_samples)).sum(0)/2
 
     return first_term - second_term
 
@@ -98,7 +98,7 @@ def extrap_H_prior(model, design, observation_labels, target_labels, num_samples
     trace = pyro.poutine.trace(cm).get_trace(expanded_design)
     trace.compute_log_prob()
     lp = sum(trace.nodes[l]["log_prob"] for l in target_labels)
-    log_p_hat = logsumexp(lp, 0) - math.log(num_samples)
+    log_p_hat = lp.logsumexp(0) - math.log(num_samples)
     log_1mp = torch.log(1. - torch.exp(log_p_hat))
     return -xexpx(log_p_hat) - xexpx(log_1mp)
 
