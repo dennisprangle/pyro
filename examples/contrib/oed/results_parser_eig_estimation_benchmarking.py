@@ -14,6 +14,7 @@ output_dir = "./run_outputs/eig_benchmark/"
 COLOURS = {
            "Ground truth": [0., 0., 0.],
            "Nested Monte Carlo": [227/255,26/255,28/255],
+           "Non-nested Monte Carlo": [227/255,26/255,28/255],
            "Posterior": [31/255,120/255,180/255],
            "Posterior exact guide": [1, .4, .4],
            "Marginal": [51/255,160/255,44/255],
@@ -30,6 +31,7 @@ COLOURS = {
 MARKERS = {
            "Ground truth": 'x',
            "Nested Monte Carlo": 'v',
+           "Non-nested Monte Carlo": 'v',
            "Posterior": 'o',
            "Posterior exact guide": 'x',
            "Marginal": 's',
