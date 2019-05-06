@@ -29,7 +29,6 @@ CPU_EXAMPLES = [
                  condition='CI' in os.environ,
                  reason='https://github.com/uber/pyro/issues/1540'),
     'contrib/oed/ab_test.py --num-vi-steps=10 --num-bo-steps=2',
-    'contrib/oed/sequential_oed_sigmoid_lm.py --num-experiments=2 --num-runs=2 --no-plot',
     'dmm/dmm.py --num-epochs=1',
     'dmm/dmm.py --num-epochs=1 --num-iafs=1',
     'eight_schools/mcmc.py --num-samples=500 --warmup-steps=100',

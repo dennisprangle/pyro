@@ -25,7 +25,7 @@ except ImportError:
 
 EPSILON = torch.tensor(2 ** -24)
 CHECK_RAINFORTH = False
-SRC = './run_outputs/turk_simulation/0run_6.result_stream.pickle'
+# SRC = './run_outputs/turk_simulation/0run_6.result_stream.pickle'
 
 
 class NewParticipantModel:
@@ -315,7 +315,7 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
     logging.info("True fixed effects: {}".format(true_effects))
     print("True fixed effects:", true_effects)
 
-    hist_file = open(SRC, 'rb')
+    # hist_file = open(SRC, 'rb')
     for typ in typs:
         for run_id in range(1, num_runs+1):
             # Initialise pyro parameters for model
