@@ -50,6 +50,7 @@ class CensoredSigmoidNormal(TorchDistribution):
         x = self.base_dist.sample(sample_shape)
         x[x > self.upper_lim] = self.upper_lim
         x[x < self.lower_lim] = self.lower_lim
+        return x
 
     def log_prob(self, value):
         """

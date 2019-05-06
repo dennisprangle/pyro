@@ -21,8 +21,8 @@ VALUE_LABELS = {"Entropy": "Posterior entropy on fixed effects",
                 "EIG gap": "Difference between maximum and mean EIG",
                 "Fixed effects @0": "Fixed effects index 1",
                 "Fixed effects @3": "Fixed effects index 4"}
-LABELS = {'oed': 'OED', 'posterior_mean': 'Posterior mean'}
-MARKERS = ['o','D']
+LABELS = {'oed': 'OED', 'posterior_mean': 'Posterior mean', 'rand': 'Random'}
+MARKERS = ['o','D', '^']
 
 S=3
 
