@@ -522,9 +522,9 @@ CASES = [
     Case(
         "Nonlinear regression with Gaussian kernel",
         (gk_regression, {"centre_mean": torch.tensor([1.]),
-                         "centre_scale_tril": torch.tensor([[.1]]),
-                         "scale_alpha": torch.tensor(.0001),
-                         "scale_beta": torch.tensor(0.01),
+                         "centre_scale_tril": torch.tensor([[.25]]),
+                         "scale_alpha": torch.tensor(.5),
+                         "scale_beta": torch.tensor(.5),
                          "observation_sd": torch.tensor(2.)}),
         short_line_20d_1p,
         "y",
@@ -542,7 +542,7 @@ CASES = [
             (marginal,
              {"num_samples": 10, "num_steps": 2000, "final_num_samples": 500,
               "guide": (NormalMarginalGuide, {"mu_init": 0., "sigma_init": 3.}),
-              "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
+              "optim": (optim.Adam, {"optim_args": {"lr": 0.01}})}),
         ],
         ["no_re", "nonlinear", "gk"]
     ),
@@ -604,6 +604,7 @@ CASES = [
              {"num_theta_samples": 30, "num_y_samples": 1, "num_steps": 1500, "final_num_samples": 1000,
               "classifier": (TurkClassifier, {"bilinear_init": 0., "ntheta": 30}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.025}})}),
+            # Problem with independent_priors
             (Estimator("Ground truth", ["truth"], naive_rainforth_eig),
              {"N": 100, "M": 10000, "M_prime": 10000, "independent_priors": True, "N_seq": 1}),
         ],

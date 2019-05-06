@@ -44,7 +44,7 @@ def main(num_steps, num_parallel, experiment_name):
     else:
         experiment_name = output_dir+experiment_name
     results_file = experiment_name + '.result_stream.pickle'
-    typs = ['posterior_mean']
+    typs = ['posterior_mean', 'oed']
     true_model = sigmoid_location_model(lexpand(torch.tensor(44.6), num_parallel, 1, 1), torch.tensor([0.]), torch.tensor([1.]),
                                         torch.tensor(5.))
     for typ in typs:
