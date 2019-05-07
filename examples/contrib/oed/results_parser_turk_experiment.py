@@ -27,8 +27,13 @@ MARKERS = {'oed': 'o', 'rand': 'D'}
 
 
 def upper_lower(array):
+    n = array.shape[1]
     centre = array.mean(1)
-    upper, lower = np.percentile(array, 95, axis=1), np.percentile(array, 5, axis=1)
+    sigma = np.std(array, axis=1)
+    se = sigma/np.sqrt(n)
+    from scipy import stats
+    t = stats.t.ppf(0.05, n - 1)
+    upper, lower = centre + t*se, centre - t*se
     return lower, centre, upper
 
 
@@ -146,7 +151,7 @@ def main(fnames, findices, plot):
             plt.xlabel("Step", fontsize=18)
             plt.ylabel(value_label, fontsize=18)
             if k == "Entropy":
-                plt.ylim(11, 22)
+                plt.ylim(11, 21)
             plt.xticks(fontsize=14)
             plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
             plt.yticks(fontsize=14)

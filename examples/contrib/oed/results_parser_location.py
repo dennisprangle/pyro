@@ -24,11 +24,18 @@ VALUE_LABELS = {"Entropy": "Posterior entropy on fixed effects",
 LABELS = {'oed': 'OED', 'posterior_mean': 'Posterior mean', 'rand': 'Random'}
 MARKERS = ['o', 'D', '^']
 
+
 S=3
 
+
 def upper_lower(array):
+    n = array.shape[1]
     centre = array.mean(1)
-    upper, lower = np.percentile(array, 95, axis=1), np.percentile(array, 5, axis=1)
+    sigma = np.std(array, axis=1)
+    se = sigma/np.sqrt(n)
+    from scipy import stats
+    t = stats.t.ppf(0.05, n - 1)
+    upper, lower = centre + t*se, centre - t*se
     return lower, centre, upper
 
 
@@ -86,9 +93,9 @@ def main(fnames, findices, plot):
         k: torch.stack([a[statistic] for a in v]).detach().numpy()
         for k, v in results_dict.items() if statistic in v[0]}
         for statistic in possible_stats}
-
-    print(reformed['Entropy']['oed'][-1, ...].squeeze().mean())
-    print(reformed['Entropy']['rand'][-1, ...].squeeze().mean())
+    #
+    # print(reformed['Entropy']['oed'][-1, ...].squeeze().mean())
+    # print(reformed['Entropy']['rand'][-1, ...].squeeze().mean())
 
     if plot:
         # Plot designs and posteriors
@@ -115,8 +122,7 @@ def main(fnames, findices, plot):
         plt.figure(figsize=(8, 5))
         for i, k in enumerate(reformed["Entropy"]):
             e = reformed["Entropy"][k].squeeze()
-            centre = e.mean(1)
-            upper, lower = np.percentile(e, 95, axis=1), np.percentile(e, 5, axis=1)
+            lower, centre, upper = upper_lower(e)
             x = np.arange(0, e.shape[0])
             plt.plot(x, centre, linestyle='-', markersize=8, color=COLOURS[i], marker=MARKERS[i], linewidth=2)
             plt.fill_between(x, upper, lower, color=COLOURS[i] + [.2])
