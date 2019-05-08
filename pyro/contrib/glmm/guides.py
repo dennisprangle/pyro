@@ -7,7 +7,7 @@ import pyro
 import pyro.distributions as dist
 from pyro import poutine
 from pyro.contrib.util import (
-    get_indices, tensor_to_dict, rmv, rvv, rtril, rdiag, lexpand, rexpand, iter_plates_to_shape
+    get_indices, tensor_to_dict, rmv, rvv, rtril, lexpand, rexpand, iter_plates_to_shape
 )
 from pyro.ops.linalg import rinverse
 from pyro.util import is_bad
@@ -100,7 +100,7 @@ class LinearModelLaplaceGuide(nn.Module):
         batch_shape = x.shape[:-len(event_shape)]
         assert tuple(x.shape) == tuple(batch_shape) + tuple(event_shape)
 
-        dy = torch.autograd.grad(y, [x,], create_graph=True)[0]
+        dy = torch.autograd.grad(y, [x, ], create_graph=True)[0]
         H = []
 
         # collapse independent dimensions into a single one,
@@ -118,7 +118,7 @@ class LinearModelLaplaceGuide(nn.Module):
         # loop over dependent part
         for i in range(flat_dy.shape[-1]):
             dyi = flat_dy.index_select(-1, torch.tensor([i]))
-            Hi = torch.autograd.grad([dyi], [x,], grad_outputs=[torch.ones_like(dyi)], retain_graph=True)[0]
+            Hi = torch.autograd.grad([dyi], [x, ], grad_outputs=[torch.ones_like(dyi)], retain_graph=True)[0]
             H.append(Hi)
         H = torch.stack(H, -1).reshape(*(x.shape + event_shape))
         return H
@@ -435,7 +435,7 @@ class SigmoidLikelihoodGuide(SigmoidMarginalGuide):
 
 
 class LogisticMarginalGuide(nn.Module):
-    
+
     def __init__(self, d, y_sizes, p_logit_init=0., **kwargs):
 
         super(LogisticMarginalGuide, self).__init__()
@@ -453,7 +453,7 @@ class LogisticMarginalGuide(nn.Module):
 
 
 class LogisticLikelihoodGuide(nn.Module):
-    
+
     def __init__(self, d, w_sizes, y_sizes, p_logit_init=0., **kwargs):
 
         super(LogisticLikelihoodGuide, self).__init__()
@@ -466,7 +466,7 @@ class LogisticLikelihoodGuide(nn.Module):
         self.w_sizes = w_sizes
         self.sigmoid = nn.Sigmoid()
         self.softplus = nn.Softplus()
-    
+
     def forward(self, theta_dict, design, observation_labels, target_labels):
 
         theta = torch.cat(list(theta_dict.values()), dim=-1)

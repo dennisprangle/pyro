@@ -3,18 +3,16 @@ from __future__ import absolute_import, division, print_function
 import argparse
 import pickle
 import glob
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
-from pyro.contrib.util import rmv
-
 output_dir = "./run_outputs/location/"
-COLOURS = [[31/255,120/255,180/255], [227/255,26/255,28/255], [51/255,160/255,44/255], [177/255,89/255,40/255],
-           [106 / 255, 61 / 255, 154 / 255], [255/255,127/255,0], [.22, .22, .22]]
+COLOURS = [[31/255, 120/255, 180/255], [227/255, 26/255, 28/255], [51/255, 160/255, 44/255], [177/255, 89/255, 40/255],
+           [106 / 255, 61 / 255, 154 / 255], [255/255, 127/255, 0], [.22, .22, .22]]
 VALUE_LABELS = {"Entropy": "Posterior entropy on fixed effects",
                 "L2 distance": "Expected L2 distance from posterior to truth",
                 "Optimized EIG": "Maximized EIG",
@@ -22,9 +20,10 @@ VALUE_LABELS = {"Entropy": "Posterior entropy on fixed effects",
                 "Fixed effects @0": "Fixed effects index 1",
                 "Fixed effects @3": "Fixed effects index 4"}
 LABELS = {'oed': 'OED', 'posterior_mean': 'Posterior mean', 'rand': 'Random'}
-MARKERS = ['o','D', '^']
+MARKERS = ['o', 'D', '^']
 
-S=3
+S = 3
+
 
 def upper_lower(array):
     centre = array.mean(1)
@@ -51,8 +50,8 @@ def rtrace(M):
 
 
 def main(fnames, findices, plot):
-    fnames = fnames.split(",")
-    findices = map(int, findices.split(","))
+    fnames = fnames.split(", ")
+    findices = map(int, findices.split(", "))
 
     if not all(fnames):
         results_fnames = sorted(glob.glob(output_dir+"*.result_stream.pickle"))
@@ -105,8 +104,8 @@ def main(fnames, findices, plot):
             plt.xticks(fontsize=16)
             plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
             plt.yticks(fontsize=16)
-            #[i.set_linewidth(S/2) for i in plt.gca().spines.values()]
-            #plt.gca().tick_params(width=S/2)
+            # [i.set_linewidth(S/2) for i in plt.gca().spines.values()]
+            # plt.gca().tick_params(width=S/2)
 
             plt.show()
         plt.figure(figsize=(8, 5))
@@ -120,7 +119,7 @@ def main(fnames, findices, plot):
         plt.xlabel("Step", fontsize=22)
         plt.xticks(fontsize=16)
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
-        legend = plt.legend([LABELS[k] for k in reformed["Entropy"].keys()], fontsize=16, frameon=False)
+        plt.legend([LABELS[k] for k in reformed["Entropy"].keys()], fontsize=16, frameon=False)
         # frame = legend.get_frame()
         # frame.set_linewidth(S/)
         plt.yticks(fontsize=16)

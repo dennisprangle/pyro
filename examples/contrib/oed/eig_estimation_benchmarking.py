@@ -12,26 +12,26 @@ import pyro
 from pyro import optim
 from pyro.infer import TraceEnum_ELBO
 from pyro.contrib.oed.eig import (
-    vi_ape, naive_rainforth_eig, accelerated_rainforth_eig, donsker_varadhan_eig, gibbs_y_eig,
-    gibbs_y_re_eig, amortized_lfire_eig, lfire_eig, iwae_eig, laplace_vi_ape
+    naive_rainforth_eig, accelerated_rainforth_eig, donsker_varadhan_eig, gibbs_y_eig,
+    gibbs_y_re_eig, amortized_lfire_eig, lfire_eig, iwae_eig
 )
 from pyro.contrib.util import lexpand
 from pyro.contrib.oed.util import (
-    linear_model_ground_truth, vi_eig_lm, vi_eig_mc, ba_eig_lm, ba_eig_mc, normal_inverse_gamma_ground_truth,
+    linear_model_ground_truth, ba_eig_lm, ba_eig_mc, normal_inverse_gamma_ground_truth,
     laplace_vi_eig_mc, logistic_extrapolation_ground_truth, ba_eig_extrap
 )
 from pyro.contrib.glmm import (
-    group_assignment_matrix, normal_inverse_gamma_linear_model, sigmoid_model_fixed, known_covariance_linear_model,
+    group_assignment_matrix, normal_inverse_gamma_linear_model, known_covariance_linear_model,
     logistic_regression_model, sigmoid_location_model, logistic_extrapolation
 )
 from pyro.contrib.glmm.guides import (
-    LinearModelPosteriorGuide, NormalInverseGammaPosteriorGuide, SigmoidPosteriorGuide, GuideDV, LogisticPosteriorGuide,
+    LinearModelPosteriorGuide, NormalInverseGammaPosteriorGuide, SigmoidPosteriorGuide, LogisticPosteriorGuide,
     LogisticMarginalGuide, LogisticLikelihoodGuide, SigmoidMarginalGuide, SigmoidLikelihoodGuide,
     NormalMarginalGuide, NormalLikelihoodGuide, SigmoidLocationPosteriorGuide, LinearModelLaplaceGuide,
     LogisticExtrapolationLikelihoodGuide, LogisticExtrapolationPosteriorGuide
 )
 from pyro.contrib.glmm.critics import (
-    LinearModelAmortizedClassifier, LinearModelBootstrapClassifier, LinearModelClassifier, SigmoidLocationClassifier,
+    LinearModelAmortizedClassifier, LinearModelClassifier, SigmoidLocationClassifier,
     LogisticExtrapolationClassifier, SigmoidLocationAmortizedClassifier, TurkAmortizedClassifier, TurkClassifier
 )
 from examples.contrib.oed.nonlinear_regression import sinusoid_regression, gk_regression
@@ -101,7 +101,7 @@ extrap_design = torch.stack([-1.*torch.ones(20), torch.linspace(-5., 5., 20)], d
 
 elbo = TraceEnum_ELBO(strict_enumeration_warning=False).differentiable_loss
 
-Estimator = namedtuple("EIGEstimator",[
+Estimator = namedtuple("EIGEstimator", [
     "name",
     "tags",
     "method"
@@ -449,12 +449,12 @@ CASES = [
             (posterior_lm,
              {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500,
               "guide": (LinearModelPosteriorGuide, {"regressor_init": -3.,
-                                                    "scale_tril_init": torch.tensor([[10., 0.,], [0., 2.]])}),
+                                                    "scale_tril_init": torch.tensor([[10., 0.], [0., 2.]])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (iwae,
              {"num_samples": [10, 2], "num_steps": 800, "final_num_samples": [500, 10],
               "guide": (LinearModelPosteriorGuide, {"regressor_init": -3.,
-                                                    "scale_tril_init": torch.tensor([[10., 0.,], [0., 2.]])}),
+                                                    "scale_tril_init": torch.tensor([[10., 0.], [0., 2.]])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (marginal,
              {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500,
@@ -573,7 +573,8 @@ CASES = [
               "T": (LogisticExtrapolationClassifier, {}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.01}})}),
             (Estimator("Ground truth", ["truth"], logistic_extrapolation_ground_truth),
-             {"num_samples": 100000, "ythetaspace": {"y": torch.tensor([0., 0., 1., 1.]), "target": torch.tensor([0., 1., 0., 1.])}}),
+             {"num_samples": 100000, "ythetaspace": {"y": torch.tensor([0., 0., 1., 1.]),
+                                                     "target": torch.tensor([0., 1., 0., 1.])}}),
         ],
         ["extrap"]
     ),
@@ -640,7 +641,8 @@ def main(case_tags, estimator_tags, num_runs, num_parallel, experiment_name):
                 estimator_name = others[0]
             else:
                 estimator_name = estimator.name
-            if ("*" in estimator_tags) or ("all" in estimator_tags) or any(tag in estimator.tags for tag in estimator_tags):
+            if ("*" in estimator_tags) or ("all" in estimator_tags) or \
+                    any(tag in estimator.tags for tag in estimator_tags):
                 for run in range(1, num_runs+1):
                     pyro.clear_param_store()
                     print(case.title, "|", estimator_name)

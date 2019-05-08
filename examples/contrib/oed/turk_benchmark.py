@@ -7,11 +7,6 @@ import pyro
 from pyro.contrib.util import lexpand
 from .turk_experiment import NewParticipantModel, gen_design_space, design_matrix
 
-try:
-    from contextlib import ExitStack  # python 3
-except ImportError:
-    from contextlib2 import ExitStack  # python 2
-
 
 CANDIDATE_DESIGNS = gen_design_space()
 matrices = [design_matrix(d, 1, 1) for d in CANDIDATE_DESIGNS]

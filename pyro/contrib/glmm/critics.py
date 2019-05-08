@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 import pyro
-from pyro.contrib.util import get_indices, tensor_to_dict, rmv, rvv, rtril, rdiag, lexpand, rexpand
+from pyro.contrib.util import get_indices, rmv, rvv, rtril, lexpand, rexpand
 from pyro.contrib.glmm.guides import NormalMarginalGuide, NormalLikelihoodGuide
 
 

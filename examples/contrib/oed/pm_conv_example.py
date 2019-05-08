@@ -9,8 +9,8 @@ import time
 import pyro
 import pyro.optim as optim
 
-from pyro.contrib.oed.eig import iwae_eig, gibbs_y_eig
-from pyro.contrib.oed.util import linear_model_ground_truth, ba_eig_lm
+from pyro.contrib.oed.eig import gibbs_y_eig
+from pyro.contrib.oed.util import ba_eig_lm
 from pyro.contrib.util import lexpand
 from pyro.contrib.glmm import group_assignment_matrix, known_covariance_linear_model
 from pyro.contrib.glmm.guides import LinearModelPosteriorGuide, NormalMarginalGuide
@@ -29,7 +29,7 @@ def main(fname):
         print("T", T)
         pyro.clear_param_store()
         lr = min(1./math.sqrt(T), 1.)
-        #lr=0.01
+        # lr=0.01
         print(lr)
         optimizer = optim.Adam({"lr": lr})
         guide = LinearModelPosteriorGuide(regressor_init=-10., scale_tril_init=torch.tensor([[10., 0.], [0., 1 / .55]]),
@@ -54,10 +54,10 @@ def main(fname):
         print("T", T)
         pyro.clear_param_store()
         lr = min(2.5/math.sqrt(T), 1.)
-        #lr=0.05
+        # lr=0.05
         print(lr)
         optimizer = optim.Adam({"lr": lr})
-        guide = NormalMarginalGuide(d=(NPARALLEL, 1),y_sizes={"y":10}, sigma_init=3.)
+        guide = NormalMarginalGuide(d=(NPARALLEL, 1), y_sizes={"y": 10}, sigma_init=3.)
         t = time.time()
         gibbs_y_eig(model, design, "y", "w", 1, num_steps=T, guide=guide, optim=optimizer, final_num_samples=1)
         t1 = time.time() - t

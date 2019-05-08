@@ -88,7 +88,7 @@ class NewParticipantModel:
             return w, slope
 
     def sample_emission(self, full_design, w, slope):
-        design, slope_design = full_design[..., :self.div], full_design[..., self.div:]
+        design = full_design[..., :self.div]
         batch_shape = design.shape[:-2]
         obs_sd = pyro.param(self.prefix+"obs_sd").expand(batch_shape).unsqueeze(-1)
 
@@ -227,7 +227,7 @@ def design_matrix(design_spec, participant_number, total_num_participants):
 def masking_matrix(p, P):
     M = torch.zeros(P, P)
     for i in range(0, P, p):
-        M[i:(i+p),i:(i+p)] = 1.
+        M[i:(i+p), i:(i+p)] = 1.
     return M
 
 
@@ -296,12 +296,12 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
     results_file = experiment_name+'.result_stream.pickle'
 
     print("Experiment", experiment_name)
-    #typs = ['hist'+SRC]
+    # typs = ['hist'+SRC]
     typs = ['oed_no_re', 'oed', 'rand']
     logging.info("Types: {}, num runs: {}, num_parallel: {}, "
                  "num participants: {}, num questions: {}".format(
                     typs, num_runs, num_parallel, num_participants, num_questions
-    ))
+                 ))
 
     CANDIDATE_DESIGNS = gen_design_space()
     N_DESIGNS = len(CANDIDATE_DESIGNS)
@@ -385,7 +385,8 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
                 (num_parallel, N_DESIGNS), {"fixed_effects": N_FEATURES, "random_effects": N_FEATURES}, {"y": 1},
                 mu_init=like_mu_init, sigma_init=like_sigma_init
             )
-            logging.info("Marginal init values: mu_init {}, sigma_init {}".format(marginal_mu_init, marginal_sigma_init))
+            logging.info("Marginal init values: mu_init {}, sigma_init {}".format(
+                marginal_mu_init, marginal_sigma_init))
             logging.info("Likelihood init value: mu_init {} sigma_init {}".format(like_mu_init, like_sigma_init))
 
             prior = NewParticipantModel("prior_", p+p_re, hide_fn=lambda s: s["name"].startswith("prior"))
@@ -396,7 +397,8 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
             participant_true_model = true_model(p, p_re, num_participants)
 
             for participant_number in range(1, num_participants+1):
-                design = torch.stack([design_matrix(d, participant_number, num_participants) for d in CANDIDATE_DESIGNS], dim=0)
+                design = torch.stack(
+                    [design_matrix(d, participant_number, num_participants) for d in CANDIDATE_DESIGNS], dim=0)
                 logging.info("Design shape: {}\nDesign matrix: {}".format(design.shape, design))
                 adesign = lexpand(design, num_parallel)
 
@@ -410,7 +412,8 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
                     logging.info("Type {} run {} of {} participant {} of {} question {} of {}".format(
                         typ, run_id, num_runs, participant_number, num_participants, question_number, num_questions)
                     )
-                    results = {'typ': typ, 'run': run_id, 'participant': participant_number, 'question': question_number}
+                    results = {'typ': typ, 'run': run_id, 'participant': participant_number,
+                               'question': question_number}
 
                     mult = 5 if question_number == 1 else 1
                     if typ == 'oed':
@@ -465,19 +468,20 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
                     elif typ == 'rand':
                         d_star_index = torch.randint(N_DESIGNS, (num_parallel, )).long()
 
-                    elif typ.startswith('hist'):
-                        hist = pickle.load(hist_file)
-                        d_star_index = hist['d_star_index']
+                    # elif typ.startswith('hist'):
+                    #     hist = pickle.load(hist_file)
+                    #     d_star_index = hist['d_star_index']
 
                     logging.info("Select index {}".format(d_star_index))
                     results['d_star_index'] = d_star_index
                     d_star_design = design[d_star_index, ...].unsqueeze(1)
                     results['d_star_design'] = d_star_design
                     d_star_designs = torch.cat([d_star_designs, d_star_design], dim=-2)
-                    if typ.startswith('hist'):
-                        y = hist['y']
-                    else:
-                        y = participant_true_model(d_star_design)
+                    # if typ.startswith('hist'):
+                    #     y = hist['y']
+                    # else:
+                    #     y = participant_true_model(d_star_design)
+                    y = participant_true_model(d_star_design)
                     ys = torch.cat([ys, y], dim=-1)
                     results['y'] = y
 
@@ -499,11 +503,11 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
                     log_check_pyro_param_store(results)
                     print("Fixed effect mean", pyro.param("guide_fixed_effect_mean").squeeze())
                     print("Slope hyperparameters", pyro.param("guide_slope_precision_alpha"),
-                                                   pyro.param("guide_slope_precision_beta"))
+                          pyro.param("guide_slope_precision_beta"))
 
                     # Set the model to be the guide with fixed parameter values
                     param_store = pyro.get_param_store()
-                    suffices = [name.split("_", 1)[1] for name in param_store.get_all_param_names() \
+                    suffices = [name.split("_", 1)[1] for name in param_store.get_all_param_names()
                                 if name.startswith("guide")]
                     for suffix in suffices:
                         param_store._params["model_"+suffix].data[...] = pyro.param("guide_"+suffix).data[...]

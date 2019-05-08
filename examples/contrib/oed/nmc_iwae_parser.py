@@ -11,28 +11,28 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
 output_dir = "./run_outputs/"
-lightblue = np.array([158,202,225])/255
-darkblue = np.array([0,0,0])/255
+lightblue = np.array([158, 202, 225])/255
+darkblue = np.array([0, 0, 0])/255
 COLOURS = {
            0: lightblue,
            250: .5*lightblue + .5*darkblue,
-           150: [51/255,160/255,44/255],
+           150: [51/255, 160/255, 44/255],
            125: .75*lightblue + .25*darkblue,
-           100: [(44+197)/510,(127+27)/510,(184+138)/510],
+           100: [(44+197)/510, (127+27)/510, (184+138)/510],
            500: .25*lightblue + .75*darkblue,
            2500: darkblue,
            "Ground truth": [0., 0., 0.],
-           "Nested Monte Carlo": [227/255,26/255,28/255],
-           "posterior": [31/255,120/255,180/255],
+           "Nested Monte Carlo": [227/255, 26/255, 28/255],
+           "posterior": [31/255, 120/255, 180/255],
            "Posterior exact guide": [1, .4, .4],
-           "marginal": [51/255,160/255,44/255],
+           "marginal": [51/255, 160/255, 44/255],
            "Marginal + likelihood": [.1, .7, .4],
            "Amortized LFIRE": [.66, .82, .43],
            "ALFIRE 2": [.3, .7, .9],
-           "LFIRE": [177/255,89/255,40/255],
+           "LFIRE": [177/255, 89/255, 40/255],
            "LFIRE 2": [.78, .40, .8],
-           "IWAE": [106/255,61/255,154/255],
-           "Laplace": [255/255,127/255,0],
+           "IWAE": [106/255, 61/255, 154/255],
+           "Laplace": [255/255, 127/255, 0],
 }
 MARKERS = {
            "Ground truth": 'x',
@@ -65,8 +65,8 @@ def bias_variance(array):
 
 
 def main(fnames, findices, plot):
-    fnames = fnames.split(",")
-    findices = map(int, findices.split(","))
+    fnames = fnames.split(", ")
+    findices = map(int, findices.split(", "))
 
     if not all(fnames):
         results_fnames = sorted(glob.glob(output_dir+"*.result_stream.pickle"))
@@ -93,8 +93,11 @@ def main(fnames, findices, plot):
     # Get results into better format
     # First, concat across runs
     print(results_dict)
-    reformed = OrderedDict([(num_steps, (np.array([k for k in sorted(d)]), upper_lower(np.abs(-4.526732444763 + torch.stack([v[1] for v in sorted(d.items())], dim=-1).squeeze().detach().numpy()))))
-                            for num_steps, d in sorted(results_dict.items())])
+    reformed = OrderedDict([(num_steps, (
+        np.array([k for k in sorted(d)]),
+        upper_lower(np.abs(-4.526732444763 +
+                           torch.stack([v[1] for v in sorted(d.items())], dim=-1).squeeze().detach().numpy()))))
+        for num_steps, d in sorted(results_dict.items())])
     print(reformed)
 
     if plot:
@@ -106,7 +109,7 @@ def main(fnames, findices, plot):
         plt.xlabel("Time", fontsize=20)
         plt.ylabel("RMSE in EIG estimate", fontsize=20)
         plt.xticks(fontsize=16)
-        #plt.axhline(4.5267, color="k", linestyle='--')
+        # plt.axhline(4.5267, color="k", linestyle='--')
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.yticks(fontsize=16)
         plt.yscale('log')

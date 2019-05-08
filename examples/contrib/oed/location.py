@@ -38,17 +38,19 @@ def main(num_steps, num_parallel, experiment_name):
         experiment_name = output_dir+experiment_name
     results_file = experiment_name + '.result_stream.pickle'
     typs = ['rand']
-    true_model = sigmoid_location_model(lexpand(torch.tensor(44.6), num_parallel, 1, 1), torch.tensor([0.]), torch.tensor([1.]),
-                                        torch.tensor(5.))
+    true_model = sigmoid_location_model(lexpand(torch.tensor(44.6), num_parallel, 1, 1), torch.tensor([0.]),
+                                        torch.tensor([1.]), torch.tensor(5.))
     for typ in typs:
         pyro.clear_param_store()
         marginal_mu_init, marginal_sigma_init = 0., 50.
         oed_n_samples, oed_n_steps, oed_final_n_samples, oed_lr = 10, 2000, 2000, 0.04
         elbo_n_samples, elbo_n_steps, elbo_lr = 10, 2000, 0.04
 
-        guide = SigmoidMarginalGuide(d=(200,), y_sizes={"y": 1}, mu_init=marginal_mu_init, sigma_init=marginal_sigma_init)
+        guide = SigmoidMarginalGuide(d=(200,), y_sizes={"y": 1}, mu_init=marginal_mu_init,
+                                     sigma_init=marginal_sigma_init)
 
-        prior = sigmoid_location_model(lexpand(torch.tensor(0.), num_parallel, 1, 1), torch.tensor(50.), torch.tensor([1.]), torch.tensor(5.))
+        prior = sigmoid_location_model(lexpand(torch.tensor(0.), num_parallel, 1, 1), torch.tensor(50.),
+                                       torch.tensor([1.]), torch.tensor(5.))
         mean, sd = lexpand(torch.tensor(0.), num_parallel, 1, 1), lexpand(torch.tensor(50.), num_parallel, 1, 1)
 
         d_star_designs = torch.tensor([])

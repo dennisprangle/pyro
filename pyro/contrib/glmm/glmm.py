@@ -247,7 +247,7 @@ def sigmoid_model_fixed(coef_means, coef_sds, observation_sd, coef_labels="w", o
         coef_labels = [coef_labels]
 
     def model(design):
-        
+
         return bayesian_linear_model(
             design,
             w_means=OrderedDict([(label, mean) for label, mean in zip(coef_labels, coef_means)]),
@@ -335,7 +335,6 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
             tau_prior = dist.Gamma(alpha_0.expand(batch_shape).unsqueeze(-1),
                                    beta_0.expand(batch_shape).unsqueeze(-1)).to_event(1)
             tau = pyro.sample("tau", tau_prior)
-            #print("model tau", tau)
             obs_sd = 1./torch.sqrt(tau)
 
         elif alpha_0 is not None or beta_0 is not None:

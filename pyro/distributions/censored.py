@@ -1,6 +1,5 @@
 import torch
 from torch.distributions import constraints
-from torch.distributions.utils import _sum_rightmost
 
 from pyro.distributions.torch_distribution import TorchDistribution
 
@@ -10,7 +9,8 @@ class CensoredDistribution(TorchDistribution):
 
     def __init__(self, base_distribution, upper_lim=float('inf'), lower_lim=float('-inf'), validate_args=None):
         # Log-prob only computed correctly for univariate base distribution
-        assert base_distribution.event_dim == 0 or base_distribution.event_dim == 1 and base_distribution.event_shape[0] == 1
+        assert base_distribution.event_dim == 0 or base_distribution.event_dim == 1 \
+                                                   and base_distribution.event_shape[0] == 1
         self.base_dist = base_distribution
         self.upper_lim = upper_lim
         self.lower_lim = lower_lim
@@ -20,7 +20,7 @@ class CensoredDistribution(TorchDistribution):
 
     @constraints.dependent_property
     def support(self):
-        raise NotImplemented
+        raise NotImplementedError
 
     def sample(self, sample_shape=torch.Size()):
         with torch.no_grad():
@@ -44,7 +44,7 @@ class CensoredDistribution(TorchDistribution):
         as for discrete distributions. `log_prob(x)` in the interior represent regular
         pdfs with respect to Lebesgue measure on R.
 
-        **Note**: `log_prob` scores from distributions with different censoring are not 
+        **Note**: `log_prob` scores from distributions with different censoring are not
         comparable.
         """
         log_prob = self.base_dist.log_prob(value)
@@ -67,4 +67,4 @@ class CensoredDistribution(TorchDistribution):
 
     def icdf(self, value):
         # Is this even possible?
-        raise NotImplemented
+        raise NotImplementedError

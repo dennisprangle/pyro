@@ -13,10 +13,10 @@ from matplotlib.ticker import MaxNLocator
 from pyro.contrib.util import rmv
 
 output_dir = "./run_outputs/turk_simulation/"
-COLOURS = [[227/255,26/255,28/255], [31/255,120/255,180/255], [51/255,160/255,44/255], [177/255,89/255,40/255],
-           [106 / 255, 61 / 255, 154 / 255], [255/255,127/255,0], [.22, .22, .22], [.44, .44, .44], [.66, .66, .66]]
-COLOURSD = {'rand': [227/255,26/255,28/255], 'oed': [31/255,120/255,180/255],
-            'oed_no_re': [51/255,160/255,44/255]}
+COLOURS = [[227/255, 26/255, 28/255], [31/255, 120/255, 180/255], [51/255, 160/255, 44/255], [177/255, 89/255, 40/255],
+           [106 / 255, 61 / 255, 154 / 255], [255/255, 127/255, 0], [.22, .22, .22], [.44, .44, .44], [.66, .66, .66]]
+COLOURSD = {'rand': [227/255, 26/255, 28/255], 'oed': [31/255, 120/255, 180/255],
+            'oed_no_re': [51/255, 160/255, 44/255]}
 VALUE_LABELS = {"Entropy": "Posterior entropy on fixed effects",
                 "L2 distance": "Expected L2 distance from posterior to truth",
                 "Optimized EIG": "Maximized EIG",
@@ -55,8 +55,8 @@ def main(fnames, findices, plot):
     make_mean = torch.cat([torch.cat([(1./3)*torch.ones(3, 3), torch.zeros(3, 3)], dim=0),
                            torch.cat([torch.zeros(3, 3), (1./3)*torch.ones(3, 3)], dim=0)], dim=1)
 
-    fnames = fnames.split(",")
-    findices = map(int, findices.split(","))
+    fnames = fnames.split(", ")
+    findices = map(int, findices.split(", "))
 
     if not all(fnames):
         results_fnames = sorted(glob.glob(output_dir+"*.result_stream.pickle"))
@@ -78,8 +78,9 @@ def main(fnames, findices, plot):
                     st = results["model_fixed_effect_scale_tril"]
                     covm = torch.matmul(st, st.transpose(-1, -2))
                     entropy = .5*rlogdet(2*np.pi*np.e*covm).squeeze(-1)
-                    centered_fixed_effects = results["model_fixed_effect_mean"] - rmv(make_mean, results["model_fixed_effect_mean"])
-                    trace = rtrace(covm)
+                    centered_fixed_effects = results["model_fixed_effect_mean"] - \
+                        rmv(make_mean, results["model_fixed_effect_mean"])
+                    # trace = rtrace(covm)
                     output = {"Entropy": entropy}
                     # if "true_fixed_effects" in results:
                     #     l2d = torch.norm(centered_fixed_effects - results["true_fixed_effects"], dim=-1)

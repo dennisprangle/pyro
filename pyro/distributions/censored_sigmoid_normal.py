@@ -37,7 +37,7 @@ class CensoredSigmoidNormal(TorchDistribution):
 
     @constraints.dependent_property
     def support(self):
-        raise NotImplemented
+        raise NotImplementedError
 
     def sample(self, sample_shape=torch.Size()):
         with torch.no_grad():
@@ -75,8 +75,10 @@ class CensoredSigmoidNormal(TorchDistribution):
         mask_upper = upper_cdf < crit
         mask_lower = lower_cdf < crit
         shape = self.base_dist.batch_shape
-        asymptotic_upper = self.base_dist.log_prob(self.upper_lim.expand(shape)) - (crit+self.z(self.upper_lim).abs()).log()
-        asymptotic_lower = self.base_dist.log_prob(self.lower_lim.expand(shape)) - (crit+self.z(self.lower_lim).abs()).log()
+        asymptotic_upper = self.base_dist.log_prob(self.upper_lim.expand(shape)) - \
+            (crit+self.z(self.upper_lim).abs()).log()
+        asymptotic_lower = self.base_dist.log_prob(self.lower_lim.expand(shape)) - \
+            (crit+self.z(self.lower_lim).abs()).log()
         upper_cdf[mask_upper] = 1.
         upper_cdf = upper_cdf.log()
         upper_cdf[mask_upper] = asymptotic_upper[mask_upper]
@@ -107,4 +109,4 @@ class CensoredSigmoidNormal(TorchDistribution):
 
     def icdf(self, value):
         # Is this even possible?
-        raise NotImplemented
+        raise NotImplementedError

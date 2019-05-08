@@ -2,7 +2,6 @@ from __future__ import absolute_import, division, print_function
 
 import math
 import torch
-import math
 
 import pyro
 import pyro.poutine as poutine
@@ -17,9 +16,8 @@ def normal_inverse_gamma_ground_truth(model, design, observation_labels, target_
     sign = 2.*(eig - .5)
     p = design.shape[-2]
     nu = model.alpha*2
-    correction_factor = -(p/2.)*(math.log(2) + 1.) - torch.lgamma((nu+p)/2) + torch.lgamma(nu/2) + (p/2.)*torch.log(nu) \
-                        + ((nu+p)/2.)*(torch.digamma((nu+p)/2) \
-                        - torch.digamma(nu/2))
+    correction_factor = -(p/2.)*(math.log(2) + 1.) - torch.lgamma((nu+p)/2) + torch.lgamma(nu/2) \
+        + (p/2.)*torch.log(nu) + ((nu+p)/2.)*(torch.digamma((nu+p)/2) - torch.digamma(nu/2))
     variance_factor = (p/2.)*(-torch.log(model.alpha) + torch.digamma(model.alpha))
     return lm + sign*(correction_factor + variance_factor)
 
@@ -62,7 +60,8 @@ def logistic_extrapolation_ground_truth(model, design, observation_labels, targe
     # Joint
     first_term = xexpx(lpj.logsumexp(0) - math.log(num_samples)).sum(0)
     # Product of marginals
-    second_term = xexpx(lpo.logsumexp(0) - math.log(num_samples)).sum(0)/2 + xexpx(lpt.logsumexp(0) - math.log(num_samples)).sum(0)/2
+    second_term = xexpx(lpo.logsumexp(0) - math.log(num_samples)).sum(0)/2 + xexpx(
+        lpt.logsumexp(0) - math.log(num_samples)).sum(0)/2
 
     return first_term - second_term
 

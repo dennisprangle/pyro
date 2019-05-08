@@ -103,7 +103,6 @@ def vi_ape(model, design, observation_labels, target_labels,
         # Recover the entropy
         with poutine.block():
             guide = vi_parameters["guide"]
-            final_loss = vi_parameters["loss"](conditioned_model, guide, design)
             entropy = mean_field_guide_entropy(guide, [design], whitelist=target_labels)
         return entropy
 
@@ -556,9 +555,9 @@ def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic
             y_dict, expanded_design, observation_labels, target_labels)
         cond_trace.compute_log_prob()
         if evaluation and analytic_entropy:
-            loss = mean_field_guide_entropy(guide,
-                    [y_dict, expanded_design, observation_labels, target_labels],
-                    whitelist=target_labels).sum(0)/num_particles
+            loss = mean_field_guide_entropy(
+                guide, [y_dict, expanded_design, observation_labels, target_labels],
+                whitelist=target_labels).sum(0)/num_particles
         else:
             loss = -sum(cond_trace.nodes[l]["log_prob"] for l in target_labels).sum(0)/num_particles
         agg_loss = loss.sum()
@@ -774,7 +773,7 @@ def safe_mean_terms(terms):
 
 def xexpx(a):
     """Computes `a*exp(a)`.
-    
+
     This function makes the outputs more stable when the inputs of this function converge to -infinity
 
     Args:

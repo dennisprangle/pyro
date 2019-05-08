@@ -13,19 +13,19 @@ from matplotlib.ticker import MaxNLocator
 output_dir = "./run_outputs/eig_benchmark/"
 COLOURS = {
            "Ground truth": [0., 0., 0.],
-           "Nested Monte Carlo": [227/255,26/255,28/255],
-           "Non-nested Monte Carlo": [227/255,26/255,28/255],
-           "Posterior": [31/255,120/255,180/255],
+           "Nested Monte Carlo": [227/255, 26/255, 28/255],
+           "Non-nested Monte Carlo": [227/255, 26/255, 28/255],
+           "Posterior": [31/255, 120/255, 180/255],
            "Posterior exact guide": [1, .4, .4],
-           "Marginal": [51/255,160/255,44/255],
-           "Marginal (unbiased)": [51/255,160/255,44/255],
+           "Marginal": [51/255, 160/255, 44/255],
+           "Marginal (unbiased)": [51/255, 160/255, 44/255],
            "Marginal + likelihood": [.1, .7, .4],
            "Amortized LFIRE": [.66, .82, .43],
            "ALFIRE 2": [.3, .7, .9],
-           "LFIRE": [177/255,89/255,40/255],
+           "LFIRE": [177/255, 89/255, 40/255],
            "LFIRE 2": [.78, .40, .8],
-           "IWAE": [106/255,61/255,154/255],
-           "Laplace": [255/255,127/255,0],
+           "IWAE": [106/255, 61/255, 154/255],
+           "Laplace": [255/255, 127/255, 0],
            "Donsker-Varadhan": [.44, .44, .44]
 }
 MARKERS = {
@@ -60,8 +60,8 @@ def bias_variance(array):
 
 
 def main(fnames, findices, plot):
-    fnames = fnames.split(",")
-    findices = map(int, findices.split(","))
+    fnames = fnames.split(", ")
+    findices = map(int, findices.split(", "))
 
     if not all(fnames):
         results_fnames = sorted(glob.glob(output_dir+"*.result_stream.pickle"))
@@ -105,11 +105,11 @@ def main(fnames, findices, plot):
         for case, d in reformed.items():
             plt.figure(figsize=(8, 5))
             for k, (lower, centre, upper) in d.items():
-                #x = designs[case][:,0,0].numpy()
+                # x = designs[case][:, 0, 0].numpy()
                 x = np.arange(0, centre.shape[0])
                 plt.plot(x, centre, linestyle='-', markersize=8, color=COLOURS[k], marker=MARKERS[k], linewidth=2)
-                #plt.fill_between(x, upper, lower, color=COLOURS[k]+[.15])
-            #plt.title(case, fontsize=18)
+                # plt.fill_between(x, upper, lower, color=COLOURS[k]+[.15])
+            # plt.title(case, fontsize=18)
             plt.legend(d.keys(), loc=1, fontsize=16, frameon=False)
             plt.xlabel("Design $d$", fontsize=22)
             plt.ylabel("EIG estimate", fontsize=22)
