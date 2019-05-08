@@ -9,7 +9,7 @@ import pyro.optim as optim
 from pyro.contrib.oed.eig import (
     naive_rainforth_eig, barber_agakov_ape, gibbs_y_eig, gibbs_y_re_eig, iwae_eig, lfire_eig,
     donsker_varadhan_eig)
-from pyro.contrib.util import iter_iaranges_to_shape
+from pyro.contrib.util import iter_plates_to_shape
     
 from tests.common import assert_equal
 
@@ -24,8 +24,8 @@ def finite_space_model():
     def model(design):
         batch_shape = design.shape
         with ExitStack() as stack:
-            for iarange in iter_iaranges_to_shape(batch_shape):
-                stack.enter_context(iarange)
+            for plate in iter_plates_to_shape(batch_shape):
+                stack.enter_context(plate)
             theta = pyro.sample("theta", dist.Bernoulli(.4).expand(batch_shape))
             y = pyro.sample("y", dist.Bernoulli((design + theta) / 2.))
             return y

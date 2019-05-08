@@ -191,7 +191,7 @@ def test_dv_linear_model(linear_model, one_point_design):
     donsker_varadhan_eig(linear_model, one_point_design, "y", "w", num_samples=100, num_steps=500, T=dv_critic,
                          optim=optim.Adam({"lr": 0.1}))
     estimated_eig = donsker_varadhan_eig(linear_model, one_point_design, "y", "w", num_samples=100,
-                                         num_steps=500, T=dv_critic, optim=optim.Adam({"lr": 0.001}),
+                                         num_steps=650, T=dv_critic, optim=optim.Adam({"lr": 0.001}),
                                          final_num_samples=2000)
     expected_eig = linear_model_ground_truth(linear_model, one_point_design, "y", "w")
     assert_equal(estimated_eig, expected_eig, prec=5e-2)

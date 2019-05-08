@@ -123,13 +123,6 @@ class LinearModelLaplaceGuide(nn.Module):
         H = torch.stack(H, -1).reshape(*(x.shape + event_shape))
         return H
 
-    @staticmethod
-    def _batch_potrf_compat(x, **kwargs):
-        # TODO update this code to Pyro dev and remove in favor of .cholesky()
-        flat_x = x.reshape(-1, x.shape[-2], x.shape[-1])
-        potrfs = torch.stack([flat_xi.potrf(**kwargs) for flat_xi in flat_x])
-        return potrfs.reshape(*tuple(x.shape))
-
     def finalize(self, loss, target_labels):
         """
         Compute the Hessian of the parameters wrt ``loss``
@@ -146,7 +139,7 @@ class LinearModelLaplaceGuide(nn.Module):
                 continue
             hess_l = self._hessian_diag(loss, mu_l, event_shape=(self.w_sizes[l],))
             cov_l = rinverse(hess_l)
-            self.scale_trils[l] = rtril(self._batch_potrf_compat(cov_l, upper=False))
+            self.scale_trils[l] = cov_l.cholesky(upper=False)
 
     def forward(self, design, target_labels=None):
         """
