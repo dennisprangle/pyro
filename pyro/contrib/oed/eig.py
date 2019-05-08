@@ -595,7 +595,7 @@ def gibbs_y_loss(model, guide, observation_labels, target_labels):
     return loss_fn
 
 
-def gibbs_y_re_loss(model, marginal_guide, cond_guide, observation_labels, target_labels):
+def gibbs_y_re_loss(model, marginal_guide, likelihood_guide, observation_labels, target_labels):
 
     def loss_fn(design, num_particles, evaluation=False, **kwargs):
 
@@ -613,7 +613,7 @@ def gibbs_y_re_loss(model, marginal_guide, cond_guide, observation_labels, targe
         marginal_trace.compute_log_prob()
 
         # Run through q(y | theta, d)
-        qythetad = pyro.condition(cond_guide, data=y_dict)
+        qythetad = pyro.condition(likelihood_guide, data=y_dict)
         cond_trace = poutine.trace(qythetad).get_trace(
                 theta_dict, expanded_design, observation_labels, target_labels)
         cond_trace.compute_log_prob()
@@ -762,7 +762,10 @@ def iwae_eig_loss(model, guide, observation_labels, target_labels):
 
 def safe_mean_terms(terms):
     mask = torch.isnan(terms) | (terms == float('-inf')) | (terms == float('inf'))
-    nonnan = (~mask).sum(0).float()
+    if terms.dtype is torch.float32:
+        nonnan = (~mask).sum(0).float()
+    elif terms.dtype is torch.float64:
+        nonnan = (~mask).sum(0).double()
     terms[mask] = 0.
     loss = terms.sum(0) / nonnan
     agg_loss = loss.sum()
