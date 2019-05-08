@@ -15,15 +15,16 @@ from pyro.contrib.util import rmv
 output_dir = "./run_outputs/turk_simulation/"
 COLOURS = [[227/255,26/255,28/255], [31/255,120/255,180/255], [51/255,160/255,44/255], [177/255,89/255,40/255],
            [106 / 255, 61 / 255, 154 / 255], [255/255,127/255,0], [.22, .22, .22], [.44, .44, .44], [.66, .66, .66]]
-COLOURSD = {'rand': [227/255,26/255,28/255], 'oed': [31/255,120/255,180/255]}
+COLOURSD = {'rand': [227/255,26/255,28/255], 'oed': [31/255,120/255,180/255],
+            'oed_no_re': [51/255,160/255,44/255]}
 VALUE_LABELS = {"Entropy": "Posterior entropy on fixed effects",
                 "L2 distance": "Expected L2 distance from posterior to truth",
                 "Optimized EIG": "Maximized EIG",
                 "EIG gap": "Difference between maximum and mean EIG",
                 "Fixed effects @0": "Fixed effects index 1",
                 "Fixed effects @3": "Fixed effects index 4"}
-LEGENDS = {'oed': 'OED', 'rand': 'Random'}
-MARKERS = {'oed': 'o', 'rand': 'D'}
+LEGENDS = {'oed': 'OED', 'rand': 'Random', 'oed_no_re': 'OED on all parameters'}
+MARKERS = {'oed': 'o', 'rand': 'D', 'oed_no_re': '^'}
 
 
 def upper_lower(array):
@@ -105,8 +106,8 @@ def main(fnames, findices, plot):
             except EOFError:
                 continue
 
-    if 'oed_no_re' in results_dict:
-        del results_dict['oed_no_re']
+    # if 'oed_no_re' in results_dict:
+    #     del results_dict['oed_no_re']
     # Get results into better format
     # First, concat across runs
     possible_stats = list(set().union(a for v in results_dict.values() for a in v[1][0].keys()))

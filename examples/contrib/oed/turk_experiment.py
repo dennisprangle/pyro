@@ -514,7 +514,7 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
                     logging.debug("Store results to pickle stream")
                     with open(results_file, 'ab') as f:
                         pickle.dump(results, f)
-    hist_file.close()
+    # hist_file.close()
 
 
 if __name__ == "__main__":
