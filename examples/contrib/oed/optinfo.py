@@ -7,7 +7,7 @@ import pyro.distributions as dist
 import pyro.optim as optim
 from pyro.contrib.oed.eig import barber_agakov_ape, gibbs_y_eig, gibbs_y_eig_saddle
 from pyro.contrib.oed.util import linear_model_ground_truth
-from pyro.contrib.util import rmv, iter_iaranges_to_shape, lexpand
+from pyro.contrib.util import rmv, iter_iaranges_to_shape, lexpand, rvv, rexpand
 from pyro.contrib.glmm import group_assignment_matrix
 
 try:
@@ -17,7 +17,7 @@ except ImportError:
 
 
 N = 15
-prior_scale_tril = torch.tensor([[10., 0.], [0., 10.]])
+prior_scale_tril = torch.tensor([[10., 0.], [0., 1./.55]])
 AB_test_designs = torch.stack([group_assignment_matrix(torch.tensor([n, N-n])) for n in torch.linspace(0, N, N+1)])
 
 
@@ -129,8 +129,34 @@ def isaddle():
     print("EIG from xi_star", eig_star)
 
 
+def unbiased_mi_gradient(xi):
+    trace = pyro.poutine.trace(model_fix_xi).get_trace(xi)
+    y = trace.nodes["y"]["value"]
+    # trace.compute_log_prob()
+    # lp = trace.nodes["y"]["log_prob"]
+
+    #lp.backward()
+    g1 = -(y - rmv(xi, trace.nodes["x"]["value"]))
+    g2 = (rexpand(torch.eye(N), 2) * trace.nodes["x"]["value"]).transpose(-1, -2)
+    trace2 = pyro.poutine.trace(pyro.condition(model_fix_xi, {"y": y})).get_trace(xi)
+    g3 = (rexpand(torch.eye(N), 2) * trace2.nodes["x"]["value"]).transpose(-1, -2)
+
+    return rvv(g1, (g2 - g3))
+
+
+def opt_unbiased():
+    thetas = torch.zeros(N, requires_grad=True)
+    for i in range(5000):
+        design = lexpand(torch.stack([torch.sin(thetas), torch.cos(thetas)], dim=-1), 1)
+        grad = unbiased_mi_gradient(design)
+        final_grad = (grad * torch.stack([torch.cos(thetas), -torch.sin(thetas)], dim=-1)).sum(-1)
+        thetas = thetas + 0.005 * final_grad
+        print(design.abs().sum(1))
+
+
 if __name__ == '__main__':
     # print("Saddle")
     # isaddle()
-    print("Lower bound")
-    ilbo()
+    # print("Lower bound")
+    # ilbo()
+    opt_unbiased()
