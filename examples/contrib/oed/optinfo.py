@@ -5,7 +5,8 @@ import torch
 import pyro
 import pyro.distributions as dist
 import pyro.optim as optim
-from pyro.contrib.oed.eig import barber_agakov_ape
+from pyro.contrib.oed.eig import barber_agakov_ape, gibbs_y_eig, gibbs_y_eig_saddle
+from pyro.contrib.oed.util import linear_model_ground_truth
 from pyro.contrib.util import rmv, iter_iaranges_to_shape, lexpand
 from pyro.contrib.glmm import group_assignment_matrix
 
@@ -16,7 +17,7 @@ except ImportError:
 
 
 N = 15
-prior_scale_tril = torch.tensor([[10., 0.], [0., .1]])
+prior_scale_tril = torch.tensor([[10., 0.], [0., 10.]])
 AB_test_designs = torch.stack([group_assignment_matrix(torch.tensor([n, N-n])) for n in torch.linspace(0, N, N+1)])
 
 
@@ -46,6 +47,10 @@ def model_fix_xi(design):
         return pyro.sample("y", dist.Normal(prediction_mean, torch.tensor(1.)).independent(1))
 
 
+model_fix_xi.w_sds = {"x": torch.tensor([10., 10.])}
+model_fix_xi.obs_sd = torch.tensor(1.)
+
+
 def make_posterior_guide(d):
     def posterior_guide(y_dict, design, observation_labels, target_labels):
 
@@ -58,17 +63,34 @@ def make_posterior_guide(d):
     return posterior_guide
 
 
-def main():
+def make_marginal_guide(d):
+    def marginal_guide(design, observation_labels, target_labels):
+        mu = pyro.param("mu", torch.zeros(d, N))
+        scale_tril = pyro.param("scale_tril", lexpand(torch.eye(N), d),
+                                constraint=torch.distributions.constraints.lower_cholesky)
+        pyro.sample("y", dist.MultivariateNormal(mu, scale_tril=scale_tril))
+    return marginal_guide
+
+
+def ilbo():
     # Here we estimate the APE (average posterior entropy) on a grid of possible xi's
     # We are computing the `posterior' lower bound
     pyro.clear_param_store()
-    ape_surf = barber_agakov_ape(model_fix_xi, AB_test_designs, "y", "x", guide=make_posterior_guide(N + 1),
-                                 num_steps=6000, num_samples=10, optim=optim.Adam({"lr": 0.0025}),
+    guide = make_posterior_guide(N + 1)
+    barber_agakov_ape(model_fix_xi, AB_test_designs, "y", "x", guide=guide,
+                      num_steps=3000, num_samples=10, optim=optim.Adam({"lr": 0.025}),
+                      final_num_samples=500)
+    ape_surf = barber_agakov_ape(model_fix_xi, AB_test_designs, "y", "x", guide=guide,
+                                 num_steps=3000, num_samples=10, optim=optim.Adam({"lr": 0.0025}),
                                  final_num_samples=500)
     pyro.clear_param_store()
+    guide = make_posterior_guide(1)
     # Here we optimize xi and phi simultaneously
-    ape_star = barber_agakov_ape(model_learn_xi, torch.zeros(1, N, 2), "y", "x", guide=make_posterior_guide(1),
-                                 num_steps=60000, num_samples=10, optim=optim.Adam({"lr": 0.001}),
+    barber_agakov_ape(model_learn_xi, torch.zeros(1, N, 2), "y", "x", guide=guide,
+                      num_steps=30000, num_samples=10, optim=optim.Adam({"lr": 0.01}),
+                      final_num_samples=500)
+    ape_star = barber_agakov_ape(model_learn_xi, torch.zeros(1, N, 2), "y", "x", guide=guide,
+                                 num_steps=30000, num_samples=10, optim=optim.Adam({"lr": 0.001}),
                                  final_num_samples=500)
     thetas = pyro.param("xi")
     xi = torch.stack([torch.sin(thetas), torch.cos(thetas)], dim=-1)
@@ -78,5 +100,37 @@ def main():
     print("APE from xi_star", ape_star)
 
 
+def isaddle():
+    pyro.clear_param_store()
+    guide = make_marginal_guide(N + 1)
+    true_eig_surf = linear_model_ground_truth(model_fix_xi, AB_test_designs, "y", "x")
+    gibbs_y_eig(model_fix_xi, AB_test_designs, "y", "x", guide=guide,
+                num_steps=3000, num_samples=10, optim=optim.Adam({"lr": 0.05}),
+                final_num_samples=500)
+    # eig_surf = gibbs_y_eig(model_fix_xi, AB_test_designs, "y", "x", guide=make_marginal_guide(N + 1),
+    #                        num_steps=2000, num_samples=10, optim=optim.Adam({"lr": 0.005}),
+    #                        final_num_samples=500)
+    pyro.clear_param_store()
+    guide = make_marginal_guide(1)
+
+    for i in range(80):
+        gibbs_y_eig(model_learn_xi, torch.zeros(1, N, 2), "y", "x", guide=guide,
+                    num_steps=500, num_samples=10, optim=optim.Adam({"lr": 0.0025}),
+                    exclude_names={"xi"})
+        eig_star = gibbs_y_eig_saddle(model_learn_xi, torch.zeros(1, N, 2), "y", "x", guide=guide,
+                                      num_steps=500, num_samples=10, optim=optim.Adam({"lr": 0.00075}),
+                                      final_num_samples=500, adverse_names={"xi"})
+    thetas = pyro.param("xi")
+    xi = torch.stack([torch.sin(thetas), torch.cos(thetas)], dim=-1)
+    print("Grid of designs", AB_test_designs.sum(-2))
+    # print("EIG on grid (not learning xi)", eig_surf)
+    print("True EIG on grid (not learning xi)", true_eig_surf)
+    print("Learned xi_star", xi.abs().sum(0))
+    print("EIG from xi_star", eig_star)
+
+
 if __name__ == '__main__':
-    main()
+    # print("Saddle")
+    # isaddle()
+    print("Lower bound")
+    ilbo()
