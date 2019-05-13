@@ -375,7 +375,7 @@ def barber_agakov_ape(model, design, observation_labels, target_labels,
 
 def gibbs_y_eig(model, design, observation_labels, target_labels,
                 num_samples, num_steps, guide, optim, return_history=False,
-                final_design=None, final_num_samples=None):
+                final_design=None, final_num_samples=None, exclude_names=[]):
     """Estimate EIG by estimating the marginal entropy, that of :math:`p(y|d)`,
     via Gibbs' Inequality.
 
@@ -389,7 +389,26 @@ def gibbs_y_eig(model, design, observation_labels, target_labels,
         target_labels = [target_labels]
     loss = gibbs_y_loss(model, guide, observation_labels, target_labels)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
-                            final_design, final_num_samples)
+                            final_design, final_num_samples, exclude_names=exclude_names)
+
+
+def gibbs_y_eig_saddle(model, design, observation_labels, target_labels,
+                num_samples, num_steps, guide, optim, return_history=False,
+                final_design=None, final_num_samples=None, adverse_names=[]):
+    """Estimate EIG by estimating the marginal entropy, that of :math:`p(y|d)`,
+    via Gibbs' Inequality.
+
+    Warning: this method does **not** estimate the correct quantity in the presence of
+    random effects.
+    """
+
+    if isinstance(observation_labels, str):
+        observation_labels = [observation_labels]
+    if isinstance(target_labels, str):
+        target_labels = [target_labels]
+    loss = gibbs_y_loss(model, guide, observation_labels, target_labels)
+    return opt_saddle_loss(design, loss, num_samples, num_steps, optim, return_history,
+                           final_design, final_num_samples, adverse_names=adverse_names)
 
 
 def gibbs_y_re_eig(model, design, observation_labels, target_labels,
@@ -469,7 +488,7 @@ def iwae_eig(model, design, observation_labels, target_labels,
 
 
 def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_history=False,
-                     final_design=None, final_num_samples=None):
+                     final_design=None, final_num_samples=None, exclude_names=[]):
 
     if final_design is None:
         final_design = design
@@ -484,13 +503,61 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
         with poutine.trace(param_only=True) as param_capture:
             agg_loss, loss = loss_fn(design, num_samples, evaluation=return_history)
         params = set(site["value"].unconstrained()
-                     for site in param_capture.trace.nodes.values())
+                     for site in param_capture.trace.nodes.values()
+                     if site["name"] not in exclude_names)
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
         agg_loss.backward()
         if return_history:
             history.append(loss)
         optim(params)
+
+    _, loss = loss_fn(final_design, final_num_samples, evaluation=True)
+    if return_history:
+        return torch.stack(history), loss
+    else:
+        return loss
+
+
+def opt_saddle_loss(design, loss_fn, num_samples, num_steps, optim, return_history=False,
+                    final_design=None, final_num_samples=None, adverse_names=[]):
+
+    if final_design is None:
+        final_design = design
+    if final_num_samples is None:
+        final_num_samples = num_samples
+
+    params = None
+    history = []
+    for step in range(num_steps):
+        # if params is not None:
+        #     pyro.infer.util.zero_grads(params)
+        # with poutine.trace(param_only=True) as param_capture:
+        #     agg_loss, loss = loss_fn(design, num_samples)
+        # params = set(site["value"].unconstrained()
+        #              for site in param_capture.trace.nodes.values()
+        #              if site["name"] not in adverse_names)
+        # if torch.isnan(agg_loss):
+        #     raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
+        # agg_loss.backward()
+        # if return_history:
+        #     history.append(loss)
+        # optim(params)
+
+        if params is not None:
+            pyro.infer.util.zero_grads(params)
+        with poutine.trace(param_only=True) as param_capture:
+            agg_loss, loss = loss_fn(design, num_samples, evaluation=True)
+        params = set(site["value"].unconstrained()
+                     for site in param_capture.trace.nodes.values()
+                     if site["name"] in adverse_names)
+        if torch.isnan(agg_loss):
+            raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
+        (-agg_loss).backward()
+        if return_history:
+            history.append(loss)
+        optim(params)
+        print(params)
 
     _, loss = loss_fn(final_design, final_num_samples, evaluation=True)
     if return_history:
