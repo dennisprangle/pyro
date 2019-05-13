@@ -5,9 +5,9 @@ import torch
 import pyro
 import pyro.distributions as dist
 import pyro.optim as optim
-from pyro.contrib.oed.eig import barber_agakov_ape, gibbs_y_eig, gibbs_y_eig_saddle
+from pyro.contrib.oed.eig import barber_agakov_ape, gibbs_y_eig, gibbs_y_eig_saddle, opt_mi
 from pyro.contrib.oed.util import linear_model_ground_truth
-from pyro.contrib.util import rmv, iter_iaranges_to_shape, lexpand, rvv, rexpand
+from pyro.contrib.util import rmv, iter_plates_to_shape, lexpand, rvv, rexpand
 from pyro.contrib.glmm import group_assignment_matrix
 
 try:
@@ -26,7 +26,7 @@ def model_learn_xi(design_prototype):
     xi = lexpand(torch.stack([torch.sin(thetas), torch.cos(thetas)], dim=-1), 1)
     batch_shape = design_prototype.shape[:-2]
     with ExitStack() as stack:
-        for iarange in iter_iaranges_to_shape(batch_shape):
+        for iarange in iter_plates_to_shape(batch_shape):
             stack.enter_context(iarange)
 
         x = pyro.sample("x", dist.MultivariateNormal(lexpand(torch.zeros(2), *batch_shape),
@@ -38,7 +38,7 @@ def model_learn_xi(design_prototype):
 def model_fix_xi(design):
     batch_shape = design.shape[:-2]
     with ExitStack() as stack:
-        for iarange in iter_iaranges_to_shape(batch_shape):
+        for iarange in iter_plates_to_shape(batch_shape):
             stack.enter_context(iarange)
 
         x = pyro.sample("x", dist.MultivariateNormal(lexpand(torch.zeros(2), *batch_shape),
@@ -159,4 +159,7 @@ if __name__ == '__main__':
     # isaddle()
     # print("Lower bound")
     # ilbo()
-    opt_unbiased()
+    # opt_unbiased()
+    opt_mi(model_learn_xi, torch.ones(1, N, 2), design_label="xi",
+           observation_label="y", target_labels="x", num_samples=1,
+           num_steps=5000, optim=optim.Adam({"lr": 0.005}))
