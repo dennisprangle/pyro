@@ -26,8 +26,8 @@ def model_learn_xi(design_prototype):
     xi = lexpand(torch.stack([torch.sin(thetas), torch.cos(thetas)], dim=-1), 1)
     batch_shape = design_prototype.shape[:-2]
     with ExitStack() as stack:
-        for iarange in iter_plates_to_shape(batch_shape):
-            stack.enter_context(iarange)
+        for plate in iter_plates_to_shape(batch_shape):
+            stack.enter_context(plate)
 
         x = pyro.sample("x", dist.MultivariateNormal(lexpand(torch.zeros(2), *batch_shape),
                                                      scale_tril=lexpand(prior_scale_tril, *batch_shape)))
@@ -38,8 +38,8 @@ def model_learn_xi(design_prototype):
 def model_fix_xi(design):
     batch_shape = design.shape[:-2]
     with ExitStack() as stack:
-        for iarange in iter_plates_to_shape(batch_shape):
-            stack.enter_context(iarange)
+        for plate in iter_plates_to_shape(batch_shape):
+            stack.enter_context(plate)
 
         x = pyro.sample("x", dist.MultivariateNormal(lexpand(torch.zeros(2), *batch_shape),
                                                      scale_tril=lexpand(prior_scale_tril, *batch_shape)))

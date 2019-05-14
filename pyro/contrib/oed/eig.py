@@ -569,11 +569,13 @@ def opt_saddle_loss(design, loss_fn, num_samples, num_steps, optim, return_histo
 def opt_mi(model, design, observation_label, target_labels, design_label,
            num_samples, num_steps, optim):
 
-    def make_grad(model):
+    expanded_design = lexpand(design, num_samples)
+
+    for _ in range(num_steps):
         trace = poutine.trace(model).get_trace(expanded_design)
         y = trace.nodes[observation_label]["value"]
         xi = pyro.param(design_label)
-        pyro.infer.util.zero_grads([xi, y])
+        pyro.infer.util.zero_grads([xi])
 
         y.retain_grad()
         trace.compute_log_prob()
@@ -584,11 +586,6 @@ def opt_mi(model, design, observation_label, target_labels, design_label,
         pyro.infer.util.zero_grads([xi])
         y.backward(dlpdy, retain_graph=True)
         ddxi = xi.grad.clone()
-        return y, ddxi
-
-    expanded_design = lexpand(design, num_samples)
-
-    for _ in range(num_steps):
 
         y, g1 = make_grad(model)
         _, g2 = make_grad(pyro.condition(model, {"y": y.clone()}))
