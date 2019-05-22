@@ -21,6 +21,8 @@ are: `ab_test`, `preference`, `mixed_effects_regression`, `extrapolation`.
 
     > python3 examples/contrib/oed/eig_estimation_benchmarking.py --case-tags=<case> --name=<your filename without extension>
     > python3 examples/contrib/oed/results_parser_eig_estimation_benchmarking.py --fnames=<same filename>
+    
+**Note**: some issues with `mixed_effects_regression` at the moment.
 
 ### Convergence rates
 Use the following commands to reproduce plots from the paper.
