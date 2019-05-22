@@ -75,7 +75,7 @@ def main(fnames, findices, plot):
                     Ni = results['Ni']
                     T = results['T']
                     # Ti = results['Ti']
-                    print(results['seed'])
+                    # print(results['seed'])
                     results_dict[(method,)][t] = surface
             except EOFError:
                 continue
@@ -92,7 +92,7 @@ def main(fnames, findices, plot):
         plt.figure(figsize=(5, 5))
         for i, (k, (x, (lower, centre, upper))) in enumerate(reformed.items()):
             color = COLOURS[k[0]]
-            print(k, x, centre)
+            # print(k, x, centre)
             plt.plot(x, centre, linestyle='-', markersize=8, color=color, marker=MARKERS[i],
                      linewidth=2, mew=2)
 

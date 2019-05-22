@@ -91,13 +91,13 @@ def main(fnames, findices, plot):
 
     # Get results into better format
     # First, concat across runs
-    print(results_dict)
+    #print(results_dict)
     reformed = OrderedDict([(num_steps, (
         np.array([k for k in sorted(d)]),
         upper_lower(np.abs(-4.526732444763 +
                            torch.stack([v[1] for v in sorted(d.items())], dim=-1).squeeze().detach().numpy()))))
         for num_steps, d in sorted(results_dict.items())])
-    print(reformed)
+    #print(reformed)
 
     if plot:
         plt.figure(figsize=(5, 3))
