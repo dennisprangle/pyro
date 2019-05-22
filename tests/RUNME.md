@@ -16,24 +16,28 @@ job that produces a pickled output in `run_outputs`, followed by running a resul
 the output of the run.
 
 ### EIG estimation accuracy
-WIP
+The following reproduces the EIG estimation experiments, with new random seeds. The case tags used in the paper
+are: `ab_test`, `preference`, `mixed_effects_regression`, `extrapolation`.
+
+    > python3 examples/contrib/oed/eig_estimation_benchmarking.py --case-tags=<case> --name=<your filename without extension>
+    > python3 examples/contrib/oed/results_parser_eig_estimation_benchmarking.py --fnames=<same filename>
 
 ### Convergence rates
 Use the following commands to reproduce plots from the paper.
 
-    > python3 exampels/contrib/oed/convergence_n.py --seed=972219904 --fname=<your filename wihtout extension>
+    > python3 examples/contrib/oed/convergence_n.py --seed=972219904 --fname=<your filename wihtout extension>
     > python3 examples/contrib/oed/results_parser_convergence_n.py --fnames=<same filename>
     
-    > python3 exampels/contrib/oed/convergence_k.py --seed=960926848 --fname=<your filename wihtout extension>
+    > python3 examples/contrib/oed/convergence_k.py --seed=960926848 --fname=<your filename wihtout extension>
     > python3 examples/contrib/oed/results_parser_convergence_k.py --fnames=<same filename>
     
-    > python3 exampels/contrib/oed/convergence_proportion.py --seed=921163584 --fname=<your filename wihtout extension>
+    > python3 examples/contrib/oed/convergence_proportion.py --seed=921163584 --fname=<your filename wihtout extension>
     > python3 examples/contrib/oed/results_parser_convergence_proportion.py --fnames=<same filename>
     
-    > python3 exampels/contrib/oed/convergence_tradeoff.py --seed=1002875328 --fname=<your filename wihtout extension>
+    > python3 examples/contrib/oed/convergence_tradeoff.py --seed=1002875328 --fname=<your filename wihtout extension>
     > python3 examples/contrib/oed/results_parser_convergence_tradeoff.py --fnames=<same filename>
     
-    > python3 exampels/contrib/oed/convergence_vnmc.py --seed=782823872 --fname=<your filename wihtout extension>
+    > python3 examples/contrib/oed/convergence_vnmc.py --seed=782823872 --fname=<your filename wihtout extension>
     > python3 examples/contrib/oed/results_parser_convergence_vnmc.py --fnames=<same filename>
     
     

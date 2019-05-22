@@ -118,7 +118,7 @@ def main(fnames, findices, plot):
             plt.yticks(fontsize=16)
             plt.show()
     else:
-        print(reformed)
+        # print(reformed)
         if "Ground truth" in list(results_dict.values())[0]:
             truth = {case: torch.cat([d["Ground truth"][run] for run in d["Ground truth"]]).mean(0)
                      for case, d in results_dict.items()}
@@ -132,7 +132,9 @@ def main(fnames, findices, plot):
                         for estimator, v in sorted(d.items())])
                     for case, d in results_dict.items()
                     }
-        print(bias_var)
+        for case, v in bias_var.items():
+            for method, bv in v.items():
+                print(case, method, "bias-variance", bv)
 
 
 if __name__ == "__main__":
@@ -142,6 +144,6 @@ if __name__ == "__main__":
     feature_parser = parser.add_mutually_exclusive_group(required=False)
     feature_parser.add_argument('--plot', dest='plot', action='store_true')
     feature_parser.add_argument('--no-plot', dest='plot', action='store_false')
-    parser.set_defaults(plot=True)
+    parser.set_defaults(plot=False)
     args = parser.parse_args()
     main(args.fnames, args.findices, args.plot)

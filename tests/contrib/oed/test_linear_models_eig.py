@@ -10,7 +10,7 @@ from pyro.infer import Trace_ELBO
 from pyro.contrib.glmm import known_covariance_linear_model
 from pyro.contrib.oed.util import linear_model_ground_truth
 from pyro.contrib.oed.eig import (
-    naive_rainforth_eig, barber_agakov_ape, gibbs_y_eig, gibbs_y_re_eig, iwae_eig, laplace_vi_ape, lfire_eig,
+    naive_rainforth_eig, barber_agakov_ape, gibbs_y_eig, gibbs_y_re_eig, vnmc_eig, laplace_vi_ape, lfire_eig,
     donsker_varadhan_eig)
 from pyro.contrib.util import rmv, rvv
 from pyro.contrib.glmm.guides import LinearModelLaplaceGuide
@@ -144,11 +144,11 @@ def test_vnmc_linear_model(linear_model, one_point_design):
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
     # Pre-train (large learning rate)
-    iwae_eig(linear_model, one_point_design, "y", "w", num_samples=[9, 3],
+    vnmc_eig(linear_model, one_point_design, "y", "w", num_samples=[9, 3],
              num_steps=250, guide=posterior_guide,
              optim=optim.Adam({"lr": 0.1}))
     # Finesse (small learning rate)
-    estimated_eig = iwae_eig(linear_model, one_point_design, "y", "w", num_samples=[9, 3],
+    estimated_eig = vnmc_eig(linear_model, one_point_design, "y", "w", num_samples=[9, 3],
                              num_steps=250, guide=posterior_guide,
                              optim=optim.Adam({"lr": 0.01}), final_num_samples=[500, 100])
     expected_eig = linear_model_ground_truth(linear_model, one_point_design, "y", "w")

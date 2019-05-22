@@ -9,7 +9,7 @@ import argparse
 import pyro
 import pyro.optim as optim
 
-from pyro.contrib.oed.eig import iwae_eig
+from pyro.contrib.oed.eig import vnmc_eig
 from pyro.contrib.oed.util import linear_model_ground_truth
 from pyro.contrib.util import lexpand
 from pyro.contrib.glmm import group_assignment_matrix, known_covariance_linear_model
@@ -39,13 +39,13 @@ def main(fname, seed):
         guide = LinearModelPosteriorGuide(regressor_init=-10., scale_tril_init=torch.tensor([[10., 0.], [0., 1 / .55]]),
                                           d=(NPARALLEL, 1), w_sizes=model.w_sizes, y_sizes={"y": 10})
         t = time.time()
-        iwae_eig(model, design, "y", "w", num_samples=(10, 1), num_steps=num_steps, guide=guide, optim=optimizer)
+        vnmc_eig(model, design, "y", "w", num_samples=(10, 1), num_steps=num_steps, guide=guide, optim=optimizer)
         t1 = time.time() - t
         for M in torch.logspace(math.log10(10), math.log10(151), 10):
             M = int(M)
             print("M", M)
             t = time.time()
-            eig_surface_iwae = iwae_eig(model, design, "y", "w", num_samples=(1, 1), final_num_samples=(M*M, M),
+            eig_surface_iwae = vnmc_eig(model, design, "y", "w", num_samples=(1, 1), final_num_samples=(M * M, M),
                                         num_steps=0, guide=guide, optim=optimizer)
             elapsed = t1 + time.time() - t
             print(eig_surface_iwae)

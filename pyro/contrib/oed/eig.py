@@ -456,7 +456,7 @@ def elbo_learn(model, design, observation_labels, target_labels,
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim)
 
 
-def iwae_eig(model, design, observation_labels, target_labels,
+def vnmc_eig(model, design, observation_labels, target_labels,
              num_samples, num_steps, guide, optim, return_history=False,
              final_design=None, final_num_samples=None):
     if isinstance(observation_labels, str):
