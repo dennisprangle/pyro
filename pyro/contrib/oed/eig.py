@@ -487,7 +487,7 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
                      for site in param_capture.trace.nodes.values())
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
-        agg_loss.backward()
+        agg_loss.backward(retain_graph=True)
         if return_history:
             history.append(loss)
         optim(params)
@@ -558,9 +558,11 @@ def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic
             loss = mean_field_guide_entropy(
                 guide, [y_dict, expanded_design, observation_labels, target_labels],
                 whitelist=target_labels).sum(0)/num_particles
+            agg_loss = loss.sum()
         else:
-            loss = -sum(cond_trace.nodes[l]["log_prob"] for l in target_labels).sum(0)/num_particles
-        agg_loss = loss.sum()
+            terms = -sum(cond_trace.nodes[l]["log_prob"] for l in target_labels)
+            agg_loss, loss = safe_mean_terms(terms)
+
         return agg_loss, loss
 
     return loss_fn

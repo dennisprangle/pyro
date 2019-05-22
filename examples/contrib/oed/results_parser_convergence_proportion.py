@@ -35,9 +35,11 @@ MARKERS = ['x', 'o', '^', '*', 'v', '<', '>', 's', 'P', 'D']
 
 
 def upper_lower(array):
+    # array[array > 10.] = 0.
+    # print(np.min(array[:, -5]), np.max(array[:, -5]))
     centre = np.sqrt((array**2).mean(0))
-    z = 1.96/np.sqrt(array.shape[0])
-    upper, lower = centre + z*array.std(0), centre - z*array.std(0)
+    se = array.std(0)/np.sqrt(array.shape[0])
+    upper, lower = centre + se, centre - se
     return lower, centre, upper
 
 
@@ -67,14 +69,14 @@ def main(fnames, findices, plot):
                 while True:
                     results = pickle.load(results_file)
                     method = results['method'].title()
-                    # t = results['elapsed']
+                    t = results['elapsed']
                     surface = results['surface']
                     # N = results['N']
                     Ni = results['Ni']
                     T = results['T']
                     # Ti = results['Ti']
-                    if Ni in [0, 2]:
-                        results_dict[(method,)][T] = surface
+                    print(results['seed'])
+                    results_dict[(method,)][t] = surface
             except EOFError:
                 continue
 
@@ -90,28 +92,29 @@ def main(fnames, findices, plot):
         plt.figure(figsize=(5, 5))
         for i, (k, (x, (lower, centre, upper))) in enumerate(reformed.items()):
             color = COLOURS[k[0]]
+            print(k, x, centre)
             plt.plot(x, centre, linestyle='-', markersize=8, color=color, marker=MARKERS[i],
                      linewidth=2, mew=2)
 
             plt.fill_between(x, upper, lower, color=color+[.15])
         plt.legend(["{}".format(x[0]) for x in sorted(reformed.keys())], loc=1, fontsize=14, frameon=False)
-        # for k, (x, (lower, centre, upper)) in reformed.items():
-        #     color = COLOURS[k[0]]
-        #     u = np.polyfit(np.log(x), np.log(centre) + .5 * (np.log(x)), deg=0)[0]
-        #     plt.plot(x, np.exp(u - .5 * np.log(x)), linestyle='--', color=color)
-        plt.xlabel("$K$", fontsize=20)
+        for k, (x, (lower, centre, upper)) in reformed.items():
+            color = COLOURS[k[0]]
+            u = np.polyfit(np.log(x), np.log(centre) + .5 * (np.log(x)), deg=0)[0]
+            plt.plot(x, np.exp(u - .5 * np.log(x)), linestyle='--', color=color)
+        plt.xlabel("Time", fontsize=20)
         plt.ylabel("RMSE in EIG estimate", fontsize=20)
         plt.xticks(fontsize=16)
         # plt.axhline(4.5267, color="k", linestyle='--')
         # plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.yticks(fontsize=16)
         plt.yscale('log')
-        # plt.xscale('log')
+        plt.xscale('log')
         plt.show()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="EIG estimation benchmarking experiment design results parser")
+    parser = argparse.ArgumentParser(description="Convergence results parser")
     parser.add_argument("--fnames", nargs="?", default="", type=str)
     parser.add_argument("--findices", nargs="?", default="-1", type=str)
     feature_parser = parser.add_mutually_exclusive_group(required=False)

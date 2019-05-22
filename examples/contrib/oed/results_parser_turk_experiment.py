@@ -23,13 +23,14 @@ VALUE_LABELS = {"Entropy": "Posterior entropy on fixed effects",
                 "EIG gap": "Difference between maximum and mean EIG",
                 "Fixed effects @0": "Fixed effects index 1",
                 "Fixed effects @3": "Fixed effects index 4"}
-LEGENDS = {'oed': 'OED', 'rand': 'Random', 'oed_no_re': 'OED on all parameters'}
+LEGENDS = {'oed': 'BOED marginal + likelihood (ours)', 'rand': 'Random design (baseline)', 'oed_no_re': 'OED on all parameters'}
 MARKERS = {'oed': 'o', 'rand': 'D', 'oed_no_re': '^'}
 
 
 def upper_lower(array):
     centre = array.mean(1)
-    upper, lower = np.percentile(array, 95, axis=1), np.percentile(array, 5, axis=1)
+    se = array.std(1) / np.sqrt(array.shape[1])
+    upper, lower = centre + se, centre - se
     return lower, centre, upper
 
 
@@ -55,8 +56,8 @@ def main(fnames, findices, plot):
     make_mean = torch.cat([torch.cat([(1./3)*torch.ones(3, 3), torch.zeros(3, 3)], dim=0),
                            torch.cat([torch.zeros(3, 3), (1./3)*torch.ones(3, 3)], dim=0)], dim=1)
 
-    fnames = fnames.split(", ")
-    findices = map(int, findices.split(", "))
+    fnames = fnames.split(",")
+    findices = map(int, findices.split(","))
 
     if not all(fnames):
         results_fnames = sorted(glob.glob(output_dir+"*.result_stream.pickle"))
@@ -128,7 +129,7 @@ def main(fnames, findices, plot):
     if plot:
         for k, r in descript.items():
             value_label = VALUE_LABELS[k]
-            plt.figure(figsize=(9, 5))
+            plt.figure(figsize=(5, 5))
             for i, (l, (lower, centre, upper)) in enumerate(r.items()):
                 x = np.arange(0, centre.shape[0])
                 col = COLOURSD.get(l, COLOURS[i])
@@ -138,8 +139,8 @@ def main(fnames, findices, plot):
             plt.legend([LEGENDS[k] for k in r.keys()], loc=1, fontsize=16, frameon=False)
             plt.xlabel("Step", fontsize=18)
             plt.ylabel(value_label, fontsize=18)
-            if k == "Entropy":
-                plt.ylim(11, 22)
+            # if k == "Entropy":
+            #     plt.ylim(11, 22)
             plt.xticks(fontsize=14)
             plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
             plt.yticks(fontsize=14)

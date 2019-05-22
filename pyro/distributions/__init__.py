@@ -28,6 +28,7 @@ from pyro.distributions.zero_inflated_poisson import ZeroInflatedPoisson
 from pyro.distributions.lkj import (LKJCorrCholesky, CorrLCholeskyTransform, corr_cholesky_constraint)
 from pyro.distributions.censored import CensoredDistribution
 from pyro.distributions.censored_sigmoid_normal import CensoredSigmoidNormal
+from pyro.distributions.censored_sigmoid_normal_ends import CensoredSigmoidNormalEnds
 
 __all__ = [
     "AVFMultivariateNormal",

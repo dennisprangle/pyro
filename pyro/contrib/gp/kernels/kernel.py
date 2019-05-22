@@ -60,8 +60,8 @@ class Kernel(Parameterized):
         :returns: a 2D slice of :math:`X`
         :rtype: torch.Tensor
         """
-        if X.dim() == 2:
-            return X[:, self.active_dims]
+        if X.dim() >= 2:
+            return X[..., self.active_dims]
         elif X.dim() == 1:
             return X.unsqueeze(1)
         else:

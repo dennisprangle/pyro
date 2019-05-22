@@ -35,13 +35,10 @@ MARKERS = ['x', 'o', '^', '*', 'v', '<', '>', 's', 'P', 'D']
 
 
 def upper_lower(array):
-    array[array > 25] = 0.
-    print(np.min(array[:, -5]), np.max(array[:, -5]))
     centre = np.sqrt((array**2).mean(0))
-    z = 1.96/np.sqrt(array.shape[0])
-    upper, lower = centre + z*array.std(0), centre - z*array.std(0)
+    se = array.std(0)/np.sqrt(array.shape[0])
+    upper, lower = centre + se, centre - se
     return lower, centre, upper
-
 
 def bias_variance(array):
     mean = array.mean(0).mean(0)
@@ -50,8 +47,8 @@ def bias_variance(array):
 
 
 def main(fnames, findices, plot):
-    fnames = fnames.split(", ")
-    findices = map(int, findices.split(", "))
+    fnames = fnames.split(",")
+    findices = map(int, findices.split(","))
 
     if not all(fnames):
         results_fnames = sorted(glob.glob(output_dir+"*.result_stream.pickle"))
@@ -71,12 +68,11 @@ def main(fnames, findices, plot):
                     method = results['method'].title()
                     # t = results['elapsed']
                     surface = results['surface']
-                    N = results['N']
-                    # Ni = results['Ni']
+                    # N = results['N']
+                    Ni = results['Ni']
                     T = results['T']
-                    Ti = results['Ti']
-                    # print(N)
-                    results_dict[(method, T, Ti)][N] = surface
+                    # Ti = results['Ti']
+                    results_dict[(method,)][T] = surface
             except EOFError:
                 continue
 
@@ -90,28 +86,30 @@ def main(fnames, findices, plot):
 
     if plot:
         plt.figure(figsize=(5, 5))
-        for k, (x, (lower, centre, upper)) in reformed.items():
-            if k[2] == 0:
-                color = OTHERCOLOURS[k[0]]
-            else:
-                color = COLOURS[k[0]]
-            plt.plot(x, centre, linestyle='-', markersize=8, color=color, marker=MARKERS[k[2]],
+        for i, (k, (x, (lower, centre, upper))) in enumerate(reformed.items()):
+            color = COLOURS[k[0]]
+            plt.plot(x, centre, linestyle='-', markersize=8, color=color, marker=MARKERS[i],
                      linewidth=2, mew=2)
+
             plt.fill_between(x, upper, lower, color=color+[.15])
-        plt.legend(["{} (K={})".format(x[0], x[1]) for x in sorted(reformed.keys())], loc=1, fontsize=12, frameon=False)
-        plt.xlabel("$N$", fontsize=20)
+        plt.legend(["{}".format(x[0]) for x in sorted(reformed.keys())], loc=1, fontsize=14, frameon=False)
+        # for k, (x, (lower, centre, upper)) in reformed.items():
+        #     color = COLOURS[k[0]]
+        #     u = np.polyfit(np.log(x), np.log(centre) + .5 * (np.log(x)), deg=0)[0]
+        #     plt.plot(x, np.exp(u - .5 * np.log(x)), linestyle='--', color=color)
+        plt.xlabel("$K$", fontsize=20)
         plt.ylabel("RMSE in EIG estimate", fontsize=20)
         plt.xticks(fontsize=16)
         # plt.axhline(4.5267, color="k", linestyle='--')
         # plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.yticks(fontsize=16)
         plt.yscale('log')
-        plt.xscale('log')
+        # plt.xscale('log')
         plt.show()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="EIG estimation benchmarking experiment design results parser")
+    parser = argparse.ArgumentParser(description="Convergence results parser")
     parser.add_argument("--fnames", nargs="?", default="", type=str)
     parser.add_argument("--findices", nargs="?", default="-1", type=str)
     feature_parser = parser.add_mutually_exclusive_group(required=False)

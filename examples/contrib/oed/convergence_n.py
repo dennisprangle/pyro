@@ -16,7 +16,12 @@ from pyro.contrib.glmm import group_assignment_matrix, known_covariance_linear_m
 from pyro.contrib.glmm.guides import LinearModelPosteriorGuide, NormalMarginalGuide
 
 
-def main(fname):
+def main(fname, seed):
+    if seed >= 0:
+        pyro.set_rng_seed(seed)
+    else:
+        seed = int(torch.rand(tuple()) * 2 ** 30)
+        pyro.set_rng_seed(seed)
     NPARALLEL = 100
     AB_test_1d_10n_2p = torch.stack([group_assignment_matrix(torch.tensor([n, 10-n])) for n in [6]])
     design = lexpand(AB_test_1d_10n_2p, NPARALLEL)
@@ -45,7 +50,7 @@ def main(fname):
                                     num_steps=0, guide=guide, optim=optimizer)
             elapsed = t1 + time.time() - t
             results = {"method": "posterior", "T": T, "Ti": Ti, "surface": eig_surface, "elapsed": elapsed, "N": N,
-                       "Ni": Ni}
+                       "Ni": Ni, "seed": seed}
             with open('run_outputs/{}.result_stream.pickle'.format(fname), 'ab') as f:
                 pickle.dump(results, f)
 
@@ -69,13 +74,14 @@ def main(fname):
                                       final_num_samples=N)
             elapsed = t1 + time.time() - t
             results = {"method": "marginal", "T": T, "Ti": Ti, "surface": eig_surface, "elapsed": elapsed, "N": N,
-                       "Ni": Ni}
+                       "Ni": Ni, "seed": seed}
             with open('run_outputs/{}.result_stream.pickle'.format(fname), 'ab') as f:
                 pickle.dump(results, f)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Convergence example for VNMC")
+    parser = argparse.ArgumentParser(description="Convergence example for posterior, marginal")
+    parser.add_argument("--seed", nargs="?", default=-1, type=int)
     parser.add_argument("--fname", nargs="?", default="", type=str)
     args = parser.parse_args()
-    main(args.fname)
+    main(args.fname, args.seed)

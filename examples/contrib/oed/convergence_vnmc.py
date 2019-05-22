@@ -16,7 +16,12 @@ from pyro.contrib.glmm import group_assignment_matrix, known_covariance_linear_m
 from pyro.contrib.glmm.guides import LinearModelPosteriorGuide
 
 
-def main(fname):
+def main(fname, seed):
+    if seed >= 0:
+        pyro.set_rng_seed(seed)
+    else:
+        seed = int(torch.rand(tuple()) * 2 ** 30)
+        pyro.set_rng_seed(seed)
     NPARALLEL = 25
     AB_test_1d_10n_2p = torch.stack([group_assignment_matrix(torch.tensor([n, 10-n])) for n in [6]])
     design = lexpand(AB_test_1d_10n_2p, NPARALLEL)
@@ -24,7 +29,8 @@ def main(fname):
                                              "coef_sds": torch.tensor([10., 1/.55]),
                                              "observation_sd": torch.tensor(1.)})
 
-    optimizer = optim.Adam({"lr": 0.05})
+    lr = 0.05
+    optimizer = optim.Adam({"lr": lr})
     print(linear_model_ground_truth(model, AB_test_1d_10n_2p, 'y', 'w'))
 
     for num_steps in [0, 125, 250, 500, 2500]:
@@ -44,7 +50,8 @@ def main(fname):
             elapsed = t1 + time.time() - t
             print(eig_surface_iwae)
 
-            results = {"num_steps": num_steps, "M": M, "surface": eig_surface_iwae, "elapsed": elapsed}
+            results = {"num_steps": num_steps, "M": M, "surface": eig_surface_iwae, "elapsed": elapsed,
+                       "lr": lr, "seed": seed}
             with open('run_outputs/{}.result_stream.pickle'.format(fname), 'ab') as f:
                 pickle.dump(results, f)
 
@@ -52,5 +59,6 @@ def main(fname):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convergence example for VNMC")
     parser.add_argument("--fname", nargs="?", default="", type=str)
+    parser.add_argument("--seed", nargs="?", default=-1, type=int)
     args = parser.parse_args()
-    main(args.fname)
+    main(args.fname, args.seed)
