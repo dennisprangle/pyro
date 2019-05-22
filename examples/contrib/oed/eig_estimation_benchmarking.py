@@ -12,13 +12,13 @@ import pyro
 from pyro import optim
 from pyro.infer import TraceEnum_ELBO
 from pyro.contrib.oed.eig import (
-    naive_rainforth_eig, accelerated_rainforth_eig, donsker_varadhan_eig, gibbs_y_eig,
-    gibbs_y_re_eig, amortized_lfire_eig, lfire_eig, vnmc_eig
+    nmc_eig, accelerated_nmc_eig, donsker_varadhan_eig, marginal_eig,
+    marginal_likelihood_eig, amortized_lfire_eig, lfire_eig, vnmc_eig
 )
 from pyro.contrib.util import lexpand
 from pyro.contrib.oed.util import (
-    linear_model_ground_truth, ba_eig_lm, ba_eig_mc, normal_inverse_gamma_ground_truth,
-    laplace_vi_eig_mc, logistic_extrapolation_ground_truth, ba_eig_extrap
+    linear_model_ground_truth, posterior_eig_lm, posterior_eig_mc, normal_inverse_gamma_ground_truth,
+    laplace_vi_eig_mc, logistic_extrapolation_ground_truth, posterior_eig_extrap
 )
 from pyro.contrib.glmm import (
     group_assignment_matrix, normal_inverse_gamma_linear_model, known_covariance_linear_model,
@@ -109,14 +109,14 @@ Estimator = namedtuple("EIGEstimator", [
 
 truth_lm = Estimator("Ground truth", ["truth", "lm", "explicit"], linear_model_ground_truth)
 truth_nigam = Estimator("Ground truth", ["truth", "nigam", "explicit"], normal_inverse_gamma_ground_truth)
-nmc = Estimator("Nested Monte Carlo", ["nmc", "naive_rainforth", "explicit"], naive_rainforth_eig)
-nnmc = Estimator("Non-nested Monte Carlo", ["nnmc", "accelerated_rainforth", "explicit"], accelerated_rainforth_eig)
-posterior_lm = Estimator("Posterior", ["posterior", "gibbs", "ba", "lm", "explicit", "implicit"], ba_eig_lm)
-posterior_mc = Estimator("Posterior", ["posterior", "gibbs", "ba", "explicit", "implicit"], ba_eig_mc)
-posterior_extrap = Estimator("Posterior", ["posterior", "gibbs", "ba", "explicit", "implicit"], ba_eig_extrap)
-marginal = Estimator("Marginal", ["marginal", "gibbs", "explicit"], gibbs_y_eig)
+nmc = Estimator("Nested Monte Carlo", ["nmc", "explicit"], nmc_eig)
+nnmc = Estimator("Non-nested Monte Carlo", ["nnmc", "accelerated_nmc", "explicit"], accelerated_nmc_eig)
+posterior_lm = Estimator("Posterior", ["posterior", "gibbs", "lm", "explicit", "implicit"], posterior_eig_lm)
+posterior_mc = Estimator("Posterior", ["posterior", "gibbs", "explicit", "implicit"], posterior_eig_mc)
+posterior_extrap = Estimator("Posterior", ["posterior", "gibbs", "explicit", "implicit"], posterior_eig_extrap)
+marginal = Estimator("Marginal", ["marginal", "gibbs", "explicit"], marginal_eig)
 marginal_re = Estimator("Marginal + likelihood", ["marginal_re", "marginal_likelihood", "gibbs", "implicit"],
-                        gibbs_y_re_eig)
+                        marginal_likelihood_eig)
 alfire = Estimator("Amortized LFIRE", ["alfire"], amortized_lfire_eig)
 lfire = Estimator("LFIRE", ["lfire", "implicit"], lfire_eig)
 vnmc = Estimator("VNMC", ["vnmc", "explicit"], vnmc_eig)
@@ -188,7 +188,7 @@ CASES = [
         "y",
         "w",
         [
-            # Caution, Rainforth does not work correctly in this case because we must
+            # Caution, NMC does not work correctly in this case because we must
             # compute p(psi | theta)
             # Use LFIRE instead
             (posterior_mc,
@@ -224,7 +224,7 @@ CASES = [
                                                     "scale_tril_init": torch.tensor([[10., 0.], [0., 1/.55]])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             # TODO: fix analytic entropy
-            # (Estimator("Posterior with analytic entropy", ["posterior", "gibbs", "ba", "ae"], ba_eig_lm),
+            # (Estimator("Posterior with analytic entropy", ["posterior", "gibbs", "ae"], posterior_eig_lm),
             #  {"num_samples": 10, "num_steps": 1200, "final_num_samples": 50, "analytic_entropy": True,
             #   "guide": (LinearModelGuide, {"regressor_init": -2., "scale_tril_init": 3.}),
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
@@ -363,7 +363,7 @@ CASES = [
               "loss": TraceEnum_ELBO(max_plate_nesting=2).differentiable_loss,
               "guide": (LinearModelLaplaceGuide, {"init_value": -20.0}),
               "final_num_samples": 10}),
-            (Estimator("Marginal (unbiased)", ["truth", "explicit"], gibbs_y_eig),
+            (Estimator("Marginal (unbiased)", ["truth", "explicit"], marginal_eig),
              {"num_samples": 10, "num_steps": 100000, "final_num_samples": 5000,
               "guide": (SigmoidMarginalGuide, {"mu_init": 0., "sigma_init": 20.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.01}})}),
@@ -395,7 +395,7 @@ CASES = [
               "optim": (optim.Adam, {"optim_args": {"lr": 0.025}})}
              ),
             # Do not apply here- not a direct competitor to NNMC
-            # (iwae,
+            # (vnmc,
             #  {"num_samples": 10, "num_steps": 800, "final_num_samples": 500, "M": 1,
             #   "guide": (LogisticPosteriorGuide, {"mu_init": 0.,
             #                                      "scale_tril_init": torch.tensor([[1., 0.], [0., 20.]])}),
@@ -508,7 +508,7 @@ CASES = [
             #  {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500,
             #   "guide": (LinearModelPosteriorGuide, {"regressor_init": -2., "scale_tril_init": 3.}),
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            # (iwae,
+            # (vnmc,
             #  {"num_samples": 10, "num_steps": 800, "final_num_samples": 500, "M": 1,
             #   "guide": (LinearModelPosteriorGuide, {"regressor_init": -2., "scale_tril_init": 3.}),
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
@@ -535,7 +535,7 @@ CASES = [
             #  {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500,
             #   "guide": (LinearModelPosteriorGuide, {"regressor_init": -2., "scale_tril_init": 3.}),
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            # (iwae,
+            # (vnmc,
             #  {"num_samples": 10, "num_steps": 800, "final_num_samples": 500, "M": 1,
             #   "guide": (LinearModelPosteriorGuide, {"regressor_init": -2., "scale_tril_init": 3.}),
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
@@ -606,7 +606,7 @@ CASES = [
               "classifier": (TurkClassifier, {"bilinear_init": 0., "ntheta": 30}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.025}})}),
             # Problem with independent_priors
-            (Estimator("Ground truth", ["truth"], naive_rainforth_eig),
+            (Estimator("Ground truth", ["truth"], nmc_eig),
              {"N": 100, "M": 10000, "M_prime": 10000, "independent_priors": True}),
         ],
         ["turk", "mixed_effects_regression"]

@@ -117,10 +117,10 @@ def vi_ape(model, design, observation_labels, target_labels,
     return loss
 
 
-def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
-                        N=100, M=10, M_prime=None, independent_priors=False):
+def nmc_eig(model, design, observation_labels, target_labels=None,
+            N=100, M=10, M_prime=None, independent_priors=False):
     """
-    Naive Rainforth (i.e. Nested Monte Carlo) estimate of the expected information
+   Nested Monte Carlo estimate of the expected information
     gain (EIG). The estimate is, when there are not any random effects,
 
     .. math::
@@ -206,10 +206,10 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
 
 
 # Pre-release
-def accelerated_rainforth_eig(model, design, observation_labels, target_labels,
-                              yspace, N=100, M_prime=None):
+def accelerated_nmc_eig(model, design, observation_labels, target_labels,
+                        yspace, N=100, M_prime=None):
     """
-    Accelerated Rainforth (i.e. Unnested Monte Carlo) estimate of the expected information
+    Unnested Monte Carlo estimate of the expected information
     gain (EIG). The estimate is, when there are not any random effects,
 
     .. math::
@@ -326,13 +326,13 @@ def donsker_varadhan_eig(model, design, observation_labels, target_labels,
                             final_design, final_num_samples)
 
 
-def barber_agakov_ape(model, design, observation_labels, target_labels,
-                      num_samples, num_steps, guide, optim, return_history=False,
-                      final_design=None, final_num_samples=None, *args, **kwargs):
+def posterior_ape(model, design, observation_labels, target_labels,
+                  num_samples, num_steps, guide, optim, return_history=False,
+                  final_design=None, final_num_samples=None, *args, **kwargs):
     """
-    Barber-Agakov estimate of average posterior entropy (APE).
+    Posterior estimate of average posterior entropy (APE).
 
-    The Barber-Agakov representation of APE is
+    The posterior representation of APE is
 
         :math:`sup_{q}E_{p(y, \\theta | d)}[\\log q(\\theta | y, d)]`
 
@@ -352,7 +352,7 @@ def barber_agakov_ape(model, design, observation_labels, target_labels,
     :param int num_samples: Number of samples per iteration.
     :param int num_steps: Number of optimisation steps.
     :param function guide: guide family for use in the (implicit) posterior estimation.
-        The parameters of `guide` are optimised to maximise the Barber-Agakov
+        The parameters of `guide` are optimised to maximise the posterior
         objective.
     :param pyro.optim.Optim optim: Optimiser to use.
     :param bool return_history: If `True`, also returns a tensor giving the loss function
@@ -368,16 +368,15 @@ def barber_agakov_ape(model, design, observation_labels, target_labels,
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-    loss = barber_agakov_loss(model, guide, observation_labels, target_labels, *args, **kwargs)
+    loss = posterior_loss(model, guide, observation_labels, target_labels, *args, **kwargs)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
                             final_design, final_num_samples)
 
 
-def gibbs_y_eig(model, design, observation_labels, target_labels,
-                num_samples, num_steps, guide, optim, return_history=False,
-                final_design=None, final_num_samples=None):
-    """Estimate EIG by estimating the marginal entropy, that of :math:`p(y|d)`,
-    via Gibbs' Inequality.
+def marginal_eig(model, design, observation_labels, target_labels,
+                 num_samples, num_steps, guide, optim, return_history=False,
+                 final_design=None, final_num_samples=None):
+    """Estimate EIG by estimating the marginal entropy, that of :math:`p(y|d)`.
 
     Warning: this method does **not** estimate the correct quantity in the presence of
     random effects.
@@ -387,14 +386,14 @@ def gibbs_y_eig(model, design, observation_labels, target_labels,
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-    loss = gibbs_y_loss(model, guide, observation_labels, target_labels)
+    loss = marginal_loss(model, guide, observation_labels, target_labels)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
                             final_design, final_num_samples)
 
 
-def gibbs_y_re_eig(model, design, observation_labels, target_labels,
-                   num_samples, num_steps, marginal_guide, cond_guide, optim,
-                   return_history=False, final_design=None, final_num_samples=None):
+def marginal_likelihood_eig(model, design, observation_labels, target_labels,
+                            num_samples, num_steps, marginal_guide, cond_guide, optim,
+                            return_history=False, final_design=None, final_num_samples=None):
     """Estimate EIG by estimating the marginal entropy, that of :math:`p(y|d)`,
     *and* the conditional entropy, of :math:`p(y|\\theta, d)`, both via Gibbs' Inequality.
     """
@@ -403,7 +402,7 @@ def gibbs_y_re_eig(model, design, observation_labels, target_labels,
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-    loss = gibbs_y_re_loss(model, marginal_guide, cond_guide, observation_labels, target_labels)
+    loss = marginal_likelihood_loss(model, marginal_guide, cond_guide, observation_labels, target_labels)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
                             final_design, final_num_samples)
 
@@ -463,7 +462,7 @@ def vnmc_eig(model, design, observation_labels, target_labels,
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-    loss = iwae_eig_loss(model, guide, observation_labels, target_labels)
+    loss = vnmc_eig_loss(model, guide, observation_labels, target_labels)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
                             final_design, final_num_samples)
 
@@ -538,7 +537,7 @@ def donsker_varadhan_loss(model, T, observation_labels, target_labels):
     return loss_fn
 
 
-def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic_entropy=False):
+def posterior_loss(model, guide, observation_labels, target_labels, analytic_entropy=False):
 
     def loss_fn(design, num_particles, evaluation=False, **kwargs):
 
@@ -568,7 +567,7 @@ def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic
     return loss_fn
 
 
-def gibbs_y_loss(model, guide, observation_labels, target_labels):
+def marginal_loss(model, guide, observation_labels, target_labels):
 
     def loss_fn(design, num_particles, evaluation=False, **kwargs):
 
@@ -596,7 +595,7 @@ def gibbs_y_loss(model, guide, observation_labels, target_labels):
     return loss_fn
 
 
-def gibbs_y_re_loss(model, marginal_guide, likelihood_guide, observation_labels, target_labels):
+def marginal_likelihood_loss(model, marginal_guide, likelihood_guide, observation_labels, target_labels):
 
     def loss_fn(design, num_particles, evaluation=False, **kwargs):
 
@@ -722,7 +721,7 @@ def elbo(model, guide, data, observation_labels, target_labels):
     return loss_fn
 
 
-def iwae_eig_loss(model, guide, observation_labels, target_labels):
+def vnmc_eig_loss(model, guide, observation_labels, target_labels):
 
     def loss_fn(design, num_particles, evaluation=False, **kwargs):
         N, M = num_particles

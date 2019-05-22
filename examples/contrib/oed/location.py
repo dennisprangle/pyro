@@ -12,7 +12,7 @@ import pyro.distributions as dist
 from pyro.contrib.glmm.glmm import sigmoid_location_model
 from pyro.contrib.glmm.guides import SigmoidMarginalGuide
 from pyro.contrib.util import iter_plates_to_shape, lexpand
-from pyro.contrib.oed.eig import gibbs_y_eig, elbo_learn
+from pyro.contrib.oed.eig import marginal_eig, elbo_learn
 
 try:
     from contextlib import ExitStack  # python 3
@@ -65,7 +65,7 @@ def main(num_steps, num_parallel, experiment_name):
             results = {'typ': typ, 'step': step}
             if typ == 'oed':
                 # Throws ArithmeticError if NaN encountered
-                estimation_surface = gibbs_y_eig(
+                estimation_surface = marginal_eig(
                     model, design, "y", "loc",
                     oed_n_samples, oed_n_steps, guide,
                     optim.Adam({"lr": oed_lr}), False, None, oed_final_n_samples

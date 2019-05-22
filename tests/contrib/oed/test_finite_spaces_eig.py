@@ -7,7 +7,7 @@ import pyro
 import pyro.distributions as dist
 import pyro.optim as optim
 from pyro.contrib.oed.eig import (
-    naive_rainforth_eig, barber_agakov_ape, gibbs_y_eig, gibbs_y_re_eig, vnmc_eig, lfire_eig,
+    nmc_eig, posterior_ape, marginal_eig, marginal_likelihood_eig, vnmc_eig, lfire_eig,
     donsker_varadhan_eig)
 from pyro.contrib.util import iter_plates_to_shape
 
@@ -100,13 +100,13 @@ def test_posterior_finite_space_model(finite_space_model, one_point_design, true
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
     # Pre-train (large learning rate)
-    barber_agakov_ape(finite_space_model, one_point_design, "y", "theta", num_samples=10,
-                      num_steps=250, guide=posterior_guide,
-                      optim=optim.Adam({"lr": 0.1}))
+    posterior_ape(finite_space_model, one_point_design, "y", "theta", num_samples=10,
+                  num_steps=250, guide=posterior_guide,
+                  optim=optim.Adam({"lr": 0.1}))
     # Finesse (small learning rate)
-    estimated_ape = barber_agakov_ape(finite_space_model, one_point_design, "y", "theta", num_samples=10,
-                                      num_steps=250, guide=posterior_guide,
-                                      optim=optim.Adam({"lr": 0.01}), final_num_samples=1000)
+    estimated_ape = posterior_ape(finite_space_model, one_point_design, "y", "theta", num_samples=10,
+                                  num_steps=250, guide=posterior_guide,
+                                  optim=optim.Adam({"lr": 0.01}), final_num_samples=1000)
     assert_equal(estimated_ape, true_ape, prec=1e-2)
 
 
@@ -114,13 +114,13 @@ def test_marginal_finite_space_model(finite_space_model, one_point_design, true_
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
     # Pre-train (large learning rate)
-    gibbs_y_eig(finite_space_model, one_point_design, "y", "theta", num_samples=10,
-                num_steps=250, guide=marginal_guide,
-                optim=optim.Adam({"lr": 0.1}))
+    marginal_eig(finite_space_model, one_point_design, "y", "theta", num_samples=10,
+                 num_steps=250, guide=marginal_guide,
+                 optim=optim.Adam({"lr": 0.1}))
     # Finesse (small learning rate)
-    estimated_eig = gibbs_y_eig(finite_space_model, one_point_design, "y", "theta", num_samples=10,
-                                num_steps=250, guide=marginal_guide,
-                                optim=optim.Adam({"lr": 0.01}), final_num_samples=1000)
+    estimated_eig = marginal_eig(finite_space_model, one_point_design, "y", "theta", num_samples=10,
+                                 num_steps=250, guide=marginal_guide,
+                                 optim=optim.Adam({"lr": 0.01}), final_num_samples=1000)
     assert_equal(estimated_eig, true_eig, prec=1e-2)
 
 
@@ -128,13 +128,13 @@ def test_marginal_likelihood_finite_space_model(finite_space_model, one_point_de
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
     # Pre-train (large learning rate)
-    gibbs_y_re_eig(finite_space_model, one_point_design, "y", "theta", num_samples=10,
-                   num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
-                   optim=optim.Adam({"lr": 0.1}))
+    marginal_likelihood_eig(finite_space_model, one_point_design, "y", "theta", num_samples=10,
+                            num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
+                            optim=optim.Adam({"lr": 0.1}))
     # Finesse (small learning rate)
-    estimated_eig = gibbs_y_re_eig(finite_space_model, one_point_design, "y", "theta", num_samples=10,
-                                   num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
-                                   optim=optim.Adam({"lr": 0.01}), final_num_samples=1000)
+    estimated_eig = marginal_likelihood_eig(finite_space_model, one_point_design, "y", "theta", num_samples=10,
+                                            num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
+                                            optim=optim.Adam({"lr": 0.01}), final_num_samples=1000)
     assert_equal(estimated_eig, true_eig, prec=1e-2)
 
 
@@ -155,10 +155,10 @@ def test_vnmc_finite_space_model(finite_space_model, one_point_design, true_eig)
     assert_equal(estimated_eig, true_eig, prec=1e-2)
 
 
-def test_naive_rainforth_eig_finite_space_model(finite_space_model, one_point_design, true_eig):
+def test_nmc_eig_finite_space_model(finite_space_model, one_point_design, true_eig):
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
-    estimated_eig = naive_rainforth_eig(finite_space_model, one_point_design, "y", "theta", M=40, N=40*40)
+    estimated_eig = nmc_eig(finite_space_model, one_point_design, "y", "theta", M=40, N=40 * 40)
     assert_equal(estimated_eig, true_eig, prec=1e-2)
 
 

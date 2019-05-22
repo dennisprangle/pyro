@@ -24,7 +24,7 @@ COLOURS = {
            "ALFIRE 2": [.3, .7, .9],
            "LFIRE": [177/255, 89/255, 40/255],
            "LFIRE 2": [.78, .40, .8],
-           "IWAE": [106/255, 61/255, 154/255],
+           "VNMC": [106/255, 61/255, 154/255],
            "Laplace": [255/255, 127/255, 0],
            "Donsker-Varadhan": [.44, .44, .44]
 }
@@ -41,7 +41,7 @@ MARKERS = {
            "ALFIRE 2": 'D',
            "LFIRE": 'D',
            "LFIRE 2": 'D',
-           "IWAE": '+',
+           "VNMC": '+',
            "Laplace": '*',
            "Donsker-Varadhan": "^"
 }

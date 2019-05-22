@@ -7,7 +7,7 @@ import pyro
 import pyro.poutine as poutine
 from pyro.contrib.util import get_indices, lexpand, rexpand
 from pyro.contrib.glmm import analytic_posterior_cov
-from pyro.contrib.oed.eig import barber_agakov_ape, vi_ape, laplace_vi_ape, xexpx
+from pyro.contrib.oed.eig import posterior_ape, vi_ape, laplace_vi_ape, xexpx
 
 
 def normal_inverse_gamma_ground_truth(model, design, observation_labels, target_labels, eig=True):
@@ -129,9 +129,9 @@ def laplace_vi_eig_mc(model, design, observation_labels, target_labels, *args, *
     return hprior - ape
 
 
-def ba_eig_lm(model, design, observation_labels, target_labels, *args, **kwargs):
+def posterior_eig_lm(model, design, observation_labels, target_labels, *args, **kwargs):
     # **Only** applies to linear models - analytic prior entropy
-    ape = barber_agakov_ape(model, design, observation_labels, target_labels, *args, **kwargs)
+    ape = posterior_ape(model, design, observation_labels, target_labels, *args, **kwargs)
     prior_entropy = lm_H_prior(model, design, observation_labels, target_labels)
     if isinstance(ape, tuple):
         return tuple(prior_entropy - a for a in ape)
@@ -139,19 +139,19 @@ def ba_eig_lm(model, design, observation_labels, target_labels, *args, **kwargs)
         return prior_entropy - ape
 
 
-def ba_eig_mc(model, design, observation_labels, target_labels, *args, **kwargs):
-    # Compute the prior entropy my Monte Carlo, the uses barber_agakov_ape
+def posterior_eig_mc(model, design, observation_labels, target_labels, *args, **kwargs):
+    # Compute the prior entropy my Monte Carlo, then uses posterior_ape
     if "num_hprior_samples" in kwargs:
         hprior = mc_H_prior(model, design, observation_labels, target_labels, kwargs["num_hprior_samples"])
     else:
         hprior = mc_H_prior(model, design, observation_labels, target_labels)
-    return hprior - barber_agakov_ape(model, design, observation_labels, target_labels, *args, **kwargs)
+    return hprior - posterior_ape(model, design, observation_labels, target_labels, *args, **kwargs)
 
 
-def ba_eig_extrap(model, design, observation_labels, target_labels, *args, **kwargs):
-    # Compute the prior entropy my Monte Carlo, the uses barber_agakov_ape
+def posterior_eig_extrap(model, design, observation_labels, target_labels, *args, **kwargs):
+    # Compute the prior entropy my Monte Carlo, then uses posterior_ape. For extrapolation
     if "num_hprior_samples" in kwargs:
         hprior = extrap_H_prior(model, design, observation_labels, target_labels, kwargs["num_hprior_samples"])
     else:
         hprior = extrap_H_prior(model, design, observation_labels, target_labels)
-    return hprior - barber_agakov_ape(model, design, observation_labels, target_labels, *args, **kwargs)
+    return hprior - posterior_ape(model, design, observation_labels, target_labels, *args, **kwargs)

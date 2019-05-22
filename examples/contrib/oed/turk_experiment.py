@@ -15,7 +15,7 @@ from pyro import optim
 from pyro import poutine
 from pyro.contrib.util import rmv, rexpand, lexpand, rtril, iter_plates_to_shape
 from pyro.contrib.glmm import broadcast_cat
-from pyro.contrib.oed.eig import naive_rainforth_eig, gibbs_y_eig, gibbs_y_re_eig, elbo_learn
+from pyro.contrib.oed.eig import nmc_eig, marginal_eig, marginal_likelihood_eig, elbo_learn
 from pyro.contrib.glmm.guides import SigmoidMarginalGuide, SigmoidLikelihoodGuide
 
 try:
@@ -24,7 +24,7 @@ except ImportError:
     from contextlib2 import ExitStack  # python 2
 
 EPSILON = torch.tensor(2 ** -24)
-CHECK_RAINFORTH = False
+CHECK_NMC = False
 # SRC = './run_outputs/turk_simulation/0run_6.result_stream.pickle'
 
 
@@ -368,7 +368,7 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
             # Other magic numbers
             marginal_mu_init, marginal_sigma_init = 0., 25.
             like_mu_init, like_sigma_init = 0., 10.
-            rainforth_m = 100
+            nmc_m = 100
             oed_n_samples, oed_n_steps, oed_final_n_samples, oed_lr = 10, 1500, 2000, 0.05
             oednore_n_samples, oednore_n_steps, oednore_final_n_samples, oednore_lr = 10, 750, 2000, 0.05
             elbo_n_samples, elbo_n_steps, elbo_lr = 10, 750, 0.05
@@ -418,7 +418,7 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
                     mult = 5 if question_number == 1 else 1
                     if typ == 'oed':
                         # Throws ArithmeticError if NaN encountered
-                        estimation_surface = gibbs_y_re_eig(
+                        estimation_surface = marginal_likelihood_eig(
                             model.model, adesign, "y", "fixed_effects",
                             oed_n_samples, mult*oed_n_steps, sigmoid_response_est, sigmoid_likelihood_est,
                             optim.Adam({"lr": oed_lr}), False, None, oed_final_n_samples
@@ -431,19 +431,19 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
                         if (estimation_surface < 0.).all():
                             logging.warn("All EIG values are <0 for at least one parallel run")
 
-                        if CHECK_RAINFORTH:
-                            check_surface = naive_rainforth_eig(
+                        if CHECK_NMC:
+                            check_surface = nmc_eig(
                                 model.model, adesign, ["y"], ["fixed_effects"],
-                                rainforth_m*rainforth_m, rainforth_m, rainforth_m
+                                nmc_m*nmc_m, nmc_m, nmc_m
                             )
-                            logging.info("Run Rainforth+RE with M={}".format(rainforth_m))
-                            logging.info("Estimation surface from Rainforth\n{}".format(check_surface))
+                            logging.info("Run NMC+RE with M={}".format(nmc_m))
+                            logging.info("Estimation surface from NMC\n{}".format(check_surface))
 
                         d_star_index = torch.argmax(estimation_surface, dim=1)
 
                     elif typ == 'oed_no_re':
                         # Throws ArithmeticError if NaN encountered
-                        estimation_surface = gibbs_y_eig(
+                        estimation_surface = marginal_eig(
                             model.model, adesign, ["y"], ALL_LATENTS, oednore_n_samples, mult*oednore_n_steps,
                             sigmoid_response_est, optim.Adam({"lr": oednore_lr}), False, None,
                             oednore_final_n_samples
@@ -456,12 +456,12 @@ def main(num_runs, num_parallel, num_participants, num_questions, experiment_nam
                         if (estimation_surface < 0.).all():
                             logging.warn("All EIG values are <0")
 
-                        if CHECK_RAINFORTH:
-                            check_surface = naive_rainforth_eig(
-                                model.model, adesign, ["y"], ALL_LATENTS, rainforth_m*rainforth_m, rainforth_m
+                        if CHECK_NMC:
+                            check_surface = nmc_eig(
+                                model.model, adesign, ["y"], ALL_LATENTS, nmc_m*nmc_m, nmc_m
                             )
-                            logging.info("Run Rainforth with M={}".format(rainforth_m))
-                            logging.info("Estimation surface from Rainforth\n{}".format(check_surface))
+                            logging.info("Run NMC with M={}".format(nmc_m))
+                            logging.info("Estimation surface from NMC\n{}".format(check_surface))
 
                         d_star_index = torch.argmax(estimation_surface, dim=1)
 

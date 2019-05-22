@@ -7,9 +7,9 @@ import numpy as np
 import pyro
 import pyro.distributions as dist
 from pyro import optim
-from pyro.contrib.oed.eig import donsker_varadhan_eig, gibbs_y_eig
+from pyro.contrib.oed.eig import donsker_varadhan_eig, marginal_eig
 from pyro.contrib.util import rmv, rvv
-from pyro.contrib.oed.util import linear_model_ground_truth, ba_eig_lm
+from pyro.contrib.oed.util import linear_model_ground_truth, posterior_eig_lm
 from pyro.contrib.glmm import known_covariance_linear_model
 
 
@@ -53,15 +53,15 @@ def main(num_steps, seed, plot):
     X[0, 0] = X[1, 1] = X[2, 1] = 1.
 
     expected_eig = linear_model_ground_truth(linear_model, X, "y", "w")
-    ba_eig, _ = ba_eig_lm(linear_model, X, "y", "w", num_samples=10,
-                          num_steps=num_steps, guide=posterior_guide,
-                          optim=optim.Adam({"lr": 0.01}), final_num_samples=500,
-                          return_history=True)
+    post_eig, _ = posterior_eig_lm(linear_model, X, "y", "w", num_samples=10,
+                                 num_steps=num_steps, guide=posterior_guide,
+                                 optim=optim.Adam({"lr": 0.01}), final_num_samples=500,
+                                 return_history=True)
     pyro.clear_param_store()
-    marginal_eig, _ = gibbs_y_eig(linear_model, X, "y", "w", num_samples=10,
-                                  num_steps=num_steps, guide=marginal_guide,
-                                  optim=optim.Adam({"lr": 0.01}), final_num_samples=500,
-                                  return_history=True)
+    marg_eig, _ = marginal_eig(linear_model, X, "y", "w", num_samples=10,
+                               num_steps=num_steps, guide=marginal_guide,
+                               optim=optim.Adam({"lr": 0.01}), final_num_samples=500,
+                               return_history=True)
     pyro.clear_param_store()
     dv_eig, _ = donsker_varadhan_eig(linear_model, X, "y", "w", num_samples=40,
                                      num_steps=num_steps, T=dv_critic, optim=optim.Adam({"lr": 0.005}),
@@ -71,8 +71,8 @@ def main(num_steps, seed, plot):
         import matplotlib.pyplot as plt
         x = np.arange(0, num_steps)
         plt.figure(figsize=(8, 5))
-        plt.plot(x, ba_eig.detach().numpy())
-        plt.plot(x, marginal_eig.detach().numpy())
+        plt.plot(x, post_eig.detach().numpy())
+        plt.plot(x, marg_eig.detach().numpy())
         plt.plot(x, dv_eig.detach().numpy())
 
         plt.axhline(expected_eig.numpy(), color='k')
@@ -80,8 +80,8 @@ def main(num_steps, seed, plot):
         plt.show()
 
     else:
-        print(ba_eig)
-        print(marginal_eig)
+        print(post_eig)
+        print(marg_eig)
         print(dv_eig)
         print(expected_eig)
 

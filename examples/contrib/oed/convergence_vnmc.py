@@ -45,12 +45,12 @@ def main(fname, seed):
             M = int(M)
             print("M", M)
             t = time.time()
-            eig_surface_iwae = vnmc_eig(model, design, "y", "w", num_samples=(1, 1), final_num_samples=(M * M, M),
+            eig_surface_vnmc = vnmc_eig(model, design, "y", "w", num_samples=(1, 1), final_num_samples=(M * M, M),
                                         num_steps=0, guide=guide, optim=optimizer)
             elapsed = t1 + time.time() - t
-            print(eig_surface_iwae)
+            print(eig_surface_vnmc)
 
-            results = {"num_steps": num_steps, "M": M, "surface": eig_surface_iwae, "elapsed": elapsed,
+            results = {"num_steps": num_steps, "M": M, "surface": eig_surface_vnmc, "elapsed": elapsed,
                        "lr": lr, "seed": seed}
             with open('run_outputs/{}.result_stream.pickle'.format(fname), 'ab') as f:
                 pickle.dump(results, f)
