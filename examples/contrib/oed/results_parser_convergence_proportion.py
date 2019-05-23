@@ -7,6 +7,7 @@ from collections import OrderedDict, defaultdict
 
 import numpy as np
 import torch
+import matplotlib
 import matplotlib.pyplot as plt
 
 output_dir = "./run_outputs/"
@@ -110,6 +111,8 @@ def main(fnames, findices, plot):
         plt.yticks(fontsize=16)
         plt.yscale('log')
         plt.xscale('log')
+        plt.gca().set_yticks([.25, 1., 4.])
+        plt.gca().get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
         plt.show()
 
 

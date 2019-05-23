@@ -691,7 +691,7 @@ def main(case_tags, estimator_tags, num_runs, num_parallel, experiment_name, see
                                                    case.observation_label,
                                                    case.target_label, **kwargs)
                     elapsed = time.time() - t
-                    print("Finished in", elapsed, "seconds")
+                    # print("Finished in", elapsed, "seconds")
 
                     results["surface"] = eig_surface
                     results["elapsed"] = elapsed
