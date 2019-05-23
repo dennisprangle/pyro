@@ -607,7 +607,7 @@ CASES = [
               "optim": (optim.Adam, {"optim_args": {"lr": 0.025}})}),
             # Problem with independent_priors
             (Estimator("Ground truth", ["truth"], nmc_eig),
-             {"N": 100, "M": 10000, "M_prime": 10000, "independent_priors": True}),
+             {"N": 100, "M": 10000, "M_prime": 10000, "independent_priors": True, "N_seq": 1000}),
         ],
         ["turk", "mixed_effects_regression"]
     )
