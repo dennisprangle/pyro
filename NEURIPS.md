@@ -6,7 +6,7 @@ First, install Python 3 and `pytorch>=1.0`. For full instructions on installing 
 Second, install this fork of pyro. This can most easily be accomplished by first changing into the directory 
 containing this file, and then running
 
-    > pip install -e .[dev]
+    > pip install -e .
     
 On some systems, the `--user` option may be necessary.
 
