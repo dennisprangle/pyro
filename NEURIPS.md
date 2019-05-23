@@ -15,6 +15,20 @@ The experiments for this paper live in `examples/contrib/oed`. Experiments are r
 job that produces a pickled output in `run_outputs`, followed by running a results parser to examine
 the output of the run.
 
+### Seeds
+All seeds were selected at random and are included for exact reproducibility. Omitting the seed argument
+will cause a new random seed to be generated.
+
+### EIG estimation accuracy
+The following reproduces the EIG estimation experiments, with new random seeds. The case tags used in the paper
+are: `ab_test`, `preference`, `mixed_effects_regression`, `extrapolation` with seeds `1035563456`,
+`158715520`,  `424222336`, `265453056`.
+
+    > python3 examples/contrib/oed/eig_estimation_benchmarking.py --case-tags=<case> --seed=<seed> --name=<your filename without extension>
+    > python3 examples/contrib/oed/results_parser_eig_estimation_benchmarking.py --fnames=<same filename>
+    
+**Note**: some known issues with `mixed_effects_regression`.
+
 ### Convergence rates
 Use the following commands to reproduce plots from the paper.
 
@@ -42,13 +56,5 @@ To reproduce the CES experiment use the following commands
     > python3 examples/contrib/oed/ces.py --num-steps=20 --seed=668716672 --typs=nmc --lengthscale=20 --name=<nmc file name>
     > python3 examples/contrib/oed/results_parser_ces.py --fnames=<marginal,rand,nmc>
 
-### EIG estimation accuracy
-The following reproduces the EIG estimation experiments, with new random seeds. The case tags used in the paper
-are: `ab_test`, `preference`, `mixed_effects_regression`, `extrapolation`.
 
-    > python3 examples/contrib/oed/eig_estimation_benchmarking.py --case-tags=<case> --name=<your filename without extension>
-    > python3 examples/contrib/oed/results_parser_eig_estimation_benchmarking.py --fnames=<same filename>
-    
-**Note**: some known issues with `mixed_effects_regression`.
 
-**Note**: exact seeds to reproduce the results in the paper will be provided shortly.

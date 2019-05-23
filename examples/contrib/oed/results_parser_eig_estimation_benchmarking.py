@@ -89,6 +89,7 @@ def main(fnames, findices, plot):
                     results_dict[case][estimator][run_num] = results['surface']
                     # with open('./run_outputs/eig_benchmark/turktrue.result_stream.pickle', 'ab') as f:
                     #     pickle.dump(results, f)
+                    # print(results['seed'])
                     designs[case] = results['design']
             except EOFError:
                 continue
@@ -134,7 +135,7 @@ def main(fnames, findices, plot):
                     }
         for case, v in bias_var.items():
             for method, bv in v.items():
-                print(case, method, "bias-variance", bv)
+                print(case, method, "bias", '{:0.2e}'.format(bv[0]), '{:0.2e}'.format(bv[1]))
 
 
 if __name__ == "__main__":
