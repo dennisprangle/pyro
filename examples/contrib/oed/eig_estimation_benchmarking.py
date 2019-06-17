@@ -12,13 +12,13 @@ import pyro
 from pyro import optim
 from pyro.infer import TraceEnum_ELBO
 from pyro.contrib.oed.eig import (
-    naive_rainforth_eig, accelerated_rainforth_eig, donsker_varadhan_eig, gibbs_y_eig,
-    gibbs_y_re_eig, amortized_lfire_eig, lfire_eig, iwae_eig
+    nmc_eig, accelerated_nmc_eig, donsker_varadhan_eig, marginal_eig,
+    marginal_likelihood_eig, amortized_lfire_eig, lfire_eig, vnmc_eig
 )
 from pyro.contrib.util import lexpand
 from pyro.contrib.oed.util import (
-    linear_model_ground_truth, ba_eig_lm, ba_eig_mc, normal_inverse_gamma_ground_truth,
-    laplace_vi_eig_mc, logistic_extrapolation_ground_truth, ba_eig_extrap
+    linear_model_ground_truth, posterior_eig_lm, posterior_eig_mc, normal_inverse_gamma_ground_truth,
+    laplace_vi_eig_mc, logistic_extrapolation_ground_truth, posterior_eig_extrap
 )
 from pyro.contrib.glmm import (
     group_assignment_matrix, normal_inverse_gamma_linear_model, known_covariance_linear_model,
@@ -109,17 +109,17 @@ Estimator = namedtuple("EIGEstimator", [
 
 truth_lm = Estimator("Ground truth", ["truth", "lm", "explicit"], linear_model_ground_truth)
 truth_nigam = Estimator("Ground truth", ["truth", "nigam", "explicit"], normal_inverse_gamma_ground_truth)
-nmc = Estimator("Nested Monte Carlo", ["nmc", "naive_rainforth", "explicit"], naive_rainforth_eig)
-nnmc = Estimator("Non-nested Monte Carlo", ["nnmc", "accelerated_rainforth", "explicit"], accelerated_rainforth_eig)
-posterior_lm = Estimator("Posterior", ["posterior", "gibbs", "ba", "lm", "explicit", "implicit"], ba_eig_lm)
-posterior_mc = Estimator("Posterior", ["posterior", "gibbs", "ba", "explicit", "implicit"], ba_eig_mc)
-posterior_extrap = Estimator("Posterior", ["posterior", "gibbs", "ba", "explicit", "implicit"], ba_eig_extrap)
-marginal = Estimator("Marginal", ["marginal", "gibbs", "explicit"], gibbs_y_eig)
+nmc = Estimator("Nested Monte Carlo", ["nmc", "explicit"], nmc_eig)
+nnmc = Estimator("Non-nested Monte Carlo", ["nnmc", "accelerated_nmc", "explicit"], accelerated_nmc_eig)
+posterior_lm = Estimator("Posterior", ["posterior", "gibbs", "lm", "explicit", "implicit"], posterior_eig_lm)
+posterior_mc = Estimator("Posterior", ["posterior", "gibbs", "explicit", "implicit"], posterior_eig_mc)
+posterior_extrap = Estimator("Posterior", ["posterior", "gibbs", "explicit", "implicit"], posterior_eig_extrap)
+marginal = Estimator("Marginal", ["marginal", "gibbs", "explicit"], marginal_eig)
 marginal_re = Estimator("Marginal + likelihood", ["marginal_re", "marginal_likelihood", "gibbs", "implicit"],
-                        gibbs_y_re_eig)
+                        marginal_likelihood_eig)
 alfire = Estimator("Amortized LFIRE", ["alfire"], amortized_lfire_eig)
 lfire = Estimator("LFIRE", ["lfire", "implicit"], lfire_eig)
-iwae = Estimator("IWAE", ["iwae", "explicit"], iwae_eig)
+vnmc = Estimator("VNMC", ["vnmc", "explicit"], vnmc_eig)
 laplace = Estimator("Laplace", ["laplace", "diag_laplace", "explicit"], laplace_vi_eig_mc)
 dv = Estimator("Donsker-Varadhan", ["dv", "implicit"], donsker_varadhan_eig)
 
@@ -154,7 +154,7 @@ CASES = [
                                                            "b0_init": 1., "regressor_init": -3.,
                                                            "scale_tril_init": torch.tensor([[10., 0.], [0., 1/.55]])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            (iwae,
+            (vnmc,
              {"num_samples": [10, 2], "num_steps": 1000, "final_num_samples": [500, 2],
               "guide": (NormalInverseGammaPosteriorGuide, {"mf": True, "correct_gamma": False, "alpha_init": 1.,
                                                            "b0_init": 1., "regressor_init": -3.,
@@ -176,7 +176,7 @@ CASES = [
               "final_num_samples": 10}),
             (truth_nigam, {}),
         ],
-        ["nigam", "ground_truth", "no_re", "ab_test", "explicit_grid"]
+        ["nigam", "ground_truth", "no_re", "explicit_grid"]
     ),
     Case(
         "Normal inverse gamma model, information on w only",
@@ -188,7 +188,7 @@ CASES = [
         "y",
         "w",
         [
-            # Caution, Rainforth does not work correctly in this case because we must
+            # Caution, NMC does not work correctly in this case because we must
             # compute p(psi | theta)
             # Use LFIRE instead
             (posterior_mc,
@@ -203,7 +203,7 @@ CASES = [
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (truth_lm, {}),
         ],
-        ["nigam", "ground_truth", "re", "ab_test"]
+        ["nigam", "ground_truth", "re"]
     ),
     #############################################################################################################
     # Linear model, with AB testing
@@ -224,11 +224,11 @@ CASES = [
                                                     "scale_tril_init": torch.tensor([[10., 0.], [0., 1/.55]])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             # TODO: fix analytic entropy
-            # (Estimator("Posterior with analytic entropy", ["posterior", "gibbs", "ba", "ae"], ba_eig_lm),
+            # (Estimator("Posterior with analytic entropy", ["posterior", "gibbs", "ae"], posterior_eig_lm),
             #  {"num_samples": 10, "num_steps": 1200, "final_num_samples": 50, "analytic_entropy": True,
             #   "guide": (LinearModelGuide, {"regressor_init": -2., "scale_tril_init": 3.}),
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            (iwae,
+            (vnmc,
              {"num_samples": [10, 1], "num_steps": 1400, "final_num_samples": [500, 1],
               "guide": (LinearModelPosteriorGuide, {"regressor_init": -3.,
                                                     "scale_tril_init": torch.tensor([[10., 0.], [0., 1/.55]])}),
@@ -293,7 +293,7 @@ CASES = [
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (truth_lm, {})
         ],
-        ["lm", "re", "ab_test", "small_n"]
+        ["lm", "re", "small_n"]
     ),
 
     Case(
@@ -310,7 +310,7 @@ CASES = [
              {"num_samples": 10, "num_steps": 1000, "final_num_samples": 500,
               "guide": (LinearModelPosteriorGuide, {"regressor_init": -3., "scale_tril_init": 3.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            (iwae,
+            (vnmc,
              {"num_samples": [10, 2], "num_steps": 800, "final_num_samples": [500, 10],
               "guide": (LinearModelPosteriorGuide, {"regressor_init": -3., "scale_tril_init": 3.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
@@ -320,13 +320,13 @@ CASES = [
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (truth_lm, {})
         ],
-        ["lm", "ground_truth", "no_re", "ab_test", "large_n", "large_dim_y"],
+        ["lm", "ground_truth", "no_re", "large_n", "large_dim_y"],
     ),
     #############################################################################################################
-    # Sigmoid regression location finding
+    # Sigmoid regression revealed preference
     #############################################################################################################
     Case(
-        "Location finding with a sigmoid model",
+        "Revealed preference with a sigmoid model",
         (sigmoid_location_model, {"loc_mean": torch.tensor([-20.]),
                                   "loc_sd": torch.tensor([20.]),
                                   "multiplier": torch.tensor([1.]),
@@ -342,14 +342,14 @@ CASES = [
                                                         "scale_tril_init": 20.,
                                                         "multiplier": torch.tensor([1.])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            (iwae,
+            (vnmc,
              {"num_samples": [10, 1], "num_steps": 200, "final_num_samples": [100, 50],
               "guide": (SigmoidLocationPosteriorGuide, {"prior_mean": torch.tensor([-20.]),
                                                         "scale_tril_init": 20.,
                                                         "multiplier": torch.tensor([1.])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (marginal,
-             {"num_samples": 10, "num_steps": 4500, "final_num_samples": 2000,
+             {"num_samples": 10, "num_steps": 1000, "final_num_samples": 500,
               "guide": (SigmoidMarginalGuide, {"mu_init": 0., "sigma_init": 20.}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
             (lfire,
@@ -363,17 +363,17 @@ CASES = [
               "loss": TraceEnum_ELBO(max_plate_nesting=2).differentiable_loss,
               "guide": (LinearModelLaplaceGuide, {"init_value": -20.0}),
               "final_num_samples": 10}),
-            # (Estimator("Marginal (unbiased)", ["truth", "explicit"], gibbs_y_eig),
-            #  {"num_samples": 10, "num_steps": 100000, "final_num_samples": 5000,
-            #   "guide": (SigmoidMarginalGuide, {"mu_init": 0., "sigma_init": 20.}),
-            #   "optim": (optim.Adam, {"optim_args": {"lr": 0.01}})}),
+            (Estimator("Marginal (unbiased)", ["truth", "explicit"], marginal_eig),
+             {"num_samples": 10, "num_steps": 100000, "final_num_samples": 5000,
+              "guide": (SigmoidMarginalGuide, {"mu_init": 0., "sigma_init": 20.}),
+              "optim": (optim.Adam, {"optim_args": {"lr": 0.01}})}),
             (dv,
              {"num_samples": 40, "num_steps": 500, "final_num_samples": 500,
               "T": (SigmoidLocationAmortizedClassifier, {"scale_tril_init": 1 / 20.,
                                                          "multiplier": torch.tensor([1.])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.01}})}),
         ],
-        ["sigmoid", "no_re", "location", "explicit_grid", "lf"]
+        ["sigmoid", "no_re", "location", "explicit_grid", "lf", "preference"]
     ),
     #############################################################################################################
     # Logistic regression location finding
@@ -395,7 +395,7 @@ CASES = [
               "optim": (optim.Adam, {"optim_args": {"lr": 0.025}})}
              ),
             # Do not apply here- not a direct competitor to NNMC
-            # (iwae,
+            # (vnmc,
             #  {"num_samples": 10, "num_steps": 800, "final_num_samples": 500, "M": 1,
             #   "guide": (LogisticPosteriorGuide, {"mu_init": 0.,
             #                                      "scale_tril_init": torch.tensor([[1., 0.], [0., 20.]])}),
@@ -451,7 +451,7 @@ CASES = [
               "guide": (LinearModelPosteriorGuide, {"regressor_init": -3.,
                                                     "scale_tril_init": torch.tensor([[10., 0.], [0., 2.]])}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            (iwae,
+            (vnmc,
              {"num_samples": [10, 2], "num_steps": 800, "final_num_samples": [500, 10],
               "guide": (LinearModelPosteriorGuide, {"regressor_init": -3.,
                                                     "scale_tril_init": torch.tensor([[10., 0.], [0., 2.]])}),
@@ -508,7 +508,7 @@ CASES = [
             #  {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500,
             #   "guide": (LinearModelPosteriorGuide, {"regressor_init": -2., "scale_tril_init": 3.}),
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            # (iwae,
+            # (vnmc,
             #  {"num_samples": 10, "num_steps": 800, "final_num_samples": 500, "M": 1,
             #   "guide": (LinearModelPosteriorGuide, {"regressor_init": -2., "scale_tril_init": 3.}),
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
@@ -535,7 +535,7 @@ CASES = [
             #  {"num_samples": 10, "num_steps": 1200, "final_num_samples": 500,
             #   "guide": (LinearModelPosteriorGuide, {"regressor_init": -2., "scale_tril_init": 3.}),
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
-            # (iwae,
+            # (vnmc,
             #  {"num_samples": 10, "num_steps": 800, "final_num_samples": 500, "M": 1,
             #   "guide": (LinearModelPosteriorGuide, {"regressor_init": -2., "scale_tril_init": 3.}),
             #   "optim": (optim.Adam, {"optim_args": {"lr": 0.05}})}),
@@ -576,7 +576,7 @@ CASES = [
              {"num_samples": 100000, "ythetaspace": {"y": torch.tensor([0., 0., 1., 1.]),
                                                      "target": torch.tensor([0., 1., 0., 1.])}}),
         ],
-        ["extrap"]
+        ["extrap", "extrapolation"]
     ),
     ####################################################################################################
     # Turk benchmarking
@@ -606,15 +606,15 @@ CASES = [
               "classifier": (TurkClassifier, {"bilinear_init": 0., "ntheta": 30}),
               "optim": (optim.Adam, {"optim_args": {"lr": 0.025}})}),
             # Problem with independent_priors
-            (Estimator("Ground truth", ["truth"], naive_rainforth_eig),
-             {"N": 100, "M": 10000, "M_prime": 10000, "independent_priors": True, "N_seq": 1}),
+            (Estimator("Ground truth", ["truth"], nmc_eig),
+             {"N": 100, "M": 10000, "M_prime": 10000, "independent_priors": True, "N_seq": 1000}),
         ],
-        ["turk"]
+        ["turk", "mixed_effects_regression"]
     )
 ]
 
 
-def main(case_tags, estimator_tags, num_runs, num_parallel, experiment_name):
+def main(case_tags, estimator_tags, num_runs, num_parallel, experiment_name, seed):
     output_dir = "./run_outputs/eig_benchmark/"
     if not experiment_name:
         experiment_name = output_dir+"{}".format(datetime.datetime.now().isoformat())
@@ -623,6 +623,11 @@ def main(case_tags, estimator_tags, num_runs, num_parallel, experiment_name):
     results_file = experiment_name+'.result_stream.pickle'
     # if os.path.exists(results_file):
     #     os.remove(results_file)
+    if seed >= 0:
+        pyro.set_rng_seed(seed)
+    else:
+        seed = int(torch.rand(tuple()) * 2 ** 30)
+        pyro.set_rng_seed(seed)
 
     print("Experiment", experiment_name)
     case_tags = case_tags.split(",")
@@ -656,6 +661,7 @@ def main(case_tags, estimator_tags, num_runs, num_parallel, experiment_name):
                     # Begin collecting settings of this run, for pickle
                     results = {
                         "case": case.title,
+                        "seed": seed,
                         "run_num": run,
                         "obs_labels": case.observation_label,
                         "target_labels": case.target_label,
@@ -685,7 +691,7 @@ def main(case_tags, estimator_tags, num_runs, num_parallel, experiment_name):
                                                    case.observation_label,
                                                    case.target_label, **kwargs)
                     elapsed = time.time() - t
-                    print("Finished in", elapsed, "seconds")
+                    # print("Finished in", elapsed, "seconds")
 
                     results["surface"] = eig_surface
                     results["elapsed"] = elapsed
@@ -704,5 +710,6 @@ if __name__ == "__main__":
     parser.add_argument("--num-runs", nargs="?", default=1, type=int)
     parser.add_argument("--num-parallel", nargs="?", default=5, type=int)
     parser.add_argument("--name", nargs="?", default="", type=str)
+    parser.add_argument("--seed", nargs="?", default=-1, type=int)
     args = parser.parse_args()
-    main(args.case_tags, args.estimator_tags, args.num_runs, args.num_parallel, args.name)
+    main(args.case_tags, args.estimator_tags, args.num_runs, args.num_parallel, args.name, args.seed)

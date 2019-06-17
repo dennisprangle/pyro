@@ -7,6 +7,7 @@ from collections import OrderedDict, defaultdict
 
 import numpy as np
 import torch
+import matplotlib
 import matplotlib.pyplot as plt
 
 output_dir = "./run_outputs/"
@@ -27,7 +28,7 @@ COLOURS = {
            "ALFIRE 2": [.3, .7, .9],
            "LFIRE": [177/255, 89/255, 40/255],
            "LFIRE 2": [.78, .40, .8],
-           "IWAE": [106/255, 61/255, 154/255],
+           "VNMC": [106/255, 61/255, 154/255],
            "Laplace": [255/255, 127/255, 0],
 }
 OTHERCOLOURS = {"Posterior": [158/255, 202/255, 225/255], "Marginal": [161/255, 217/255, 155/255]}
@@ -75,7 +76,7 @@ def main(fnames, findices, plot):
                     Ni = results['Ni']
                     T = results['T']
                     # Ti = results['Ti']
-                    print(results['seed'])
+                    # print(results['seed'])
                     results_dict[(method,)][t] = surface
             except EOFError:
                 continue
@@ -92,7 +93,7 @@ def main(fnames, findices, plot):
         plt.figure(figsize=(5, 5))
         for i, (k, (x, (lower, centre, upper))) in enumerate(reformed.items()):
             color = COLOURS[k[0]]
-            print(k, x, centre)
+            # print(k, x, centre)
             plt.plot(x, centre, linestyle='-', markersize=8, color=color, marker=MARKERS[i],
                      linewidth=2, mew=2)
 
@@ -110,6 +111,8 @@ def main(fnames, findices, plot):
         plt.yticks(fontsize=16)
         plt.yscale('log')
         plt.xscale('log')
+        plt.gca().set_yticks([.25, 1., 4.])
+        plt.gca().get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
         plt.show()
 
 

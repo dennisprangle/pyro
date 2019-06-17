@@ -24,7 +24,7 @@ COLOURS = {
            "ALFIRE 2": [.3, .7, .9],
            "LFIRE": [177/255, 89/255, 40/255],
            "LFIRE 2": [.78, .40, .8],
-           "IWAE": [106/255, 61/255, 154/255],
+           "VNMC": [106/255, 61/255, 154/255],
            "Laplace": [255/255, 127/255, 0],
            "Donsker-Varadhan": [.44, .44, .44]
 }
@@ -41,7 +41,7 @@ MARKERS = {
            "ALFIRE 2": 'D',
            "LFIRE": 'D',
            "LFIRE 2": 'D',
-           "IWAE": '+',
+           "VNMC": '+',
            "Laplace": '*',
            "Donsker-Varadhan": "^"
 }
@@ -89,6 +89,7 @@ def main(fnames, findices, plot):
                     results_dict[case][estimator][run_num] = results['surface']
                     # with open('./run_outputs/eig_benchmark/turktrue.result_stream.pickle', 'ab') as f:
                     #     pickle.dump(results, f)
+                    # print(results['seed'])
                     designs[case] = results['design']
             except EOFError:
                 continue
@@ -118,7 +119,7 @@ def main(fnames, findices, plot):
             plt.yticks(fontsize=16)
             plt.show()
     else:
-        print(reformed)
+        # print(reformed)
         if "Ground truth" in list(results_dict.values())[0]:
             truth = {case: torch.cat([d["Ground truth"][run] for run in d["Ground truth"]]).mean(0)
                      for case, d in results_dict.items()}
@@ -132,7 +133,9 @@ def main(fnames, findices, plot):
                         for estimator, v in sorted(d.items())])
                     for case, d in results_dict.items()
                     }
-        print(bias_var)
+        for case, v in bias_var.items():
+            for method, bv in v.items():
+                print(case, method, "bias", '{:0.2e}'.format(bv[0]), '{:0.2e}'.format(bv[1]))
 
 
 if __name__ == "__main__":
@@ -142,6 +145,6 @@ if __name__ == "__main__":
     feature_parser = parser.add_mutually_exclusive_group(required=False)
     feature_parser.add_argument('--plot', dest='plot', action='store_true')
     feature_parser.add_argument('--no-plot', dest='plot', action='store_false')
-    parser.set_defaults(plot=True)
+    parser.set_defaults(plot=False)
     args = parser.parse_args()
     main(args.fnames, args.findices, args.plot)

@@ -2,6 +2,7 @@ from __future__ import absolute_import, division, print_function
 
 import torch
 import math
+import warnings
 
 import pyro
 from pyro import poutine
@@ -117,10 +118,10 @@ def vi_ape(model, design, observation_labels, target_labels,
     return loss
 
 
-def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
-                        N=100, M=10, M_prime=None, independent_priors=False):
+def nmc_eig(model, design, observation_labels, target_labels=None,
+            N=100, M=10, M_prime=None, independent_priors=False, N_seq=1):
     """
-    Naive Rainforth (i.e. Nested Monte Carlo) estimate of the expected information
+   Nested Monte Carlo estimate of the expected information
     gain (EIG). The estimate is, when there are not any random effects,
 
     .. math::
@@ -159,57 +160,63 @@ def naive_rainforth_eig(model, design, observation_labels, target_labels=None,
     if isinstance(target_labels, str):
         target_labels = [target_labels]
 
-    # Take N samples of the model
-    expanded_design = lexpand(design, N)  # N copies of the model
-    trace = poutine.trace(model).get_trace(expanded_design)
-    trace.compute_log_prob()
+    s = 0.
+    if N_seq > 1:
+        warnings.warn("Running nmc_eig with N_seq > 1 known to cause memory issues")
+    for i in range(N_seq):
+        # Take N samples of the model
+        expanded_design = lexpand(design, N)  # N copies of the model
+        trace = poutine.trace(model).get_trace(expanded_design)
+        trace.compute_log_prob()
 
-    if M_prime is not None:
-        y_dict = {l: lexpand(trace.nodes[l]["value"], M_prime) for l in observation_labels}
-        theta_dict = {l: lexpand(trace.nodes[l]["value"], M_prime) for l in target_labels}
-        theta_dict.update(y_dict)
-        # Resample M values of u and compute conditional probabilities
-        # WARNING: currently the use of condition does not actually sample
-        # the conditional distribution!
-        # We need to use some importance weighting
-        conditional_model = pyro.condition(model, data=theta_dict)
-        if independent_priors:
-            reexpanded_design = lexpand(design, M_prime, 1)
+        if M_prime is not None:
+            y_dict = {l: lexpand(trace.nodes[l]["value"], M_prime) for l in observation_labels}
+            theta_dict = {l: lexpand(trace.nodes[l]["value"], M_prime) for l in target_labels}
+            theta_dict.update(y_dict)
+            # Resample M values of u and compute conditional probabilities
+            # WARNING: currently the use of condition does not actually sample
+            # the conditional distribution!
+            # We need to use some importance weighting
+            conditional_model = pyro.condition(model, data=theta_dict)
+            if independent_priors:
+                reexpanded_design = lexpand(design, M_prime, 1)
+            else:
+                # Not acceptable to use (M_prime, 1) here - other variables may occur after
+                # theta, so need to be sampled conditional upon it
+                reexpanded_design = lexpand(design, M_prime, N)
+            retrace = poutine.trace(conditional_model).get_trace(reexpanded_design)
+            retrace.compute_log_prob()
+            conditional_lp = sum(retrace.nodes[l]["log_prob"] for l in observation_labels).logsumexp(0) \
+                - math.log(M_prime)
         else:
-            # Not acceptable to use (M_prime, 1) here - other variables may occur after
-            # theta, so need to be sampled conditional upon it
-            reexpanded_design = lexpand(design, M_prime, N)
+            # This assumes that y are independent conditional on theta
+            # Furthermore assume that there are no other variables besides theta
+            conditional_lp = sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+
+        y_dict = {l: lexpand(trace.nodes[l]["value"], M) for l in observation_labels}
+        # Resample M values of theta and compute conditional probabilities
+        conditional_model = pyro.condition(model, data=y_dict)
+        # Using (M, 1) instead of (M, N) - acceptable to re-use thetas between ys because
+        # theta comes before y in graphical model
+        reexpanded_design = lexpand(design, M, 1)  # sample M theta
         retrace = poutine.trace(conditional_model).get_trace(reexpanded_design)
         retrace.compute_log_prob()
-        conditional_lp = sum(retrace.nodes[l]["log_prob"] for l in observation_labels).logsumexp(0) \
-            - math.log(M_prime)
-    else:
-        # This assumes that y are independent conditional on theta
-        # Furthermore assume that there are no other variables besides theta
-        conditional_lp = sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+        marginal_lp = sum(retrace.nodes[l]["log_prob"] for l in observation_labels).logsumexp(0) \
+            - math.log(M)
 
-    y_dict = {l: lexpand(trace.nodes[l]["value"], M) for l in observation_labels}
-    # Resample M values of theta and compute conditional probabilities
-    conditional_model = pyro.condition(model, data=y_dict)
-    # Using (M, 1) instead of (M, N) - acceptable to re-use thetas between ys because
-    # theta comes before y in graphical model
-    reexpanded_design = lexpand(design, M, 1)  # sample M theta
-    retrace = poutine.trace(conditional_model).get_trace(reexpanded_design)
-    retrace.compute_log_prob()
-    marginal_lp = sum(retrace.nodes[l]["log_prob"] for l in observation_labels).logsumexp(0) \
-        - math.log(M)
+        terms = conditional_lp - marginal_lp
+        nonnan = (~torch.isnan(terms)).sum(0).type_as(terms)
+        terms[torch.isnan(terms)] = 0.
+        s += terms.sum(0)/nonnan
 
-    terms = conditional_lp - marginal_lp
-    nonnan = (~torch.isnan(terms)).sum(0).type_as(terms)
-    terms[torch.isnan(terms)] = 0.
-    return terms.sum(0)/nonnan
+    return s/N_seq
 
 
 # Pre-release
-def accelerated_rainforth_eig(model, design, observation_labels, target_labels,
-                              yspace, N=100, M_prime=None):
+def accelerated_nmc_eig(model, design, observation_labels, target_labels,
+                        yspace, N=100, M_prime=None):
     """
-    Accelerated Rainforth (i.e. Unnested Monte Carlo) estimate of the expected information
+    Unnested Monte Carlo estimate of the expected information
     gain (EIG). The estimate is, when there are not any random effects,
 
     .. math::
@@ -326,13 +333,13 @@ def donsker_varadhan_eig(model, design, observation_labels, target_labels,
                             final_design, final_num_samples)
 
 
-def barber_agakov_ape(model, design, observation_labels, target_labels,
-                      num_samples, num_steps, guide, optim, return_history=False,
-                      final_design=None, final_num_samples=None, *args, **kwargs):
+def posterior_ape(model, design, observation_labels, target_labels,
+                  num_samples, num_steps, guide, optim, return_history=False,
+                  final_design=None, final_num_samples=None, *args, **kwargs):
     """
-    Barber-Agakov estimate of average posterior entropy (APE).
+    Posterior estimate of average posterior entropy (APE).
 
-    The Barber-Agakov representation of APE is
+    The posterior representation of APE is
 
         :math:`sup_{q}E_{p(y, \\theta | d)}[\\log q(\\theta | y, d)]`
 
@@ -352,7 +359,7 @@ def barber_agakov_ape(model, design, observation_labels, target_labels,
     :param int num_samples: Number of samples per iteration.
     :param int num_steps: Number of optimisation steps.
     :param function guide: guide family for use in the (implicit) posterior estimation.
-        The parameters of `guide` are optimised to maximise the Barber-Agakov
+        The parameters of `guide` are optimised to maximise the posterior
         objective.
     :param pyro.optim.Optim optim: Optimiser to use.
     :param bool return_history: If `True`, also returns a tensor giving the loss function
@@ -368,16 +375,15 @@ def barber_agakov_ape(model, design, observation_labels, target_labels,
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-    loss = barber_agakov_loss(model, guide, observation_labels, target_labels, *args, **kwargs)
+    loss = posterior_loss(model, guide, observation_labels, target_labels, *args, **kwargs)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
                             final_design, final_num_samples)
 
 
-def gibbs_y_eig(model, design, observation_labels, target_labels,
-                num_samples, num_steps, guide, optim, return_history=False,
-                final_design=None, final_num_samples=None):
-    """Estimate EIG by estimating the marginal entropy, that of :math:`p(y|d)`,
-    via Gibbs' Inequality.
+def marginal_eig(model, design, observation_labels, target_labels,
+                 num_samples, num_steps, guide, optim, return_history=False,
+                 final_design=None, final_num_samples=None):
+    """Estimate EIG by estimating the marginal entropy, that of :math:`p(y|d)`.
 
     Warning: this method does **not** estimate the correct quantity in the presence of
     random effects.
@@ -387,14 +393,14 @@ def gibbs_y_eig(model, design, observation_labels, target_labels,
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-    loss = gibbs_y_loss(model, guide, observation_labels, target_labels)
+    loss = marginal_loss(model, guide, observation_labels, target_labels)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
                             final_design, final_num_samples)
 
 
-def gibbs_y_re_eig(model, design, observation_labels, target_labels,
-                   num_samples, num_steps, marginal_guide, cond_guide, optim,
-                   return_history=False, final_design=None, final_num_samples=None):
+def marginal_likelihood_eig(model, design, observation_labels, target_labels,
+                            num_samples, num_steps, marginal_guide, cond_guide, optim,
+                            return_history=False, final_design=None, final_num_samples=None):
     """Estimate EIG by estimating the marginal entropy, that of :math:`p(y|d)`,
     *and* the conditional entropy, of :math:`p(y|\\theta, d)`, both via Gibbs' Inequality.
     """
@@ -403,7 +409,7 @@ def gibbs_y_re_eig(model, design, observation_labels, target_labels,
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-    loss = gibbs_y_re_loss(model, marginal_guide, cond_guide, observation_labels, target_labels)
+    loss = marginal_likelihood_loss(model, marginal_guide, cond_guide, observation_labels, target_labels)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
                             final_design, final_num_samples)
 
@@ -456,14 +462,14 @@ def elbo_learn(model, design, observation_labels, target_labels,
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim)
 
 
-def iwae_eig(model, design, observation_labels, target_labels,
+def vnmc_eig(model, design, observation_labels, target_labels,
              num_samples, num_steps, guide, optim, return_history=False,
              final_design=None, final_num_samples=None):
     if isinstance(observation_labels, str):
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
         target_labels = [target_labels]
-    loss = iwae_eig_loss(model, guide, observation_labels, target_labels)
+    loss = vnmc_eig_loss(model, guide, observation_labels, target_labels)
     return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim, return_history,
                             final_design, final_num_samples)
 
@@ -538,7 +544,7 @@ def donsker_varadhan_loss(model, T, observation_labels, target_labels):
     return loss_fn
 
 
-def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic_entropy=False):
+def posterior_loss(model, guide, observation_labels, target_labels, analytic_entropy=False):
 
     def loss_fn(design, num_particles, evaluation=False, **kwargs):
 
@@ -568,7 +574,7 @@ def barber_agakov_loss(model, guide, observation_labels, target_labels, analytic
     return loss_fn
 
 
-def gibbs_y_loss(model, guide, observation_labels, target_labels):
+def marginal_loss(model, guide, observation_labels, target_labels):
 
     def loss_fn(design, num_particles, evaluation=False, **kwargs):
 
@@ -596,7 +602,7 @@ def gibbs_y_loss(model, guide, observation_labels, target_labels):
     return loss_fn
 
 
-def gibbs_y_re_loss(model, marginal_guide, likelihood_guide, observation_labels, target_labels):
+def marginal_likelihood_loss(model, marginal_guide, likelihood_guide, observation_labels, target_labels):
 
     def loss_fn(design, num_particles, evaluation=False, **kwargs):
 
@@ -722,7 +728,7 @@ def elbo(model, guide, data, observation_labels, target_labels):
     return loss_fn
 
 
-def iwae_eig_loss(model, guide, observation_labels, target_labels):
+def vnmc_eig_loss(model, guide, observation_labels, target_labels):
 
     def loss_fn(design, num_particles, evaluation=False, **kwargs):
         N, M = num_particles

@@ -13,7 +13,7 @@ import pyro
 import pyro.optim as optim
 import pyro.distributions as dist
 from pyro.contrib.util import iter_plates_to_shape, lexpand, rexpand, rmv
-from pyro.contrib.oed.eig import gibbs_y_eig, elbo_learn, naive_rainforth_eig, laplace_vi_ape
+from pyro.contrib.oed.eig import marginal_eig, elbo_learn, nmc_eig, laplace_vi_ape
 import pyro.contrib.gp as gp
 
 try:
@@ -149,16 +149,16 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
                     def f(X):
                         n_steps = oed_n_steps // len(oed_lr)
                         for lr in oed_lr:
-                            gibbs_y_eig(model, X, observation_labels="y", target_labels=["rho", "alpha", "slope"],
-                                        num_samples=oed_n_samples, num_steps=n_steps, guide=guide,
-                                        optim=optim.Adam({"lr": lr}))
-                        return gibbs_y_eig(model, X, observation_labels="y", target_labels=["rho", "alpha", "slope"],
-                                           num_samples=oed_n_samples, num_steps=1, guide=guide,
-                                           final_num_samples=oed_final_n_samples, optim=optim.Adam({"lr": 1e-6}))
+                            marginal_eig(model, X, observation_labels="y", target_labels=["rho", "alpha", "slope"],
+                                         num_samples=oed_n_samples, num_steps=n_steps, guide=guide,
+                                         optim=optim.Adam({"lr": lr}))
+                        return marginal_eig(model, X, observation_labels="y", target_labels=["rho", "alpha", "slope"],
+                                            num_samples=oed_n_samples, num_steps=1, guide=guide,
+                                            final_num_samples=oed_final_n_samples, optim=optim.Adam({"lr": 1e-6}))
                 elif typ == 'nmc':
                     def f(X):
-                        return torch.cat([naive_rainforth_eig(model, X[:, 25*i:25*(i+1), ...], ["y"],
-                                                              ["rho", "alpha", "slope"], N=70*70, M=70)
+                        return torch.cat([nmc_eig(model, X[:, 25 * i:25 * (i + 1), ...], ["y"],
+                                                  ["rho", "alpha", "slope"], N=70*70, M=70)
                                           for i in range(X.shape[1]//25)], dim=1)
 
                 y = f(X)

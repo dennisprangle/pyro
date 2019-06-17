@@ -10,7 +10,7 @@ from pyro.infer import Trace_ELBO
 from pyro.contrib.glmm import known_covariance_linear_model
 from pyro.contrib.oed.util import linear_model_ground_truth
 from pyro.contrib.oed.eig import (
-    naive_rainforth_eig, barber_agakov_ape, gibbs_y_eig, gibbs_y_re_eig, iwae_eig, laplace_vi_ape, lfire_eig,
+    nmc_eig, posterior_ape, marginal_eig, marginal_likelihood_eig, vnmc_eig, laplace_vi_ape, lfire_eig,
     donsker_varadhan_eig)
 from pyro.contrib.util import rmv, rvv
 from pyro.contrib.glmm.guides import LinearModelLaplaceGuide
@@ -99,13 +99,13 @@ def test_posterior_linear_model(linear_model, one_point_design):
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
     # Pre-train (large learning rate)
-    barber_agakov_ape(linear_model, one_point_design, "y", "w", num_samples=10,
-                      num_steps=250, guide=posterior_guide,
-                      optim=optim.Adam({"lr": 0.1}))
+    posterior_ape(linear_model, one_point_design, "y", "w", num_samples=10,
+                  num_steps=250, guide=posterior_guide,
+                  optim=optim.Adam({"lr": 0.1}))
     # Finesse (small learning rate)
-    estimated_ape = barber_agakov_ape(linear_model, one_point_design, "y", "w", num_samples=10,
-                                      num_steps=250, guide=posterior_guide,
-                                      optim=optim.Adam({"lr": 0.01}), final_num_samples=500)
+    estimated_ape = posterior_ape(linear_model, one_point_design, "y", "w", num_samples=10,
+                                  num_steps=250, guide=posterior_guide,
+                                  optim=optim.Adam({"lr": 0.01}), final_num_samples=500)
     expected_ape = linear_model_ground_truth(linear_model, one_point_design, "y", "w", eig=False)
     assert_equal(estimated_ape, expected_ape, prec=5e-2)
 
@@ -114,13 +114,13 @@ def test_marginal_linear_model(linear_model, one_point_design):
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
     # Pre-train (large learning rate)
-    gibbs_y_eig(linear_model, one_point_design, "y", "w", num_samples=10,
-                num_steps=250, guide=marginal_guide,
-                optim=optim.Adam({"lr": 0.1}))
+    marginal_eig(linear_model, one_point_design, "y", "w", num_samples=10,
+                 num_steps=250, guide=marginal_guide,
+                 optim=optim.Adam({"lr": 0.1}))
     # Finesse (small learning rate)
-    estimated_eig = gibbs_y_eig(linear_model, one_point_design, "y", "w", num_samples=10,
-                                num_steps=250, guide=marginal_guide,
-                                optim=optim.Adam({"lr": 0.01}), final_num_samples=500)
+    estimated_eig = marginal_eig(linear_model, one_point_design, "y", "w", num_samples=10,
+                                 num_steps=250, guide=marginal_guide,
+                                 optim=optim.Adam({"lr": 0.01}), final_num_samples=500)
     expected_eig = linear_model_ground_truth(linear_model, one_point_design, "y", "w")
     assert_equal(estimated_eig, expected_eig, prec=5e-2)
 
@@ -129,13 +129,13 @@ def test_marginal_likelihood_linear_model(linear_model, one_point_design):
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
     # Pre-train (large learning rate)
-    gibbs_y_re_eig(linear_model, one_point_design, "y", "w", num_samples=10,
-                   num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
-                   optim=optim.Adam({"lr": 0.1}))
+    marginal_likelihood_eig(linear_model, one_point_design, "y", "w", num_samples=10,
+                            num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
+                            optim=optim.Adam({"lr": 0.1}))
     # Finesse (small learning rate)
-    estimated_eig = gibbs_y_re_eig(linear_model, one_point_design, "y", "w", num_samples=10,
-                                   num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
-                                   optim=optim.Adam({"lr": 0.01}), final_num_samples=500)
+    estimated_eig = marginal_likelihood_eig(linear_model, one_point_design, "y", "w", num_samples=10,
+                                            num_steps=250, marginal_guide=marginal_guide, cond_guide=likelihood_guide,
+                                            optim=optim.Adam({"lr": 0.01}), final_num_samples=500)
     expected_eig = linear_model_ground_truth(linear_model, one_point_design, "y", "w")
     assert_equal(estimated_eig, expected_eig, prec=5e-2)
 
@@ -144,21 +144,21 @@ def test_vnmc_linear_model(linear_model, one_point_design):
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
     # Pre-train (large learning rate)
-    iwae_eig(linear_model, one_point_design, "y", "w", num_samples=[9, 3],
+    vnmc_eig(linear_model, one_point_design, "y", "w", num_samples=[9, 3],
              num_steps=250, guide=posterior_guide,
              optim=optim.Adam({"lr": 0.1}))
     # Finesse (small learning rate)
-    estimated_eig = iwae_eig(linear_model, one_point_design, "y", "w", num_samples=[9, 3],
+    estimated_eig = vnmc_eig(linear_model, one_point_design, "y", "w", num_samples=[9, 3],
                              num_steps=250, guide=posterior_guide,
                              optim=optim.Adam({"lr": 0.01}), final_num_samples=[500, 100])
     expected_eig = linear_model_ground_truth(linear_model, one_point_design, "y", "w")
     assert_equal(estimated_eig, expected_eig, prec=5e-2)
 
 
-def test_naive_rainforth_eig_linear_model(linear_model, one_point_design):
+def test_nmc_eig_linear_model(linear_model, one_point_design):
     pyro.set_rng_seed(42)
     pyro.clear_param_store()
-    estimated_eig = naive_rainforth_eig(linear_model, one_point_design, "y", "w", M=60, N=60*60)
+    estimated_eig = nmc_eig(linear_model, one_point_design, "y", "w", M=60, N=60 * 60)
     expected_eig = linear_model_ground_truth(linear_model, one_point_design, "y", "w")
     assert_equal(estimated_eig, expected_eig, prec=5e-2)
 
