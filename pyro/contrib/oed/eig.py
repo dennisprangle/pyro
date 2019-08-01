@@ -582,7 +582,6 @@ def vnmc_eig(model, design, observation_labels, target_labels,
                             final_design, final_num_samples)
 
 
-
 def elbo_learn(model, design, observation_labels, target_labels,
                num_samples, num_steps, guide, data, optim):
 
