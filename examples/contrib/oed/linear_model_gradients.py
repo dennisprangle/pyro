@@ -1,14 +1,23 @@
+import argparse
+import datetime
 from contextlib import ExitStack
 import math
+import subprocess
+import pickle
 
 import torch
 
 import pyro
 import pyro.distributions as dist
 import pyro.optim as optim
-from pyro.contrib.oed.eig import posterior_eig
+import pyro.poutine as poutine
+from pyro.contrib.oed.eig import _posterior_loss, _eig_from_ape, _neg_nce_eig
 from pyro.contrib.oed.util import linear_model_ground_truth
 from pyro.contrib.util import rmv, iter_plates_to_shape, lexpand, rvv, rexpand
+
+
+def get_git_revision_hash():
+    return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
 
 
 N = 2
@@ -57,57 +66,123 @@ def make_posterior_guide(d):
     return posterior_guide
 
 
-def make_marginal_guide(d):
-    def marginal_guide(design, observation_labels, target_labels):
-        mu = pyro.param("mu", torch.zeros(d, N))
-        scale_tril = pyro.param("scale_tril", lexpand(torch.eye(N), d),
-                                constraint=torch.distributions.constraints.lower_cholesky)
-        pyro.sample("y", dist.MultivariateNormal(mu, scale_tril=scale_tril))
-    return marginal_guide
+# def make_marginal_guide(d):
+#     def marginal_guide(design, observation_labels, target_labels):
+#         mu = pyro.param("mu", torch.zeros(d, N))
+#         scale_tril = pyro.param("scale_tril", lexpand(torch.eye(N), d),
+#                                 constraint=torch.distributions.constraints.lower_cholesky)
+#         pyro.sample("y", dist.MultivariateNormal(mu, scale_tril=scale_tril))
+#     return marginal_guide
 
 
-if __name__ == '__main__':
-    pyro.clear_param_store()
+def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
 
-    guide = make_posterior_guide(1)
+    params = None
+    est_loss_history = []
+    xi_history = []
+    for step in range(num_steps):
+        if params is not None:
+            pyro.infer.util.zero_grads(params)
+        with poutine.trace(param_only=True) as param_capture:
+            agg_loss, loss = loss_fn(design, num_samples, evaluation=True)
+        params = set(site["value"].unconstrained()
+                     for site in param_capture.trace.nodes.values())
+        if torch.isnan(agg_loss):
+            raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
+        agg_loss.backward(retain_graph=True)
+        est_loss_history.append(loss)
+        xi_history.append(pyro.param('xi').detach().clone())
+        optim(params)
+        optim.step()
 
-    history = [xi_init.clone()]
-    estimated_eig_history = [torch.tensor([0.])]
-    lr = 0.05
-    target_lr = 0.005
-    n_steps = 20
-    scale = (target_lr/lr)**(1/n_steps)
-    for i in range(n_steps):
-        eig_hat = posterior_eig(model_learn_xi, torch.zeros(1, N, 2), "y", "x", guide=guide,
-                                num_steps=100, num_samples=10, optim=optim.Adam({"lr": lr}))
-        xi = pyro.param("xi").detach().clone()
-        history.append(xi)
-        estimated_eig_history.append(eig_hat)
-        lr *= scale
+    xi_history.append(pyro.param('xi').detach().clone())
 
-    history = torch.stack(history, dim=0)
-    estimated_eig_history = torch.cat(estimated_eig_history)
-    eig_history = linear_model_ground_truth(model_fix_xi, torch.stack([torch.sin(history), torch.cos(history)], dim=-1),
-                                            "y", "x")
+    est_loss_history = torch.stack(est_loss_history)
+    xi_history = torch.stack(xi_history)
 
-    import matplotlib.pyplot as plt
+    return xi_history, est_loss_history
 
-    D = 100
-    b0low = min(0, history[:, 0].min()) - 0.1
-    b0up = max(math.pi, history[:, 0].max()) + 0.1
-    b1low = min(0, history[:, 1].min()) - 0.1
-    b1up = max(math.pi, history[:, 1].max()) + 0.1
-    theta1 = torch.linspace(b0low, b0up, D)  # D
-    theta2 = torch.linspace(b1low, b1up, D)  # D
-    d1 = torch.stack([torch.sin(theta1), torch.cos(theta1)], dim=-1).unsqueeze(-2).unsqueeze(1).expand(D, D, 1, 2)
-    d2 = lexpand(torch.stack([torch.sin(theta2), torch.cos(theta2)], dim=-1).unsqueeze(-2), D)  # D, D, 1, 2
-    d = torch.cat([d1, d2], dim=-2)
-    true_eig = linear_model_ground_truth(model_fix_xi, d, "y", "x")
 
-    plt.imshow(true_eig, cmap="gray", extent=[b0low, b0up, b1low, b1up], origin='lower')
-    plt.scatter(history[:, 0], history[:, 1], c=torch.arange(history.shape[0]), marker='x', cmap='summer')
-    plt.show()
+def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
+    output_dir = "./run_outputs/gradinfo/"
+    if not experiment_name:
+        experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
+    else:
+        experiment_name = output_dir + experiment_name
+    results_file = experiment_name + '.pickle'
+    estimators = estimators.split(",")
 
-    plt.plot(eig_history.detach().numpy())
-    plt.plot(estimated_eig_history.detach().numpy())
-    plt.show()
+    for estimator in estimators:
+        pyro.clear_param_store()
+        if seed >= 0:
+            pyro.set_rng_seed(seed)
+        else:
+            seed = int(torch.rand(tuple()) * 2 ** 30)
+            pyro.set_rng_seed(seed)
+
+        # Fix correct loss
+        if estimator == 'posterior':
+
+            guide = make_posterior_guide(1)
+            loss = _posterior_loss(model_learn_xi, guide, "y", "x")
+
+        elif estimator == 'nce':
+
+            loss = lambda d, N, **kwargs: _neg_nce_eig(model=model_learn_xi, design=d, observation_labels="y",
+                                                       target_labels="x", N=N, M=10, **kwargs)
+
+        else:
+            raise ValueError("Unexpected estimator")
+
+        gamma = (end_lr/start_lr)**(1/num_steps)
+        # optimizer = optim.Adam({"lr": start_lr})
+        scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
+                                              'gamma': gamma})
+
+        design_prototype = torch.zeros(1, N, 2)  # this is annoying, code needs refactor
+
+        xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=10,
+                                                             num_steps=num_steps, optim=scheduler)
+
+        if estimator == 'posterior':
+            est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, "x", est_loss_history, True, {})
+        elif estimator == 'nce':
+            est_eig_history = -est_loss_history
+        eig_history = linear_model_ground_truth(
+            model_fix_xi, torch.stack([torch.sin(xi_history), torch.cos(xi_history)], dim=-1), "y", "x")
+
+        # Build heatmap
+
+        grid_points = 100
+        b0low = min(0, xi_history[:, 0].min()) - 0.1
+        b0up = max(math.pi, xi_history[:, 0].max()) + 0.1
+        b1low = min(0, xi_history[:, 1].min()) - 0.1
+        b1up = max(math.pi, xi_history[:, 1].max()) + 0.1
+        theta1 = torch.linspace(b0low, b0up, grid_points)
+        theta2 = torch.linspace(b1low, b1up, grid_points)
+        d1 = torch.stack([torch.sin(theta1), torch.cos(theta1)], dim=-1).unsqueeze(-2).unsqueeze(1).expand(
+            grid_points, grid_points, 1, 2)
+        d2 = lexpand(torch.stack([torch.sin(theta2), torch.cos(theta2)], dim=-1).unsqueeze(-2), grid_points)
+        d = torch.cat([d1, d2], dim=-2)
+        eig_heatmap = linear_model_ground_truth(model_fix_xi, d, "y", "x")
+        extent = [b0low, b0up, b1low, b1up]
+
+        results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
+                   'prior_scale_tril': prior_scale_tril, 'xi_history': xi_history, 'est_eig_history': est_eig_history,
+                   'eig_history': eig_history, 'eig_heatmap': eig_heatmap, 'extent': extent}
+
+        with open(results_file, 'wb') as f:
+            pickle.dump(results, f)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a linear model")
+    parser.add_argument("--num-steps", default=2000, type=int)
+    # parser.add_argument("--num-parallel", default=10, type=int)
+    parser.add_argument("--name", default="", type=str)
+    parser.add_argument("--estimator", default="posterior", type=str)
+    parser.add_argument("--seed", default=-1, type=int)
+    parser.add_argument("--start-lr", default=0.1, type=float)
+    parser.add_argument("--end-lr", default=0.001, type=float)
+    args = parser.parse_args()
+    main(args.num_steps, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)

@@ -274,6 +274,33 @@ def nmc_eig(model, design, observation_labels, target_labels=None,
     return terms.sum(0)/nonnan
 
 
+def _neg_nce_eig(model, design, observation_labels, target_labels=None, N=100, M=10, **kwargs):
+    if isinstance(observation_labels, str):  # list of strings instead of strings
+        observation_labels = [observation_labels]
+    if isinstance(target_labels, str):
+        target_labels = [target_labels]
+
+    # Take N samples of the model
+    expanded_design = lexpand(design, N)  # N copies of the model
+    trace = poutine.trace(model).get_trace(expanded_design)
+    trace.compute_log_prob()
+    conditional_lp = sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+
+    y_dict = {l: lexpand(trace.nodes[l]["value"], M) for l in observation_labels}
+    # Resample M values of theta and compute conditional probabilities
+    conditional_model = pyro.condition(model, data=y_dict)
+    # Using (M, 1) instead of (M, N) - acceptable to re-use thetas between ys because
+    # theta comes before y in graphical model
+    reexpanded_design = lexpand(design, M, 1)  # sample M theta
+    retrace = poutine.trace(conditional_model).get_trace(reexpanded_design)
+    retrace.compute_log_prob()
+    marginal_log_probs = torch.cat([lexpand(conditional_lp, 1),
+                                    sum(retrace.nodes[l]["log_prob"] for l in observation_labels)])
+    marginal_lp = marginal_log_probs.logsumexp(0) - math.log(M+1)
+
+    return _safe_mean_terms(-conditional_lp + marginal_lp)
+
+
 def donsker_varadhan_eig(model, design, observation_labels, target_labels,
                          num_samples, num_steps, T, optim, return_history=False,
                          final_design=None, final_num_samples=None):
