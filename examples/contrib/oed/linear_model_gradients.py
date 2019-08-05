@@ -11,7 +11,8 @@ import pyro
 import pyro.distributions as dist
 import pyro.optim as optim
 import pyro.poutine as poutine
-from pyro.contrib.oed.eig import _posterior_loss, _eig_from_ape, nce_eig, _ace_eig_loss
+from pyro.contrib.oed.eig import _eig_from_ape, nce_eig, _ace_eig_loss
+from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss
 from pyro.contrib.oed.util import linear_model_ground_truth
 from pyro.contrib.util import rmv, iter_plates_to_shape, lexpand, rvv, rexpand
 
@@ -72,15 +73,6 @@ def neg_loss(loss):
     return new_loss
 
 
-# def make_marginal_guide(d):
-#     def marginal_guide(design, observation_labels, target_labels):
-#         mu = pyro.param("mu", torch.zeros(d, N))
-#         scale_tril = pyro.param("scale_tril", lexpand(torch.eye(N), d),
-#                                 constraint=torch.distributions.constraints.lower_cholesky)
-#         pyro.sample("y", dist.MultivariateNormal(mu, scale_tril=scale_tril))
-#     return marginal_guide
-
-
 def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
 
     params = None
@@ -129,7 +121,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         # Fix correct loss
         if estimator == 'posterior':
             guide = make_posterior_guide(1)
-            loss = _posterior_loss(model_learn_xi, guide, "y", "x")
+            loss = _differentiable_posterior_loss(model_learn_xi, guide, "y", "x")
 
         elif estimator == 'nce':
             eig_loss = lambda d, N, **kwargs: nce_eig(model=model_learn_xi, design=d, observation_labels="y",
@@ -162,7 +154,6 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             model_fix_xi, torch.stack([torch.sin(xi_history), torch.cos(xi_history)], dim=-1), "y", "x")
 
         # Build heatmap
-
         grid_points = 100
         b0low = min(0, xi_history[:, 0].min()) - 0.1
         b0up = max(math.pi, xi_history[:, 0].max()) + 0.1
