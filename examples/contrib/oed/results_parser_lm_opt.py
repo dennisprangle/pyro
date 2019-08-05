@@ -15,19 +15,22 @@ def main(name, sampling_interval):
 
     xi_history = results['xi_history']
     est_eig_history = results['est_eig_history']
-    eig_history = results['eig_history']
-    eig_heatmap = results['eig_heatmap']
-    heatmap_extent = results['extent']
+    eig_history = results.get('eig_history')
+    eig_heatmap = results.get('eig_heatmap')
+    heatmap_extent = results.get('extent')
 
-    print("Final true EIG", eig_history[-1].item())
 
-    plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
+
+    if eig_heatmap:
+        plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
     x, y = xi_history[::sampling_interval, 0].detach(), xi_history[::sampling_interval, 1].detach()
     plt.scatter(x, y, c=torch.arange(x.shape[0]), marker='x', cmap='summer')
     plt.show()
 
-    plt.plot(est_eig_history.detach().numpy())
-    plt.plot(eig_history.detach().numpy())
+    plt.plot(est_eig_history.detach().numpy()[1000:])
+    if eig_history:
+        plt.plot(eig_history.detach().numpy())
+        print("Final true EIG", eig_history[-1].item())
     plt.legend(["Approximate EIG", "True EIG"])
     plt.show()
 
