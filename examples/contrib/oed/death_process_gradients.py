@@ -53,16 +53,12 @@ class PosteriorGuide(nn.Module):
 
     def forward(self, y_dict, design_prototype, observation_labels, target_labels):
         i1, i2 = y_dict["i1"], y_dict["i2"]
-        # print(i1, i2)
         s1, s2 = 1./(1.1 - i1/N), 1./(1.1 - i2/(N + 1 - i1))
-        # #print(s1, s2)
         all_inputs = torch.cat([s1, s2], dim=-1)
         x = self.softplus(self.linear1(all_inputs))
         x = self.softplus(self.linear2(x))
         mu = self.mu(x)
         sigma = self.softplus(self.sigma(x))
-        # print('mu=', mu)
-        # print('sigma=', sigma)
 
         pyro.module("posterior_guide", self)
 
@@ -146,7 +142,6 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             raise ValueError("Unexpected estimator")
 
         gamma = (end_lr/start_lr)**(1/num_steps)
-        # optimizer = optim.Adam({"lr": start_lr})
         scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                               'gamma': gamma})
 
@@ -159,23 +154,6 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, ["b"], est_loss_history, True, {})
         else:
             est_eig_history = -est_loss_history
-        # eig_history = linear_model_ground_truth(
-        #     model_fix_xi, torch.stack([torch.sin(xi_history), torch.cos(xi_history)], dim=-1), "y", "x")
-
-        # # Build heatmap
-        # grid_points = 100
-        # b0low = min(0, xi_history[:, 0].min()) - 0.1
-        # b0up = max(math.pi, xi_history[:, 0].max()) + 0.1
-        # b1low = min(0, xi_history[:, 1].min()) - 0.1
-        # b1up = max(math.pi, xi_history[:, 1].max()) + 0.1
-        # theta1 = torch.linspace(b0low, b0up, grid_points)
-        # theta2 = torch.linspace(b1low, b1up, grid_points)
-        # d1 = torch.stack([torch.sin(theta1), torch.cos(theta1)], dim=-1).unsqueeze(-2).unsqueeze(1).expand(
-        #     grid_points, grid_points, 1, 2)
-        # d2 = lexpand(torch.stack([torch.sin(theta2), torch.cos(theta2)], dim=-1).unsqueeze(-2), grid_points)
-        # d = torch.cat([d1, d2], dim=-2)
-        # eig_heatmap = linear_model_ground_truth(model_fix_xi, d, "y", "x")
-        # extent = [b0low, b0up, b1low, b1up]
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
                    'xi_history': xi_history, 'est_eig_history': est_eig_history}
