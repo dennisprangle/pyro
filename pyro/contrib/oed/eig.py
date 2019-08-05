@@ -274,7 +274,7 @@ def nmc_eig(model, design, observation_labels, target_labels=None,
     return terms.sum(0)/nonnan
 
 
-def _neg_nce_eig(model, design, observation_labels, target_labels=None, N=100, M=10, **kwargs):
+def nce_eig(model, design, observation_labels, target_labels=None, N=100, M=10, **kwargs):
     if isinstance(observation_labels, str):  # list of strings instead of strings
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
@@ -298,7 +298,7 @@ def _neg_nce_eig(model, design, observation_labels, target_labels=None, N=100, M
                                     sum(retrace.nodes[l]["log_prob"] for l in observation_labels)])
     marginal_lp = marginal_log_probs.logsumexp(0) - math.log(M+1)
 
-    return _safe_mean_terms(-conditional_lp + marginal_lp)
+    return _safe_mean_terms(conditional_lp - marginal_lp)
 
 
 def donsker_varadhan_eig(model, design, observation_labels, target_labels,
@@ -832,6 +832,57 @@ def _lfire_loss(model_marginal, model_conditional, h, observation_labels, target
     return loss_fn
 
 
+def _ace_eig_loss(model, guide, M, observation_labels, target_labels):
+
+    def loss_fn(design, num_particles, evaluation=False, **kwargs):
+        N = num_particles
+        expanded_design = lexpand(design, N)
+
+        # Sample from p(y, theta | d)
+        trace = poutine.trace(model).get_trace(expanded_design)
+        y_dict_exp = {l: lexpand(trace.nodes[l]["value"], M) for l in observation_labels}
+        y_dict = {l: trace.nodes[l]["value"] for l in observation_labels}
+        theta_dict = {l: trace.nodes[l]["value"] for l in target_labels}
+
+        trace.compute_log_prob()
+        marginal_terms_cross = sum(trace.nodes[l]["log_prob"] for l in target_labels)
+        marginal_terms_cross += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+
+        reguide_trace = poutine.trace(pyro.condition(guide, data=theta_dict)).get_trace(
+            y_dict, expanded_design, observation_labels, target_labels
+        )
+        reguide_trace.compute_log_prob()
+        marginal_terms_cross -= sum(reguide_trace.nodes[l]["log_prob"] for l in target_labels)
+
+        # Sample M times from q(theta | y, d) for each y
+        reexpanded_design = lexpand(expanded_design, M)
+        guide_trace = poutine.trace(guide).get_trace(
+            y_dict_exp, reexpanded_design, observation_labels, target_labels
+        )
+        theta_y_dict = {l: guide_trace.nodes[l]["value"] for l in target_labels}
+        theta_y_dict.update(y_dict_exp)
+        guide_trace.compute_log_prob()
+
+        # Re-run that through the model to compute the joint
+        model_trace = poutine.trace(pyro.condition(model, data=theta_y_dict)).get_trace(reexpanded_design)
+        model_trace.compute_log_prob()
+
+        marginal_terms_proposal = -sum(guide_trace.nodes[l]["log_prob"] for l in target_labels)
+        marginal_terms_proposal += sum(model_trace.nodes[l]["log_prob"] for l in target_labels)
+        marginal_terms_proposal += sum(model_trace.nodes[l]["log_prob"] for l in observation_labels)
+
+        marginal_terms = torch.cat([lexpand(marginal_terms_cross, 1), marginal_terms_proposal])
+        terms = -marginal_terms.logsumexp(0) + math.log(M + 1)
+
+        # At eval time, add p(y | theta, d) terms
+        if evaluation:
+            terms += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+
+        return _safe_mean_terms(terms)
+
+    return loss_fn
+
+
 def _vnmc_eig_loss(model, guide, observation_labels, target_labels):
     """VNMC loss: to evaluate directly use `vnmc_eig` setting `num_steps=0`."""
 
@@ -845,8 +896,8 @@ def _vnmc_eig_loss(model, guide, observation_labels, target_labels):
 
         # Sample M times from q(theta | y, d) for each y
         reexpanded_design = lexpand(expanded_design, M)
-        conditional_guide = pyro.condition(guide, data=y_dict)
-        guide_trace = poutine.trace(conditional_guide).get_trace(
+        # conditional_guide = pyro.condition(guide, data=y_dict)
+        guide_trace = poutine.trace(guide).get_trace(
             y_dict, reexpanded_design, observation_labels, target_labels)
         theta_y_dict = {l: guide_trace.nodes[l]["value"] for l in target_labels}
         theta_y_dict.update(y_dict)

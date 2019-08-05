@@ -11,7 +11,7 @@ import pyro
 import pyro.distributions as dist
 import pyro.optim as optim
 import pyro.poutine as poutine
-from pyro.contrib.oed.eig import _posterior_loss, _eig_from_ape, _neg_nce_eig
+from pyro.contrib.oed.eig import _posterior_loss, _eig_from_ape, nce_eig, _ace_eig_loss
 from pyro.contrib.oed.util import linear_model_ground_truth
 from pyro.contrib.util import rmv, iter_plates_to_shape, lexpand, rvv, rexpand
 
@@ -64,6 +64,12 @@ def make_posterior_guide(d):
         mu = rmv(A, y)
         pyro.sample("x", dist.MultivariateNormal(mu, scale_tril=scale_tril))
     return posterior_guide
+
+
+def neg_loss(loss):
+    def new_loss(*args, **kwargs):
+        return (-a for a in loss(*args, **kwargs))
+    return new_loss
 
 
 # def make_marginal_guide(d):
@@ -122,14 +128,18 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 
         # Fix correct loss
         if estimator == 'posterior':
-
             guide = make_posterior_guide(1)
             loss = _posterior_loss(model_learn_xi, guide, "y", "x")
 
         elif estimator == 'nce':
+            eig_loss = lambda d, N, **kwargs: nce_eig(model=model_learn_xi, design=d, observation_labels="y",
+                                                      target_labels="x", N=N, M=10, **kwargs)
+            loss = neg_loss(eig_loss)
 
-            loss = lambda d, N, **kwargs: _neg_nce_eig(model=model_learn_xi, design=d, observation_labels="y",
-                                                       target_labels="x", N=N, M=10, **kwargs)
+        elif estimator == 'ace':
+            guide = make_posterior_guide(1)
+            eig_loss = _ace_eig_loss(model_learn_xi, guide, 10, "y", "x")
+            loss = neg_loss(eig_loss)
 
         else:
             raise ValueError("Unexpected estimator")
@@ -146,7 +156,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 
         if estimator == 'posterior':
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, "x", est_loss_history, True, {})
-        elif estimator == 'nce':
+        else:
             est_eig_history = -est_loss_history
         eig_history = linear_model_ground_truth(
             model_fix_xi, torch.stack([torch.sin(xi_history), torch.cos(xi_history)], dim=-1), "y", "x")

@@ -19,6 +19,8 @@ def main(name, sampling_interval):
     eig_heatmap = results['eig_heatmap']
     heatmap_extent = results['extent']
 
+    print("Final true EIG", eig_history[-1].item())
+
     plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
     x, y = xi_history[::sampling_interval, 0].detach(), xi_history[::sampling_interval, 1].detach()
     plt.scatter(x, y, c=torch.arange(x.shape[0]), marker='x', cmap='summer')
@@ -33,6 +35,6 @@ def main(name, sampling_interval):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Result parser for design optimization (one shot) with a linear model")
     parser.add_argument("--name", default="", type=str)
-    parser.add_argument("--plot-sampling-interval", default=20, type=int)
+    parser.add_argument("--sampling-interval", default=20, type=int)
     args = parser.parse_args()
-    main(args.name, args.plot_sampling_interval)
+    main(args.name, args.sampling_interval)
