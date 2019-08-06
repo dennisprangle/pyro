@@ -19,16 +19,14 @@ def main(name, sampling_interval):
     eig_heatmap = results.get('eig_heatmap')
     heatmap_extent = results.get('extent')
 
-
-
-    if eig_heatmap:
+    if eig_heatmap is not None:
         plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
     x, y = xi_history[::sampling_interval, 0].detach(), xi_history[::sampling_interval, 1].detach()
     plt.scatter(x, y, c=torch.arange(x.shape[0]), marker='x', cmap='summer')
     plt.show()
 
-    plt.plot(est_eig_history.detach().numpy()[1000:])
-    if eig_history:
+    plt.plot(est_eig_history.detach().numpy())
+    if eig_history is not None:
         plt.plot(eig_history.detach().numpy())
         print("Final true EIG", eig_history[-1].item())
     plt.legend(["Approximate EIG", "True EIG"])
