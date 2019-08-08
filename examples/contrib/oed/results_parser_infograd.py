@@ -22,7 +22,6 @@ def main(name, sampling_interval):
     if eig_heatmap is not None:
         plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
     x, y = xi_history[::sampling_interval, 0].detach(), xi_history[::sampling_interval, 1].detach()
-    x, y = y, x
     plt.scatter(x, y, c=torch.arange(x.shape[0]), marker='x', cmap='summer')
     plt.show()
 

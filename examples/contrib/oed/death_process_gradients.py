@@ -36,7 +36,7 @@ def make_y_space(n):
     return torch.tensor(space, dtype=torch.float)
 
 
-def semi_analytic_eig(design, prior_mean, prior_sd, n_samples=10000):
+def semi_analytic_eig(design, prior_mean, prior_sd, n_samples=1000):
     with pyro.plate("plate0", n_samples):
         samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
 
