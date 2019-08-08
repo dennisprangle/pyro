@@ -22,6 +22,7 @@ def main(name, sampling_interval):
     if eig_heatmap is not None:
         plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
     x, y = xi_history[::sampling_interval, 0].detach(), xi_history[::sampling_interval, 1].detach()
+    x, y = y, x
     plt.scatter(x, y, c=torch.arange(x.shape[0]), marker='x', cmap='summer')
     plt.show()
 
@@ -29,6 +30,8 @@ def main(name, sampling_interval):
     if eig_history is not None:
         plt.plot(eig_history.detach().numpy())
         print("Final true EIG", eig_history[-1].item())
+        print("Max EIG over surface", eig_heatmap.max().item())
+        print("Discrepancy", (eig_heatmap.max() - eig_history[-1]).item())
     plt.legend(["Approximate EIG", "True EIG"])
     plt.show()
 

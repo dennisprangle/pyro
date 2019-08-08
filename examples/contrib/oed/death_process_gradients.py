@@ -4,6 +4,7 @@ from contextlib import ExitStack
 import math
 import subprocess
 import pickle
+from functools import lru_cache
 
 import torch
 from torch import nn
@@ -24,6 +25,38 @@ def get_git_revision_hash():
 
 N = 10
 xi_init = 0.1*torch.ones(2)
+
+
+@lru_cache(5)
+def make_y_space(n):
+    space = []
+    for i in range(n+1):
+        for j in range(n-i+1):
+            space.append([i, j])
+    return torch.tensor(space, dtype=torch.float)
+
+
+def semi_analytic_eig(design, prior_mean, prior_sd, n_samples=10000):
+    with pyro.plate("plate0", n_samples):
+        samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
+
+    lp1m1 = -(samples * design[..., [0]]).unsqueeze(-1)
+    lp2m1 = -(samples * design[..., [1]]).unsqueeze(-1)
+
+    def log_prob(lp1m1, lp2m1):
+        lp1 = (1 - lp1m1.exp()).log()
+        lp2 = (1 - lp2m1.exp()).log()
+
+        y = make_y_space(N)
+        log_prob_y = torch.lgamma(torch.tensor(N + 1, dtype=torch.float)) - torch.lgamma(y[:, 0] + 1) - torch.lgamma(y[:, 1] + 1) \
+                     - torch.lgamma(N - y.sum(-1) + 1) + y[:, 0] * lp1 + y[:, 1] * lp2 + (N - y[:, 0]) * lp1m1 \
+                     + (N - y[:, 0] - y[:, 1]) * lp2m1
+        return log_prob_y
+
+    likelihoods = log_prob(lp1m1, lp2m1)
+    marginal = likelihoods.logsumexp(-2, keepdim=True) - math.log(n_samples)
+    kls = (likelihoods.exp() * (likelihoods - marginal)).sum(-1)
+    return kls.mean(-1)
 
 
 def model_learn_xi(design_prototype):
@@ -154,9 +187,25 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, ["b"], est_loss_history, True, {})
         else:
             est_eig_history = -est_loss_history
+        eig_history = semi_analytic_eig(xi_history, torch.tensor(0.), torch.tensor(0.25))
+
+        # Build heatmap
+        grid_points = 100
+        b0low = min(0.05, xi_history[:, 0].min())
+        b0up = max(3, xi_history[:, 0].max()) + 0.1
+        b1low = min(0.05, xi_history[:, 1].min())
+        b1up = max(3, xi_history[:, 1].max()) + 0.1
+        xi1 = torch.linspace(b0low, b0up, grid_points)
+        xi2 = torch.linspace(b1low, b1up, grid_points)
+        d1 = xi1.expand(grid_points, grid_points).unsqueeze(-1)
+        d2 = xi2.unsqueeze(-1).expand(grid_points, grid_points).unsqueeze(-1)
+        d = torch.cat([d1, d2], dim=-1)
+        eig_heatmap = semi_analytic_eig(d, torch.tensor(0.), torch.tensor(0.25))
+        extent = [b0low, b0up, b1low, b1up]
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
-                   'xi_history': xi_history, 'est_eig_history': est_eig_history}
+                   'xi_history': xi_history, 'est_eig_history': est_eig_history, 'eig_history': eig_history,
+                   'eig_heatmap': eig_heatmap, 'extent': extent}
 
         with open(results_file, 'wb') as f:
             pickle.dump(results, f)
