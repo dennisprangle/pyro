@@ -64,7 +64,7 @@ def _eig_from_ape(model, design, target_labels, ape, eig, prior_entropy_kwargs):
         if mean_field:
             try:
                 prior_entropy = mean_field_entropy(model, [design], whitelist=target_labels)
-            except NotImplemented:
+            except NotImplementedError:
                 prior_entropy = monte_carlo_entropy(model, design, target_labels, **prior_entropy_kwargs)
         else:
             prior_entropy = monte_carlo_entropy(model, design, target_labels, **prior_entropy_kwargs)

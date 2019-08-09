@@ -24,6 +24,7 @@ def main(name, sampling_interval):
     x, y = xi_history[::sampling_interval, 0].detach(), xi_history[::sampling_interval, 1].detach()
     plt.scatter(x, y, c=torch.arange(x.shape[0]), marker='x', cmap='summer')
     plt.show()
+    print(xi_history[-1,...])
 
     plt.plot(est_eig_history.detach().numpy())
     if eig_history is not None:

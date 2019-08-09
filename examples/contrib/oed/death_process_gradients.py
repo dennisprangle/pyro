@@ -100,7 +100,7 @@ class PosteriorGuide(nn.Module):
             for plate in iter_plates_to_shape(batch_shape):
                 stack.enter_context(plate)
 
-        pyro.sample("b", dist.LogNormal(mu, sigma))
+            pyro.sample("b", dist.LogNormal(mu.expand(batch_shape), sigma.expand(batch_shape)))
 
 
 def neg_loss(loss):
@@ -139,6 +139,12 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
 
 
 def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
+    # torch.set_printoptions(precision=10)
+    # design = torch.tensor([[0.9879, 1.8558], [0.8112, 1.4376], [1.0836, 1.5458], [0.96, 1.58]])
+    # eig = semi_analytic_eig(design, torch.tensor(0.), torch.tensor(0.25), n_samples=1000000)
+    # print(-eig + eig[-1, ...])
+    # print((design - torch.tensor([0.96, 1.58])).pow(2).sum(-1).sqrt())
+    # raise
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
         experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
