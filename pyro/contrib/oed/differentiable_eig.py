@@ -34,6 +34,7 @@ def _differentiable_posterior_loss(model, guide, observation_labels, target_labe
 
         # Calculate the score parts
         trace.compute_score_parts()
+        #print("score", trace.nodes["y"]["score_parts"][1])
         prescore_function = sum(trace.nodes[l]["score_parts"][1] for l in observation_labels)
         terms += (terms.detach() - control_variate) * prescore_function
 

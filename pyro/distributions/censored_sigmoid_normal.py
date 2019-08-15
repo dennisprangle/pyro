@@ -4,6 +4,7 @@ from torch.distributions.transforms import SigmoidTransform
 
 from pyro.distributions import TorchDistribution, Normal, TransformedDistribution
 from pyro.util import is_bad
+from pyro.distributions.score_parts import ScoreParts
 
 
 class CensoredSigmoidNormal(TorchDistribution):
@@ -110,3 +111,11 @@ class CensoredSigmoidNormal(TorchDistribution):
     def icdf(self, value):
         # Is this even possible?
         raise NotImplementedError
+
+    def score_parts(self, x, *args, **kwargs):
+        print('hit me!')
+        log_prob = self.log_prob(x)
+        score = log_prob.clone()
+        score[(x < self.upper_lim) & (x > self.lower_lim)] = 0.
+        # Not sure about the entropy part here? We won't use it so dw
+        return ScoreParts(log_prob, score, 0.)
