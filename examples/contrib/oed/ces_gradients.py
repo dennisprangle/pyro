@@ -19,7 +19,7 @@ from pyro.contrib.oed.eig import _eig_from_ape
 # TODO read from torch float spec
 epsilon = torch.tensor(2**-24)
 
-xi_init = 0.1*torch.ones(6)
+xi_init = torch.tensor([1., 2., 3., 4., 5., 6.])
 
 
 def get_git_revision_hash():
@@ -43,6 +43,7 @@ def make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma, obser
             U2rho = (rmv(d2.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             mean = slope * (U1rho - U2rho)
             sd = slope * observation_sd * (1 + torch.norm(d1 - d2, dim=-1, p=2))
+            #mean, sd = mean.squeeze(-1), sd.squeeze(-1)
             emission_dist = dist.CensoredSigmoidNormal(mean, sd, 1 - epsilon, epsilon).to_event(1)
             y = pyro.sample(observation_label, emission_dist)
             return y

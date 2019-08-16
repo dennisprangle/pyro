@@ -47,11 +47,11 @@ class CensoredSigmoidNormal(TorchDistribution):
             x[x < self.lower_lim] = self.lower_lim
             return x
 
-    def rsample(self, sample_shape=torch.Size()):
-        x = self.base_dist.sample(sample_shape)
-        x[x > self.upper_lim] = self.upper_lim
-        x[x < self.lower_lim] = self.lower_lim
-        return x
+    # def rsample(self, sample_shape=torch.Size()):
+    #     x = self.base_dist.sample(sample_shape)
+    #     x[x > self.upper_lim] = self.upper_lim
+    #     x[x < self.lower_lim] = self.lower_lim
+    #     return x
 
     def log_prob(self, value):
         """
@@ -112,10 +112,12 @@ class CensoredSigmoidNormal(TorchDistribution):
         # Is this even possible?
         raise NotImplementedError
 
-    def score_parts(self, x, *args, **kwargs):
-        print('hit me!')
-        log_prob = self.log_prob(x)
-        score = log_prob.clone()
-        score[(x < self.upper_lim) & (x > self.lower_lim)] = 0.
-        # Not sure about the entropy part here? We won't use it so dw
-        return ScoreParts(log_prob, score, 0.)
+    # def score_parts(self, x, *args, **kwargs):
+    #     log_prob = self.log_prob(x)
+    #     score = log_prob
+    #     # Todo why is there no reparametrization in the intermediate layer?
+    #     #score[(x < self.upper_lim) & (x > self.lower_lim)] = 0.
+    #     #print(x, self.upper_lim)
+    #     #print(score)
+    #     # Not sure about the entropy part here? We won't use it so dw
+    #     return ScoreParts(log_prob, score, 0.)
