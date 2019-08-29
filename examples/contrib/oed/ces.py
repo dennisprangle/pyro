@@ -269,7 +269,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
 
             elif typ == 'posterior-grad':
                 constraint = torch.distributions.constraints.interval(1e-6, 100.)
-                xi_init = torch.ones((num_parallel, 1, 1, design_dim))
+                xi_init = torch.tensor([1., 2., 3., 4., 5., 6.]).expand((num_parallel, 1, 1, design_dim))
                 pyro.param("xi", xi_init).data = xi_init
 
                 model_learn_xi = make_learn_xi_model(model, xi_init, constraint)
