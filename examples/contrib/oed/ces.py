@@ -270,13 +270,14 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
             elif typ == 'posterior-grad':
                 constraint = torch.distributions.constraints.interval(1e-6, 100.)
                 xi_init = torch.ones((num_parallel, 1, 1, design_dim))
+                pyro.param("xi", xi_init).data = xi_init
 
                 model_learn_xi = make_learn_xi_model(model, xi_init, constraint)
 
                 loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
                 start_lr, end_lr = 0.01, 0.0005
-                gamma = (end_lr / start_lr) ** (1 / num_steps)
+                gamma = (end_lr / start_lr) ** (1 / 2500)
                 scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                       'gamma': gamma})
 
