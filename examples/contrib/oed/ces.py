@@ -54,6 +54,14 @@ def make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma, obser
     return ces_model
 
 
+def make_learn_xi_model(model, xi_init, constraint):
+    def model_learn_xi(design_prototype):
+        design = pyro.param("xi", xi_init, constraint=constraint)
+        design = design.expand(design_prototype.shape)
+        return model(design)
+    return model_learn_xi
+
+
 def elboguide(design, dim=10):
     rho0 = pyro.param("rho0", torch.ones(dim, 1), constraint=torch.distributions.constraints.positive)
     rho1 = pyro.param("rho1", torch.ones(dim, 1), constraint=torch.distributions.constraints.positive)
@@ -263,10 +271,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
                 constraint = torch.distributions.constraints.interval(1e-6, 100.)
                 xi_init = torch.ones((num_parallel, 1, 1, design_dim))
 
-                def model_learn_xi(design_prototype):
-                    design = pyro.param("xi", xi_init, constraint=constraint)
-                    design = design.expand(design_prototype.shape)
-                    return model(design)
+                model_learn_xi = make_learn_xi_model(model, xi_init, constraint)
 
                 loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
