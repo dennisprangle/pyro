@@ -143,6 +143,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
     observation_sd = torch.tensor(.005)
 
     for typ in typs:
+        print("Type", typ)
         pyro.clear_param_store()
         if seed >= 0:
             pyro.set_rng_seed(seed)
@@ -174,6 +175,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
         ys = torch.tensor([])
 
         for step in range(num_steps):
+            print("Step", step)
             model = make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma, observation_sd)
             results = {'typ': typ, 'step': step, 'git-hash': get_git_revision_hash(), 'seed': seed,
                        'lengthscale': lengthscale, 'observation_sd': observation_sd}
