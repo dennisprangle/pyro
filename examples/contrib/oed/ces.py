@@ -114,7 +114,6 @@ class PosteriorGuide(nn.Module):
         alpha_concentration = self.softplus(self.alpha_concentration(x))
         slope_mu = self.slope_mu(x).squeeze(-1)
         slope_sigma = self.softplus(self.slope_sigma(x)).squeeze(-1)
-        print('rho0', rho0, 'rho1', rho1, 'alpha_c', alpha_concentration, 'slope_mu', slope_mu, 'slope_sigma', slope_sigma)
 
         pyro.module("posterior_guide", self)
 

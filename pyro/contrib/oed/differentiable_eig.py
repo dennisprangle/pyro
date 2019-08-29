@@ -30,7 +30,6 @@ def _differentiable_posterior_loss(model, guide, observation_labels, target_labe
             y_dict, expanded_design, observation_labels, target_labels)
         cond_trace.compute_log_prob()
 
-        print([(l, cond_trace.nodes[l]["log_prob"]) for l in target_labels])
         terms = -sum(cond_trace.nodes[l]["log_prob"] for l in target_labels)
 
         # Calculate the score parts

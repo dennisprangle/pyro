@@ -21,7 +21,8 @@ VALUE_LABELS = {"Entropy": "Posterior entropy",
                 "alpha_rmse": "RMSE in $\\mathbf{\\alpha}$ estimate",
                 "slope_rmse": 'RMSE in $u$ estimate',
                 "total_rmse": 'Total RMSE'}
-LABELS = {'marginal': 'BOED marginal (ours)', 'rand': 'Random design (baseline)', 'nmc': 'BOED NMC (baseline)'}
+LABELS = {'marginal': 'BOED marginal (ours)', 'rand': 'Random design (baseline)', 'nmc': 'BOED NMC (baseline)',
+          'posterior-grad': "Posterior gradient"}
 MARKERS = ['o', 'D', '^', '*']
 
 S = 3

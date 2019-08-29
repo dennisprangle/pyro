@@ -642,10 +642,7 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
         agg_loss.backward(retain_graph=True)
         if return_history:
             history.append(loss)
-        print('loss', loss)
-        print('params', params)
         optim(params)
-        print('params', params)
 
     _, loss = loss_fn(final_design, final_num_samples, evaluation=True)
     if return_history:
