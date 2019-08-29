@@ -276,7 +276,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
 
                 design_prototype = torch.zeros(num_parallel, 1, 1, 6)  # this is annoying, code needs refactor
 
-                opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=num_steps, optim=scheduler)
+                opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=2500, optim=scheduler)
 
                 d_star_design = pyro.param("xi").detach().clone()
 
