@@ -1,10 +1,12 @@
 import torch
 from torch.distributions import transform_to
+from torch import nn
 import argparse
 import subprocess
 import datetime
 import pickle
 import time
+import os
 from functools import partial
 from contextlib import ExitStack
 
@@ -14,6 +16,8 @@ import pyro.distributions as dist
 from pyro.contrib.util import iter_plates_to_shape, lexpand, rexpand, rmv
 from pyro.contrib.oed.eig import marginal_eig, elbo_learn, nmc_eig
 import pyro.contrib.gp as gp
+from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss
+from pyro.contrib.oed.eig import opt_eig_ape_loss
 
 
 # TODO read from torch float spec
@@ -86,6 +90,45 @@ def marginal_guide(mu_init, log_sigma_init, shape, label):
     return guide
 
 
+class PosteriorGuide(nn.Module):
+    def __init__(self):
+        super(PosteriorGuide, self).__init__()
+        self.linear1 = nn.Linear(1, 256)
+        self.linear2 = nn.Linear(256, 256)
+        self.rho0 = nn.Linear(256, 1)
+        self.rho1 = nn.Linear(256, 1)
+        self.alpha_concentration = nn.Linear(256, 3)
+        self.slope_mu = nn.Linear(256, 1)
+        self.slope_sigma = nn.Linear(256, 1)
+
+        self.softplus = nn.Softplus()
+
+    def forward(self, y_dict, design_prototype, observation_labels, target_labels):
+        y = y_dict["y"]
+        y, y1m = y.clamp(1e-35, 1), (1. - y).clamp(1e-35, 1)
+        s = y.log() - y1m.log()
+        x = self.softplus(self.linear1(s))
+        x = self.softplus(self.linear2(x))
+        rho0 = self.softplus(self.rho0(x)).squeeze(-1)
+        rho1 = self.softplus(self.rho1(x)).squeeze(-1)
+        alpha_concentration = self.softplus(self.alpha_concentration(x))
+        slope_mu = self.slope_mu(x).squeeze(-1)
+        slope_sigma = self.softplus(self.slope_sigma(x)).squeeze(-1)
+        print('rho0', rho0, 'rho1', rho1, 'alpha_c', alpha_concentration, 'slope_mu', slope_mu, 'slope_sigma', slope_sigma)
+
+        pyro.module("posterior_guide", self)
+
+        batch_shape = design_prototype.shape[:-2]
+        with ExitStack() as stack:
+            for plate in iter_plates_to_shape(batch_shape):
+                stack.enter_context(plate)
+
+            pyro.sample("rho", dist.Beta(rho0.expand(batch_shape), rho1.expand(batch_shape)))
+            alpha_shape = batch_shape + (alpha_concentration.shape[-1],)
+            pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
+            pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
+
+
 def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
     output_dir = "./run_outputs/ces/"
     if not experiment_name:
@@ -93,6 +136,10 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
     else:
         experiment_name = output_dir+experiment_name
     results_file = experiment_name + '.result_stream.pickle'
+    try:
+        os.remove(experiment_name)
+    except OSError:
+        pass
     typs = typs.split(",")
     observation_sd = torch.tensor(.005)
 
@@ -111,6 +158,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
         design_dim = 6
 
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
+        posterior_guide = PosteriorGuide()
 
         prior = make_ces_model(torch.ones(num_parallel, 1), torch.ones(num_parallel, 1), torch.ones(num_parallel, 1, 3),
                                torch.ones(num_parallel, 1), 3.*torch.ones(num_parallel, 1), observation_sd)
@@ -144,10 +192,10 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
                     def f(X):
                         n_steps = oed_n_steps // len(oed_lr)
                         for lr in oed_lr:
-                            marginal_eig(model, X, observation_labels="y", target_labels=["rho", "alpha", "slope"],
+                            marginal_eig(model, X, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
                                          num_samples=oed_n_samples, num_steps=n_steps, guide=guide,
                                          optim=optim.Adam({"lr": lr}))
-                        return marginal_eig(model, X, observation_labels="y", target_labels=["rho", "alpha", "slope"],
+                        return marginal_eig(model, X, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
                                             num_samples=oed_n_samples, num_steps=1, guide=guide,
                                             final_num_samples=oed_final_n_samples, optim=optim.Adam({"lr": 1e-6}))
                 elif typ == 'nmc':
@@ -209,6 +257,28 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
                 print('max EIG', max_eig)
                 results['max EIG'] = max_eig
                 d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2).unsqueeze(-2)
+
+            elif typ == 'posterior-grad':
+                constraint = torch.distributions.constraints.interval(1e-6, 100.)
+                xi_init = torch.ones((num_parallel, 1, 1, design_dim))
+
+                def model_learn_xi(design_prototype):
+                    design = pyro.param("xi", xi_init, constraint=constraint)
+                    design = design.expand(design_prototype.shape)
+                    return model(design)
+
+                loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
+
+                start_lr, end_lr = 0.01, 0.0005
+                gamma = (end_lr / start_lr) ** (1 / num_steps)
+                scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
+                                                      'gamma': gamma})
+
+                design_prototype = torch.zeros(num_parallel, 1, 1, 6)  # this is annoying, code needs refactor
+
+                opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=num_steps, optim=scheduler)
+
+                d_star_design = pyro.param("xi").detach().clone()
 
             elif typ == 'rand':
                 d_star_design = .01 + 99.99 * torch.rand((num_parallel, 1, 1, design_dim))

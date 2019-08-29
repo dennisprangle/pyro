@@ -87,7 +87,7 @@ class CensoredSigmoidNormal(TorchDistribution):
         lower_cdf = lower_cdf.log()
         lower_cdf[mask_lower] = asymptotic_lower[mask_lower]
         if is_bad(upper_cdf):
-            raise ArithmeticError("NaN in upper cdf {}".format(upper_cdf))
+            raise ArithmeticError("NaN in upper cdf {} with z {}".format(upper_cdf, self.z(value)))
         if is_bad(lower_cdf):
             raise ArithmeticError("NaN in lower cdf {}".format(lower_cdf))
 
