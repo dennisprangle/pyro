@@ -43,8 +43,8 @@ def make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma, obser
             U1rho = (rmv(d1.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             U2rho = (rmv(d2.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             mean = slope * (U1rho - U2rho)
-            # print('latent samples:', rho.mean(), alpha.mean(), slope.mean(), slope.median())
-            # print('mean', mean.mean(), mean.std(), mean.min(), mean.max())
+            # print('latent samples:', rho.mean().item(), alpha.mean().item(), slope.mean().item(), slope.median().item())
+            # print('mean', mean.mean().item(), mean.std().item(), mean.min().item(), mean.max().item())
             sd = slope * observation_sd * (1 + torch.norm(d1 - d2, dim=-1, p=2))
             # print('sd', sd.mean(), sd.std(), sd.min(), sd.max())
             emission_dist = dist.CensoredSigmoidNormal(mean, sd, 1 - epsilon, epsilon).to_event(1)
@@ -269,8 +269,8 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
 
             elif typ == 'posterior-grad':
                 constraint = torch.distributions.constraints.interval(1e-6, 100.)
-                xi_init = torch.tensor([1., 2., 3., 4., 5., 6.]).expand((num_parallel, 1, 1, design_dim))
-                pyro.param("xi", xi_init).data = xi_init
+                xi_init = torch.tensor([1., 2., 3., 4., 5., 1.]).expand((num_parallel, 1, 1, design_dim))
+                pyro.param("xi", xi_init, constraint=constraint).data = xi_init
 
                 model_learn_xi = make_learn_xi_model(model, xi_init, constraint)
 
