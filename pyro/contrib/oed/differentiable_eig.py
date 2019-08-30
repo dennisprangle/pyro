@@ -7,7 +7,7 @@ from pyro import poutine
 from pyro.contrib.autoguide import mean_field_entropy
 from pyro.contrib.oed.search import Search
 from pyro.infer import EmpiricalMarginal, Importance, SVI
-from pyro.util import torch_isnan, torch_isinf
+from pyro.util import torch_isnan, torch_isinf, is_bad
 from pyro.contrib.util import lexpand
 from pyro.contrib.oed.eig import _safe_mean_terms
 
@@ -30,14 +30,23 @@ def _differentiable_posterior_loss(model, guide, observation_labels, target_labe
             y_dict, expanded_design, observation_labels, target_labels)
         cond_trace.compute_log_prob()
 
+        print([(l, is_bad(cond_trace.nodes[l]["log_prob"])) for l in target_labels])
+        print([(l, is_bad(cond_trace.nodes[l]["log_prob"])) for l in target_labels])
+        print([(l, cond_trace.nodes[l]["log_prob"]) for l in target_labels])
         terms = -sum(cond_trace.nodes[l]["log_prob"] for l in target_labels)
+        # print(torch.isnan(terms).any())
 
         # Calculate the score parts
         trace.compute_score_parts()
         prescore_function = sum(trace.nodes[l]["score_parts"][1] for l in observation_labels)
+        print('prescore', is_bad(prescore_function))
         terms += (terms.detach() - control_variate) * prescore_function
 
-        return _safe_mean_terms(terms)
+        # print(torch.isnan(terms).any())
+
+        qwe = _safe_mean_terms(terms)
+        print(qwe[0])
+        return qwe
 
     return loss_fn
 

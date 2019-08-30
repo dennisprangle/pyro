@@ -640,9 +640,11 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
         agg_loss.backward(retain_graph=True)
+        torch.nn.utils.clip_grad_norm_(params, 'inf')
         if return_history:
             history.append(loss)
         optim(params)
+        optim.step()
 
     _, loss = loss_fn(final_design, final_num_samples, evaluation=True)
     if return_history:

@@ -18,6 +18,7 @@ from pyro.contrib.oed.eig import marginal_eig, elbo_learn, nmc_eig
 import pyro.contrib.gp as gp
 from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss
 from pyro.contrib.oed.eig import opt_eig_ape_loss
+from pyro.util import is_bad
 
 
 # TODO read from torch float spec
@@ -28,25 +29,29 @@ def get_git_revision_hash():
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
 
 
-def make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma, observation_sd, observation_label="y"):
+def make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma, observation_sd, observation_label="y"):
     def ces_model(design):
+        if is_bad(design):
+            raise ArithmeticError("bad design, contains nan or inf")
         batch_shape = design.shape[:-2]
         with ExitStack() as stack:
             for plate in iter_plates_to_shape(batch_shape):
                 stack.enter_context(plate)
-            rho = 0.01 + 0.99 * pyro.sample("rho", dist.Beta(rho0.expand(batch_shape), rho1.expand(batch_shape)))
+            rho_shape = batch_shape + (rho_concentration.shape[-1],)
+            rho = 0.01 + 0.99 * pyro.sample("rho", dist.Dirichlet(rho_concentration.expand(rho_shape))).select(-1, 0)
             alpha_shape = batch_shape + (alpha_concentration.shape[-1],)
             alpha = pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
             slope = pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
             rho, slope = rexpand(rho, design.shape[-2]), rexpand(slope, design.shape[-2])
+            print('rho', rho.max().item(), rho.min().item())
             d1, d2 = design[..., 0:3], design[..., 3:6]
             U1rho = (rmv(d1.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             U2rho = (rmv(d2.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             mean = slope * (U1rho - U2rho)
-            # print('latent samples:', rho.mean().item(), alpha.mean().item(), slope.mean().item(), slope.median().item())
-            # print('mean', mean.mean().item(), mean.std().item(), mean.min().item(), mean.max().item())
+            print('latent samples:', rho.mean().item(), alpha.mean().item(), slope.mean().item(), slope.median().item())
+            print('mean', mean.mean().item(), mean.std().item(), mean.min().item(), mean.max().item())
             sd = slope * observation_sd * (1 + torch.norm(d1 - d2, dim=-1, p=2))
-            # print('sd', sd.mean(), sd.std(), sd.min(), sd.max())
+            print('sd', sd.mean(), sd.std(), sd.min(), sd.max())
             emission_dist = dist.CensoredSigmoidNormal(mean, sd, 1 - epsilon, epsilon).to_event(1)
             y = pyro.sample(observation_label, emission_dist)
             return y
@@ -63,8 +68,8 @@ def make_learn_xi_model(model, xi_init, constraint):
 
 
 def elboguide(design, dim=10):
-    rho0 = pyro.param("rho0", torch.ones(dim, 1), constraint=torch.distributions.constraints.positive)
-    rho1 = pyro.param("rho1", torch.ones(dim, 1), constraint=torch.distributions.constraints.positive)
+    rho_concentration = pyro.param("rho_concentration", torch.ones(dim, 1, 2),
+                                   constraint=torch.distributions.constraints.positive)
     alpha_concentration = pyro.param("alpha_concentration", torch.ones(dim, 1, 3),
                                      constraint=torch.distributions.constraints.positive)
     slope_mu = pyro.param("slope_mu", torch.ones(dim, 1))
@@ -74,7 +79,8 @@ def elboguide(design, dim=10):
     with ExitStack() as stack:
         for plate in iter_plates_to_shape(batch_shape):
             stack.enter_context(plate)
-        pyro.sample("rho", dist.Beta(rho0.expand(batch_shape), rho1.expand(batch_shape)))
+        rho_shape = batch_shape + (rho_concentration.shape[-1],)
+        pyro.sample("rho", dist.Dirichlet(rho_concentration.expand(rho_shape)))
         alpha_shape = batch_shape + (alpha_concentration.shape[-1],)
         pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
         pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape),
@@ -103,8 +109,7 @@ class PosteriorGuide(nn.Module):
         super(PosteriorGuide, self).__init__()
         self.linear1 = nn.Linear(1, 256)
         self.linear2 = nn.Linear(256, 256)
-        self.rho0 = nn.Linear(256, 1)
-        self.rho1 = nn.Linear(256, 1)
+        self.rho_concentration = nn.Linear(256, 2)
         self.alpha_concentration = nn.Linear(256, 3)
         self.slope_mu = nn.Linear(256, 1)
         self.slope_sigma = nn.Linear(256, 1)
@@ -117,23 +122,33 @@ class PosteriorGuide(nn.Module):
         s = y.log() - y1m.log()
         x = self.softplus(self.linear1(s))
         x = self.softplus(self.linear2(x))
-        rho0 = self.softplus(self.rho0(x)).squeeze(-1)
-        rho1 = self.softplus(self.rho1(x)).squeeze(-1)
-        alpha_concentration = self.softplus(self.alpha_concentration(x))
+        rho_concentration = 1e-6 + self.softplus(self.rho_concentration(x))
+        alpha_concentration = 1e-6 + self.softplus(self.alpha_concentration(x))
         slope_mu = self.slope_mu(x).squeeze(-1)
-        slope_sigma = self.softplus(self.slope_sigma(x)).squeeze(-1)
-
+        slope_sigma = 1e-6 + self.softplus(self.slope_sigma(x)).squeeze(-1)
+        
         pyro.module("posterior_guide", self)
 
+        print('slope_sigma', slope_sigma)
+        #rho_concentration.register_hook(lambda x: print('rhocgrad', x))
+        #alpha_concentration.register_hook(lambda x: print('acgrad', x))
+        #slope_mu.register_hook(lambda x: print('slopemugrad', x))
+        #slope_sigma.register_hook(lambda x: print('slopesigmagrad', x))
         batch_shape = design_prototype.shape[:-2]
         with ExitStack() as stack:
             for plate in iter_plates_to_shape(batch_shape):
                 stack.enter_context(plate)
 
-            pyro.sample("rho", dist.Beta(rho0.expand(batch_shape), rho1.expand(batch_shape)))
+            rho_shape = batch_shape + (rho_concentration.shape[-1],)
+            pyro.sample("rho", dist.Dirichlet(rho_concentration.expand(rho_shape)))
             alpha_shape = batch_shape + (alpha_concentration.shape[-1],)
             pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
             pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
+
+
+def weight_reset(m):
+    if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+        m.reset_parameters()
 
 
 def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
@@ -168,15 +183,15 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
         posterior_guide = PosteriorGuide()
 
-        prior = make_ces_model(torch.ones(num_parallel, 1), torch.ones(num_parallel, 1), torch.ones(num_parallel, 1, 3),
+        prior = make_ces_model(torch.ones(num_parallel, 1, 2), torch.ones(num_parallel, 1, 3),
                                torch.ones(num_parallel, 1), 3.*torch.ones(num_parallel, 1), observation_sd)
-        rho0, rho1 = torch.ones(num_parallel, 1), torch.ones(num_parallel, 1)
+        rho_concentration = torch.ones(num_parallel, 1, 2)
         alpha_concentration = torch.ones(num_parallel, 1, 3)
         slope_mu, slope_sigma = torch.ones(num_parallel, 1), 3.*torch.ones(num_parallel, 1)
 
-        true_model = pyro.condition(make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma,
+        true_model = pyro.condition(make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma,
                                                    observation_sd),
-                                    {"rho": torch.tensor(.9), "alpha": torch.tensor([.2, .3, .5]),
+                                    {"rho": torch.tensor([.9, .1]), "alpha": torch.tensor([.2, .3, .5]),
                                      "slope": torch.tensor(10.)})
 
         d_star_designs = torch.tensor([])
@@ -184,7 +199,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
 
         for step in range(num_steps):
             print("Step", step)
-            model = make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma, observation_sd)
+            model = make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma, observation_sd)
             results = {'typ': typ, 'step': step, 'git-hash': get_git_revision_hash(), 'seed': seed,
                        'lengthscale': lengthscale, 'observation_sd': observation_sd}
 
@@ -272,20 +287,20 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
                 xi_init = torch.tensor([1., 2., 3., 4., 5., 1.]).expand((num_parallel, 1, 1, design_dim))
                 pyro.param("xi", xi_init, constraint=constraint)
                 pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
-                print('xi', pyro.param("xi"))
 
                 model_learn_xi = make_learn_xi_model(model, xi_init, constraint)
+                posterior_guide.apply(weight_reset)
 
                 loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
                 start_lr, end_lr = 0.01, 0.0005
-                gamma = (end_lr / start_lr) ** (1 / 2500)
+                gamma = (end_lr / start_lr) ** (1 / 7500)
                 scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                       'gamma': gamma})
 
                 design_prototype = torch.zeros(num_parallel, 1, 1, 6)  # this is annoying, code needs refactor
 
-                opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=2500, optim=scheduler)
+                opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=7500, optim=scheduler)
 
                 d_star_design = pyro.param("xi").detach().clone()
 
@@ -307,14 +322,13 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
                 prior, d_star_designs, ["y"], ["rho", "alpha", "slope"], elbo_n_samples, elbo_n_steps,
                 partial(elboguide, dim=num_parallel), {"y": ys}, optim.Adam({"lr": elbo_lr})
             )
-            rho0 = pyro.param("rho0").detach().data.clone()
-            rho1 = pyro.param("rho1").detach().data.clone()
+            rho_concentration = pyro.param("rho_concentration").detach().data.clone()
             alpha_concentration = pyro.param("alpha_concentration").detach().data.clone()
             slope_mu = pyro.param("slope_mu").detach().data.clone()
             slope_sigma = pyro.param("slope_sigma").detach().data.clone()
-            print("rho0", rho0, "rho1", rho1, "alpha_concentration", alpha_concentration, "slope_mu", slope_mu,
+            print("rho_concentration", rho_concentration, "alpha_concentration", alpha_concentration, "slope_mu", slope_mu,
                   "slope_sigma", slope_sigma)
-            results['rho0'], results['rho1'], results['alpha_concentration'] = rho0, rho1, alpha_concentration
+            results['rho_concentration'], results['alpha_concentration'] = rho_concentration, alpha_concentration
             results['slope_mu'], results['slope_sigma'] = slope_mu, slope_sigma
 
             with open(results_file, 'ab') as f:
