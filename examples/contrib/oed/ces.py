@@ -184,6 +184,8 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         elbo_n_samples, elbo_n_steps, elbo_lr = 10, 1000, 0.04
         num_acq = 50
         num_bo_steps = 4
+        num_grad_steps = 4000
+        num_grad_acq = 25
         design_dim = 6
 
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
@@ -290,7 +292,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
             elif typ == 'posterior-grad':
                 constraint = torch.distributions.constraints.interval(1e-6, 100.)
-                xi_init = torch.tensor([1., 2., 3., 4., 5., 1.]).expand((num_parallel, 1, 1, design_dim))
+                xi_init = .01 + 99.99 * torch.rand((num_parallel, num_grad_acq, 1, design_dim))
                 pyro.param("xi", xi_init, constraint=constraint)
                 pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
 
@@ -300,16 +302,19 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                 loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
                 start_lr, end_lr = 0.05, 0.0005
-                num_grad_steps = 4000
                 gamma = (end_lr / start_lr) ** (1 / num_grad_steps)
                 scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                       'gamma': gamma})
 
                 design_prototype = torch.zeros(num_parallel, 1, 1, 6)  # this is annoying, code needs refactor
 
-                opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=num_grad_steps, optim=scheduler)
-
-                d_star_design = pyro.param("xi").detach().clone()
+                eig = opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=num_grad_steps,
+                                       optim=scheduler, final_num_samples=1000)
+                max_eig, d_star_index = torch.max(eig, dim=1)
+                logging.info('max EIG {}'.format(max_eig))
+                results['max EIG'] = max_eig
+                X = pyro.param("xi").detach().clone()
+                d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2).unsqueeze(-2)
 
             elif typ == 'rand':
                 d_star_design = .01 + 99.99 * torch.rand((num_parallel, 1, 1, design_dim))
