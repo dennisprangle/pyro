@@ -173,7 +173,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
     observation_sd = torch.tensor(.005)
 
     for typ in typs:
-        logging.info("Type", typ)
+        logging.info("Type {}".format(typ))
         pyro.clear_param_store()
         if seed >= 0:
             pyro.set_rng_seed(seed)
@@ -205,7 +205,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         ys = torch.tensor([])
 
         for step in range(num_steps):
-            logging.info("Step", step)
+            logging.info("Step {}".format(step))
             model = make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma, observation_sd)
             results = {'typ': typ, 'step': step, 'git-hash': get_git_revision_hash(), 'seed': seed,
                        'lengthscale': lengthscale, 'observation_sd': observation_sd}
