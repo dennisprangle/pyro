@@ -1,14 +1,10 @@
 import torch
 import math
-import warnings
 import logging
 
 import pyro
 from pyro import poutine
-from pyro.contrib.autoguide import mean_field_entropy
-from pyro.contrib.oed.search import Search
-from pyro.infer import EmpiricalMarginal, Importance, SVI
-from pyro.util import torch_isnan, torch_isinf, is_bad
+from pyro.util import is_bad
 from pyro.contrib.util import lexpand
 from pyro.contrib.oed.eig import _safe_mean_terms
 
@@ -43,9 +39,9 @@ def _differentiable_posterior_loss(model, guide, observation_labels, target_labe
         logging.debug('prescore {}'.format(is_bad(prescore_function)))
         terms += (terms.detach() - control_variate) * prescore_function
 
-        qwe = _safe_mean_terms(terms)
-        logging.debug("loss {}".format(qwe[0]))
-        return qwe
+        result = _safe_mean_terms(terms)
+        logging.debug("loss {}".format(result[0]))
+        return result
 
     return loss_fn
 

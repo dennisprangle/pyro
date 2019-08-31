@@ -128,14 +128,13 @@ class PosteriorGuide(nn.Module):
         rho_concentration = 1e-6 + self.softplus(self.rho_concentration(x))
         alpha_concentration = 1e-6 + self.softplus(self.alpha_concentration(x))
         slope_mu = self.slope_mu(x).squeeze(-1)
-        slope_sigma = 1e-6 + self.softplus(self.slope_sigma(x)).squeeze(-1)
+        slope_sigma = self.softplus(self.slope_sigma(x)).squeeze(-1)
+
+        logging.debug("rho_concentration {} alpha concentration {}".format(rho_concentration, alpha_concentration))
+        logging.debug("slope mu {} sigma {}".format(slope_mu, slope_sigma))
         
         pyro.module("posterior_guide", self)
 
-        #rho_concentration.register_hook(lambda x: print('rhocgrad', x))
-        #alpha_concentration.register_hook(lambda x: print('acgrad', x))
-        #slope_mu.register_hook(lambda x: print('slopemugrad', x))
-        #slope_sigma.register_hook(lambda x: print('slopesigmagrad', x))
         batch_shape = design_prototype.shape[:-2]
         with ExitStack() as stack:
             for plate in iter_plates_to_shape(batch_shape):
@@ -300,14 +299,15 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
                 loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
-                start_lr, end_lr = 0.01, 0.0005
-                gamma = (end_lr / start_lr) ** (1 / 7500)
+                start_lr, end_lr = 0.05, 0.0005
+                num_grad_steps = 4000
+                gamma = (end_lr / start_lr) ** (1 / num_grad_steps)
                 scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                       'gamma': gamma})
 
                 design_prototype = torch.zeros(num_parallel, 1, 1, 6)  # this is annoying, code needs refactor
 
-                opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=7500, optim=scheduler)
+                opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=num_grad_steps, optim=scheduler)
 
                 d_star_design = pyro.param("xi").detach().clone()
 

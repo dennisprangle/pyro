@@ -14,36 +14,38 @@ from pyro.contrib.util import iter_plates_to_shape, rexpand, rmv
 from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss
 from pyro import poutine
 from pyro.contrib.oed.eig import _eig_from_ape
+from pyro.util import is_bad
 
 
 # TODO read from torch float spec
 epsilon = torch.tensor(2**-24)
-
-xi_init = torch.tensor([1., 2., 3., 4., 5., 6.])
 
 
 def get_git_revision_hash():
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
 
 
-def make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma, observation_sd, observation_label="y"):
+def make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma, observation_sd, observation_label="y",
+                   xi_init=torch.ones(6)):
     def ces_model(design_prototype):
-        design = pyro.param("xi", xi_init, constraint=constraints.positive)
-        batch_shape = design_prototype.shape[:-2]
+        design = pyro.param("xi", xi_init, constraint=constraints.interval(1e-6, 100)).expand(design_prototype.shape)
+        if is_bad(design):
+            raise ArithmeticError("bad design, contains nan or inf")
+        batch_shape = design.shape[:-2]
         with ExitStack() as stack:
             for plate in iter_plates_to_shape(batch_shape):
                 stack.enter_context(plate)
-            rho = 0.01 + 0.99 * pyro.sample("rho", dist.Beta(rho0.expand(batch_shape), rho1.expand(batch_shape)))
+            rho_shape = batch_shape + (rho_concentration.shape[-1],)
+            rho = 0.01 + 0.99 * pyro.sample("rho", dist.Dirichlet(rho_concentration.expand(rho_shape))).select(-1, 0)
             alpha_shape = batch_shape + (alpha_concentration.shape[-1],)
             alpha = pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
             slope = pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
-            rho, slope = rexpand(rho, design_prototype.shape[-2]), rexpand(slope, design_prototype.shape[-2])
+            rho, slope = rexpand(rho, design.shape[-2]), rexpand(slope, design.shape[-2])
             d1, d2 = design[..., 0:3], design[..., 3:6]
             U1rho = (rmv(d1.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             U2rho = (rmv(d2.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             mean = slope * (U1rho - U2rho)
             sd = slope * observation_sd * (1 + torch.norm(d1 - d2, dim=-1, p=2))
-            #mean, sd = mean.squeeze(-1), sd.squeeze(-1)
             emission_dist = dist.CensoredSigmoidNormal(mean, sd, 1 - epsilon, epsilon).to_event(1)
             y = pyro.sample(observation_label, emission_dist)
             return y
@@ -56,8 +58,7 @@ class PosteriorGuide(nn.Module):
         super(PosteriorGuide, self).__init__()
         self.linear1 = nn.Linear(1, 256)
         self.linear2 = nn.Linear(256, 256)
-        self.rho0 = nn.Linear(256, 1)
-        self.rho1 = nn.Linear(256, 1)
+        self.rho_concentration = nn.Linear(256, 2)
         self.alpha_concentration = nn.Linear(256, 3)
         self.slope_mu = nn.Linear(256, 1)
         self.slope_sigma = nn.Linear(256, 1)
@@ -70,11 +71,10 @@ class PosteriorGuide(nn.Module):
         s = y.log() - y1m.log()
         x = self.softplus(self.linear1(s))
         x = self.softplus(self.linear2(x))
-        rho0 = self.softplus(self.rho0(x)).squeeze(-1)
-        rho1 = self.softplus(self.rho1(x)).squeeze(-1)
-        alpha_concentration = self.softplus(self.alpha_concentration(x))
+        rho_concentration = 1e-6 + self.softplus(self.rho_concentration(x))
+        alpha_concentration = 1e-6 + self.softplus(self.alpha_concentration(x))
         slope_mu = self.slope_mu(x).squeeze(-1)
-        slope_sigma = self.softplus(self.slope_sigma(x)).squeeze(-1)
+        slope_sigma = 1e-6 + self.softplus(self.slope_sigma(x)).squeeze(-1)
 
         pyro.module("posterior_guide", self)
 
@@ -83,7 +83,8 @@ class PosteriorGuide(nn.Module):
             for plate in iter_plates_to_shape(batch_shape):
                 stack.enter_context(plate)
 
-            pyro.sample("rho", dist.Beta(rho0.expand(batch_shape), rho1.expand(batch_shape)))
+            rho_shape = batch_shape + (rho_concentration.shape[-1],)
+            pyro.sample("rho", dist.Dirichlet(rho_concentration.expand(rho_shape)))
             alpha_shape = batch_shape + (alpha_concentration.shape[-1],)
             pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
             pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
@@ -141,9 +142,11 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             seed = int(torch.rand(tuple()) * 2 ** 30)
             pyro.set_rng_seed(seed)
 
+        xi_init = 0.01 + 99.99 * torch.rand(6)
         observation_sd = torch.tensor(.005)
-        model_learn_xi = make_ces_model(torch.ones(1), torch.ones(1), torch.ones(1, 3),
-                                        torch.ones(1), 3.*torch.ones(1), observation_sd)
+        # Change the prior distribution here
+        model_learn_xi = make_ces_model(torch.ones(1, 2), torch.ones(1, 3),
+                                        torch.ones(1), .001*torch.ones(1), observation_sd, xi_init=xi_init)
 
         # Fix correct loss
         if estimator == 'posterior':
@@ -168,7 +171,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                               'gamma': gamma})
 
-        design_prototype = torch.zeros(1, 1, 1)  # this is annoying, code needs refactor
+        design_prototype = torch.zeros(1, 1, 6)  # this is annoying, code needs refactor
 
         xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=10,
                                                               num_steps=num_steps, optim=scheduler)
