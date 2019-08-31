@@ -309,12 +309,12 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                 design_prototype = torch.zeros(num_parallel, num_grad_acq, 1, 6)  # this is annoying, code needs refactor
 
                 eig = opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=num_grad_steps,
-                                       optim=scheduler, final_num_samples=1000)
+                                       optim=scheduler, final_num_samples=100)
                 max_eig, d_star_index = torch.max(eig, dim=1)
                 logging.info('max EIG {}'.format(max_eig))
                 results['max EIG'] = max_eig
                 X = pyro.param("xi").detach().clone()
-                d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2).unsqueeze(-2)
+                d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2)
 
             elif typ == 'rand':
                 d_star_design = .01 + 99.99 * torch.rand((num_parallel, 1, 1, design_dim))
