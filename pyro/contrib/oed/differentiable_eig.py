@@ -1,6 +1,7 @@
 import torch
 import math
 import warnings
+import logging
 
 import pyro
 from pyro import poutine
@@ -30,22 +31,20 @@ def _differentiable_posterior_loss(model, guide, observation_labels, target_labe
             y_dict, expanded_design, observation_labels, target_labels)
         cond_trace.compute_log_prob()
 
-        print([(l, is_bad(cond_trace.nodes[l]["log_prob"])) for l in target_labels])
-        print([(l, is_bad(cond_trace.nodes[l]["log_prob"])) for l in target_labels])
-        print([(l, cond_trace.nodes[l]["log_prob"]) for l in target_labels])
+        logging.debug(str([(l, is_bad(cond_trace.nodes[l]["log_prob"])) for l in target_labels]))
+        logging.debug(str(([(l, is_bad(cond_trace.nodes[l]["log_prob"])) for l in target_labels])))
+        logging.debug(str(([(l, cond_trace.nodes[l]["log_prob"]) for l in target_labels])))
         terms = -sum(cond_trace.nodes[l]["log_prob"] for l in target_labels)
         # print(torch.isnan(terms).any())
 
         # Calculate the score parts
         trace.compute_score_parts()
         prescore_function = sum(trace.nodes[l]["score_parts"][1] for l in observation_labels)
-        print('prescore', is_bad(prescore_function))
+        logging.debug('prescore {}'.format(is_bad(prescore_function)))
         terms += (terms.detach() - control_variate) * prescore_function
 
-        # print(torch.isnan(terms).any())
-
         qwe = _safe_mean_terms(terms)
-        print(qwe[0])
+        logging.debug("loss {}".format(qwe[0]))
         return qwe
 
     return loss_fn

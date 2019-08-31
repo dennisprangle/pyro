@@ -9,6 +9,7 @@ import time
 import os
 from functools import partial
 from contextlib import ExitStack
+import logging
 
 import pyro
 import pyro.optim as optim
@@ -43,15 +44,17 @@ def make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma
             alpha = pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
             slope = pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
             rho, slope = rexpand(rho, design.shape[-2]), rexpand(slope, design.shape[-2])
-            print('rho', rho.max().item(), rho.min().item())
+            logging.debug('rho max {} min {}'.format(rho.max().item(), rho.min().item()))
             d1, d2 = design[..., 0:3], design[..., 3:6]
             U1rho = (rmv(d1.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             U2rho = (rmv(d2.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             mean = slope * (U1rho - U2rho)
-            print('latent samples:', rho.mean().item(), alpha.mean().item(), slope.mean().item(), slope.median().item())
-            print('mean', mean.mean().item(), mean.std().item(), mean.min().item(), mean.max().item())
+            logging.debug('latent samples: rho {} alpha {} slope mean {} slope median {}'.format(
+                rho.mean().item(), alpha.mean().item(), slope.mean().item(), slope.median().item()))
+            logging.debug('mean: mean {} sd {} min {} max {}'.format(
+                mean.mean().item(), mean.std().item(), mean.min().item(), mean.max().item()))
             sd = slope * observation_sd * (1 + torch.norm(d1 - d2, dim=-1, p=2))
-            print('sd', sd.mean(), sd.std(), sd.min(), sd.max())
+            logging.debug('sd: mean {}, sd {}, min {}, max {}'.format(sd.mean(), sd.std(), sd.min(), sd.max()))
             emission_dist = dist.CensoredSigmoidNormal(mean, sd, 1 - epsilon, epsilon).to_event(1)
             y = pyro.sample(observation_label, emission_dist)
             return y
@@ -129,7 +132,6 @@ class PosteriorGuide(nn.Module):
         
         pyro.module("posterior_guide", self)
 
-        print('slope_sigma', slope_sigma)
         #rho_concentration.register_hook(lambda x: print('rhocgrad', x))
         #alpha_concentration.register_hook(lambda x: print('acgrad', x))
         #slope_mu.register_hook(lambda x: print('slopemugrad', x))
@@ -151,7 +153,12 @@ def weight_reset(m):
         m.reset_parameters()
 
 
-def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
+def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, loglevel):
+    numeric_level = getattr(logging, loglevel.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError("Invalid log level: {}".format(loglevel))
+    logging.basicConfig(level=numeric_level)
+
     output_dir = "./run_outputs/ces/"
     if not experiment_name:
         experiment_name = output_dir+"{}".format(datetime.datetime.now().isoformat())
@@ -159,14 +166,14 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
         experiment_name = output_dir+experiment_name
     results_file = experiment_name + '.result_stream.pickle'
     try:
-        os.remove(experiment_name)
+        os.remove(results_file)
     except OSError:
-        pass
+        logging.info("File {} does not exist yet".format(results_file))
     typs = typs.split(",")
     observation_sd = torch.tensor(.005)
 
     for typ in typs:
-        print("Type", typ)
+        logging.info("Type", typ)
         pyro.clear_param_store()
         if seed >= 0:
             pyro.set_rng_seed(seed)
@@ -198,7 +205,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
         ys = torch.tensor([])
 
         for step in range(num_steps):
-            print("Step", step)
+            logging.info("Step", step)
             model = make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma, observation_sd)
             results = {'typ': typ, 'step': step, 'git-hash': get_git_revision_hash(), 'seed': seed,
                        'lengthscale': lengthscale, 'observation_sd': observation_sd}
@@ -278,7 +285,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
                     y = torch.cat([y, y_acquire], dim=1)
 
                 max_eig, d_star_index = torch.max(y, dim=1)
-                print('max EIG', max_eig)
+                logging.info('max EIG {}'.format(max_eig))
                 results['max EIG'] = max_eig
                 d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2).unsqueeze(-2)
 
@@ -308,14 +315,14 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
                 d_star_design = .01 + 99.99 * torch.rand((num_parallel, 1, 1, design_dim))
 
             elapsed = time.time() - t
-            print('elapsed design time', elapsed)
+            logging.info('elapsed design time {}'.format(elapsed))
             results['design_time'] = elapsed
             results['d_star_design'] = d_star_design
-            print('design', d_star_design.squeeze(), d_star_design.shape)
+            logging.info('design {} {}'.format(d_star_design.squeeze(), d_star_design.shape))
             d_star_designs = torch.cat([d_star_designs, d_star_design], dim=-2)
             y = true_model(d_star_design)
             ys = torch.cat([ys, y], dim=-1)
-            print('ys', ys.squeeze(), ys.shape)
+            logging.info('ys {} {}'.format(ys.squeeze(), ys.shape))
             results['y'] = y
 
             elbo_learn(
@@ -326,8 +333,8 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
             alpha_concentration = pyro.param("alpha_concentration").detach().data.clone()
             slope_mu = pyro.param("slope_mu").detach().data.clone()
             slope_sigma = pyro.param("slope_sigma").detach().data.clone()
-            print("rho_concentration", rho_concentration, "alpha_concentration", alpha_concentration, "slope_mu", slope_mu,
-                  "slope_sigma", slope_sigma)
+            logging.info("rho_concentration {} \n alpha_concentration {} \n slope_mu {} \n slope_sigma {}".format(
+                rho_concentration, alpha_concentration, slope_mu, slope_sigma))
             results['rho_concentration'], results['alpha_concentration'] = rho_concentration, alpha_concentration
             results['slope_mu'], results['slope_sigma'] = slope_mu, slope_sigma
 
@@ -344,5 +351,6 @@ if __name__ == "__main__":
     parser.add_argument("--typs", nargs="?", default="rand", type=str)
     parser.add_argument("--seed", nargs="?", default=-1, type=int)
     parser.add_argument("--lengthscale", nargs="?", default=10., type=float)
+    parser.add_argument("--loglevel", default="info", type=str)
     args = parser.parse_args()
-    main(args.num_steps, args.num_parallel, args.name, args.typs, args.seed, args.lengthscale)
+    main(args.num_steps, args.num_parallel, args.name, args.typs, args.seed, args.lengthscale, args.loglevel)
