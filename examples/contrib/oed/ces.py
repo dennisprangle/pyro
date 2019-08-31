@@ -306,7 +306,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                 scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                       'gamma': gamma})
 
-                design_prototype = torch.zeros(num_parallel, 1, 1, 6)  # this is annoying, code needs refactor
+                design_prototype = torch.zeros(num_parallel, num_grad_acq, 1, 6)  # this is annoying, code needs refactor
 
                 eig = opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=num_grad_steps,
                                        optim=scheduler, final_num_samples=1000)
