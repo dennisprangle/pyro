@@ -128,7 +128,7 @@ class PosteriorGuide(nn.Module):
         rho_concentration = 1e-6 + self.softplus(self.rho_concentration(x))
         alpha_concentration = 1e-6 + self.softplus(self.alpha_concentration(x))
         slope_mu = self.slope_mu(x).squeeze(-1)
-        slope_sigma = self.softplus(self.slope_sigma(x)).squeeze(-1)
+        slope_sigma = 1e-6 + self.softplus(self.slope_sigma(x)).squeeze(-1)
 
         logging.debug("rho_concentration {} alpha concentration {}".format(rho_concentration, alpha_concentration))
         logging.debug("slope mu {} sigma {}".format(slope_mu, slope_sigma))
@@ -185,7 +185,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         num_acq = 50
         num_bo_steps = 4
         num_grad_steps = 4000
-        num_grad_acq = 25
+        num_grad_acq = 5
         design_dim = 6
 
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
@@ -297,22 +297,22 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                 pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
 
                 model_learn_xi = make_learn_xi_model(model, xi_init, constraint)
-                posterior_guide.apply(weight_reset)
+                #posterior_guide.apply(weight_reset)
 
                 loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
-                start_lr, end_lr = 0.05, 0.0005
+                start_lr, end_lr = 0.05, 0.005
                 gamma = (end_lr / start_lr) ** (1 / num_grad_steps)
                 scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                       'gamma': gamma})
 
                 design_prototype = torch.zeros(num_parallel, num_grad_acq, 1, 6)  # this is annoying, code needs refactor
 
-                eig = opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=num_grad_steps,
-                                       optim=scheduler, final_num_samples=100)
-                max_eig, d_star_index = torch.max(eig, dim=1)
-                logging.info('max EIG {}'.format(max_eig))
-                results['max EIG'] = max_eig
+                ape = opt_eig_ape_loss(design_prototype, loss, num_samples=10, num_steps=num_grad_steps,
+                                       optim=scheduler, final_num_samples=500)
+                min_ape, d_star_index = torch.min(ape, dim=1)
+                logging.info('min APE {}'.format(min_ape))
+                results['min APE'] = min_ape
                 X = pyro.param("xi").detach().clone()
                 d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2)
 
