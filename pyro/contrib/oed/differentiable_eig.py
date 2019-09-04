@@ -64,17 +64,21 @@ def differentiable_nce_eig(model, design, observation_labels, target_labels=None
     retrace = poutine.trace(conditional_model).get_trace(reexpanded_design)
     retrace.compute_log_prob()
     marginal_log_probs = torch.cat([lexpand(conditional_lp, 1),
-                                    sum(retrace.nodes[l]["log_prob"] for l in observation_labels)])
+                                    sum(retrace.nodes[l]["log_prob"] for l in observation_labels)], dim=0)
     marginal_lp = marginal_log_probs.logsumexp(0) - math.log(M+1)
 
     terms = conditional_lp - marginal_lp
+    nce_part =  _safe_mean_terms(terms)[1]
+    #print('nce', nce_part)
 
     # Calculate the score parts
     trace.compute_score_parts()
     prescore_function = sum(trace.nodes[l]["score_parts"][1] for l in observation_labels)
     terms += (terms.detach() - control_variate) * prescore_function
+    #print('other term', terms * prescore_function)
 
-    return _safe_mean_terms(terms)
+    surrogate_loss = _safe_mean_terms(terms)[0]
+    return (surrogate_loss, nce_part)
 
 
 def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_labels):

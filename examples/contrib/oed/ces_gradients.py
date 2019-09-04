@@ -116,6 +116,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         xi_history.append(pyro.param('xi').detach().clone())
         optim(params)
         optim.step()
+        print(pyro.param("xi").squeeze())
 
     xi_history.append(pyro.param('xi').detach().clone())
 
@@ -145,8 +146,10 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         xi_init = 0.01 + 99.99 * torch.rand(6)
         observation_sd = torch.tensor(.005)
         # Change the prior distribution here
-        model_learn_xi = make_ces_model(torch.ones(1, 2), torch.ones(1, 3),
-                                        torch.ones(1), .001*torch.ones(1), observation_sd, xi_init=xi_init)
+        #model_learn_xi = make_ces_model(torch.ones(1, 2), torch.ones(1, 3),
+        #                                torch.ones(1), .001*torch.ones(1), observation_sd, xi_init=xi_init)
+        model_learn_xi = make_ces_model(torch.tensor([[0.5, 10., 0.1]]), torch.tensor([[0.1, 0.2, 12.]]),
+                                                     torch.tensor([1.5]), torch.tensor([1.5]), observation_sd, xi_init=xi_init)
 
         # Fix correct loss
         if estimator == 'posterior':
@@ -156,7 +159,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         elif estimator == 'nce':
             eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
-                N=N, M=10, **kwargs)
+                N=N, M=100, **kwargs)
             loss = neg_loss(eig_loss)
 
         elif estimator == 'ace':

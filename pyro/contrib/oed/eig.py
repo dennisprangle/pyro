@@ -1,6 +1,7 @@
 import torch
 import math
 import warnings
+import logging
 
 import pyro
 from pyro import poutine
@@ -647,6 +648,7 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
             optim.step()
         except AttributeError:
             pass
+        logging.debug("{} {} {}".format(step, pyro.param("xi"), pyro.param("xi").shape))
 
     _, loss = loss_fn(final_design, final_num_samples, evaluation=True)
     if return_history:
