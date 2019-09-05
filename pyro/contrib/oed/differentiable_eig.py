@@ -69,15 +69,14 @@ def differentiable_nce_eig(model, design, observation_labels, target_labels=None
 
     terms = conditional_lp - marginal_lp
     nce_part =  _safe_mean_terms(terms)[1]
-    #print('nce', nce_part)
+    print('nce', nce_part)
 
     # Calculate the score parts
     trace.compute_score_parts()
     prescore_function = sum(trace.nodes[l]["score_parts"][1] for l in observation_labels)
-    terms += (terms.detach() - control_variate) * prescore_function
-    #print('other term', terms * prescore_function)
+    grad_terms = (terms.detach() - control_variate) * prescore_function
 
-    surrogate_loss = _safe_mean_terms(terms)[0]
+    surrogate_loss = _safe_mean_terms(grad_terms)[0]
     return (surrogate_loss, nce_part)
 
 
