@@ -71,11 +71,45 @@ def differentiable_nce_eig(model, design, observation_labels, target_labels=None
 
     terms = conditional_lp - marginal_lp
     nce_part =  _safe_mean_terms(terms)[1]
+    print('nce', nce_part)
 
     # Calculate the score parts
     trace.compute_score_parts()
     prescore_function = sum(trace.nodes[l]["score_parts"][1] for l in observation_labels)
     grad_terms = (terms.detach() - control_variate) * prescore_function
+
+    surrogate_loss = _safe_mean_terms(grad_terms)[0]
+    return (surrogate_loss, nce_part)
+
+
+def differentiable_nce_eig_proposal(model, design, observation_labels, target_labels, 
+                                    proposal, N=100, M=10, control_variate=0., **kwargs):
+
+    # Take N samples of the model
+    expanded_design = lexpand(design, N)  # N copies of the model
+    trace = poutine.trace(proposal).get_trace(expanded_design)
+    trace.compute_log_prob()
+    proposal_lp = sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+    y_dict = {l: lexpand(trace.nodes[l]["value"], M) for l in observation_labels}
+    # Resample M values of theta and compute conditional probabilities
+    conditional_model = pyro.condition(model, data=y_dict)
+    # Using (M, 1) instead of (M, N) - acceptable to re-use thetas between ys because
+    # theta comes before y in graphical model
+    reexpanded_design = lexpand(design, M+1, N)  # sample M theta
+    retrace = poutine.trace(conditional_model).get_trace(reexpanded_design)
+    retrace.compute_log_prob()
+    marginal_log_probs = torch.cat([sum(retrace.nodes[l]["log_prob"] for l in observation_labels)], dim=0)
+    marginal_lp = marginal_log_probs.logsumexp(0) - math.log(M+1)
+    conditional_lp = marginal_log_probs[0, ...]
+    importance_weights = (conditional_lp - proposal_lp).exp()
+    # marginal_log_probs = sum(retrace.nodes[l]["log_prob"] for l in observation_labels)
+    # marginal_lp = marginal_log_probs.logsumexp(0) - math.log(M)
+
+    terms = conditional_lp - marginal_lp
+    nce_part =  _safe_mean_terms(terms)[1]
+
+    # Calculate the score parts
+    grad_terms = (terms.detach() - control_variate) * importance_weights
 
     surrogate_loss = _safe_mean_terms(grad_terms)[0]
     return (surrogate_loss, nce_part)
