@@ -13,7 +13,7 @@ import pyro.distributions as dist
 from pyro.contrib.util import iter_plates_to_shape, rexpand, rmv
 from pyro.contrib.oed.differentiable_eig import (
         _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss,
-        differentiable_nce_proposal_eig
+        differentiable_nce_proposal_eig, _saddle_marginal_loss
         )
 from pyro import poutine
 from pyro.contrib.oed.eig import _eig_from_ape
@@ -103,6 +103,21 @@ class PosteriorGuide(nn.Module):
             pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
 
 
+def marginal_guide(mu_init, log_sigma_init, shape, label):
+    def guide(design, observation_labels, target_labels):
+        mu = pyro.param("marginal_mu", mu_init * torch.ones(*shape))
+        log_sigma = pyro.param("marginal_log_sigma", log_sigma_init * torch.ones(*shape))
+        ends = pyro.param("marginal_ends", 1./3 * torch.ones(*shape, 3),
+                          constraint=torch.distributions.constraints.simplex)
+        response_dist = dist.CensoredSigmoidNormalEnds(
+            loc=mu, scale=torch.exp(log_sigma), upper_lim=1. - epsilon, lower_lim=epsilon,
+            p0=ends[..., 0], p1=ends[..., 1], p2=ends[..., 2]
+        ).to_event(1)
+        #print('mu', mu, 'log_sigma', log_sigma, 'ends', ends)
+        pyro.sample(label, response_dist)
+    return guide
+
+
 def neg_loss(loss):
     def new_loss(*args, **kwargs):
         return (-a for a in loss(*args, **kwargs))
@@ -139,6 +154,46 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
     return xi_history, est_loss_history
 
 
+def marginal_gradient_eig(model, design, observation_labels, target_labels,
+                          num_samples, num_steps, guide, optim, burn_in_steps=0):
+
+    if isinstance(observation_labels, str):
+        observation_labels = [observation_labels]
+    if isinstance(target_labels, str):
+        target_labels = [target_labels]
+    loss_fn = _saddle_marginal_loss(model, guide, observation_labels, target_labels)
+
+    params = None
+    est_loss_history = []
+    xi_history = []
+    for step in range(num_steps):
+        if params is not None:
+            pyro.infer.util.zero_grads(params)
+        with poutine.trace(param_only=True) as param_capture:
+            d_loss, q_loss, eig_estimate = loss_fn(design, num_samples)
+        params = set(site["value"].unconstrained()
+                     for site in param_capture.trace.nodes.values())
+        if torch.isnan(d_loss) or torch.isnan(q_loss):
+            raise ArithmeticError("Encountered NaN loss in marginal_gradient_eig")
+        q_loss.backward(retain_graph=True)
+        optim(params)
+        if step > burn_in_steps:
+            (-d_loss).backward(retain_graph=True)
+            optim(params)
+        print(eig_estimate)
+        est_loss_history.append(eig_estimate)
+        xi_history.append(pyro.param('xi').detach().clone())
+        optim.step()
+        print(pyro.param("xi").squeeze())
+
+    xi_history.append(pyro.param('xi').detach().clone())
+
+    est_loss_history = torch.stack(est_loss_history)
+    xi_history = torch.stack(xi_history)
+
+    return xi_history, est_loss_history
+
+
 def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
@@ -160,7 +215,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         observation_sd = torch.tensor(.005)
         # Change the prior distribution here
         model_learn_xi = make_ces_model(torch.ones(1, 2), torch.ones(1, 3),
-                                        torch.ones(1), .001*torch.ones(1), observation_sd, xi_init=xi_init)
+                                        torch.ones(1), 3.*torch.ones(1), observation_sd, xi_init=xi_init)
         #model_learn_xi = make_ces_model(torch.tensor([[100., 100.]]), torch.tensor([[200., 300., 500.]]),
         #                                torch.tensor([1.5]), torch.tensor([.01]), observation_sd, xi_init=xi_init)
 
@@ -186,22 +241,32 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, 10, ["y"], ["rho", "alpha", "slope"])
             loss = neg_loss(eig_loss)
 
+        elif estimator == 'saddle-marginal':
+            guide = marginal_guide(0., 6., (1,), "y")
+
         else:
             raise ValueError("Unexpected estimator")
 
-        gamma = (end_lr/start_lr)**(1/num_steps)
+        gamma = (end_lr / start_lr) ** (1 / num_steps)
         scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                               'gamma': gamma})
 
         design_prototype = torch.zeros(1, 1, 6)  # this is annoying, code needs refactor
 
-        xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=100,
-                                                              num_steps=num_steps, optim=scheduler)
+        if estimator != 'saddle-marginal':
+            xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=10,
+                                                                  num_steps=num_steps, optim=scheduler)
+        else:
+            xi_history, est_loss_history = marginal_gradient_eig(
+                model_learn_xi, design_prototype, "y", ["rho", "alpha", "slope"], num_samples=100, num_steps=num_steps,
+                guide=guide, optim=scheduler, burn_in_steps=num_steps // 10)
 
         if estimator == 'posterior':
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, ["y"], est_loss_history, True, {})
-        else:
+        elif estimator in ['nce', 'nce-proposal', 'ace']:
             est_eig_history = -est_loss_history
+        else:
+            est_eig_history = est_loss_history
         # eig_history = semi_analytic_eig(xi_history, torch.tensor(0.), torch.tensor(0.25))
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,

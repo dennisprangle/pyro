@@ -96,9 +96,6 @@ def marginal_guide(mu_init, log_sigma_init, shape, label):
         log_sigma = pyro.param("marginal_log_sigma", log_sigma_init * torch.ones(*shape))
         ends = pyro.param("marginal_ends", 1./3 * torch.ones(*shape, 3),
                           constraint=torch.distributions.constraints.simplex)
-        # print('ends', ends)
-        # print('mu', mu)
-        # print('log_sigma', log_sigma)
         response_dist = dist.CensoredSigmoidNormalEnds(
             loc=mu, scale=torch.exp(log_sigma), upper_lim=1. - epsilon, lower_lim=epsilon,
             p0=ends[..., 0], p1=ends[..., 1], p2=ends[..., 2]

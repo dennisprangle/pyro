@@ -199,7 +199,7 @@ def _saddle_marginal_loss(model, guide, observation_labels, target_labels):
         terms = -sum(cond_trace.nodes[l]["log_prob"] for l in observation_labels)
 
         trace.compute_log_prob()
-        terms += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+        terms += sum(trace.nodes[l]["log_prob"] for l in observation_labels).detach()
         q_loss, eig_estimate = _safe_mean_terms(terms)
 
         # Calculate the score parts
