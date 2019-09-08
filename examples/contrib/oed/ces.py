@@ -300,13 +300,12 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                 constraint = torch.distributions.constraints.interval(1e-6, 100.)
                 xi_init = .01 + 99.99 * torch.rand((num_parallel, num_grad_acq, 1, design_dim))
                 pyro.param("xi", xi_init, constraint=constraint)
-                pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
+                #pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
 
                 model_learn_xi = make_learn_xi_model(model, xi_init, constraint)
                 design_prototype = torch.zeros(num_parallel, num_grad_acq, 1, 6)  # this is annoying, code needs refactor
 
                 if typ == 'posterior-grad':
-                    num_grad_steps = 4000
                     #posterior_guide.apply(weight_reset)
 
                     loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
@@ -316,18 +315,17 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                     scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                           'gamma': gamma})
                 elif typ == 'nce-grad':
-                    num_grad_steps = 4000
                     
                     eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                         model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
                         N=N, M=100, **kwargs)
                     loss = neg_loss(eig_loss)
-                    start_lr, end_lr = 0.01, 0.005
+                    start_lr, end_lr = 0.01, 0.001
                     gamma = (end_lr / start_lr) ** (1 / num_grad_steps)
                     scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                           'gamma': gamma})
 
-                ape = opt_eig_ape_loss(design_prototype, loss, num_samples=5, num_steps=num_grad_steps,
+                ape = opt_eig_ape_loss(design_prototype, loss, num_samples=500, num_steps=num_grad_steps,
                                        optim=scheduler, final_num_samples=500)
                 min_ape, d_star_index = torch.min(ape, dim=1)
                 logging.info('min loss {}'.format(min_ape))

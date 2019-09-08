@@ -66,10 +66,11 @@ def differentiable_nce_eig(model, design, observation_labels, target_labels=None
     marginal_log_probs = torch.cat([lexpand(conditional_lp, 1),
                                     sum(retrace.nodes[l]["log_prob"] for l in observation_labels)], dim=0)
     marginal_lp = marginal_log_probs.logsumexp(0) - math.log(M+1)
+    # marginal_log_probs = sum(retrace.nodes[l]["log_prob"] for l in observation_labels)
+    # marginal_lp = marginal_log_probs.logsumexp(0) - math.log(M)
 
     terms = conditional_lp - marginal_lp
     nce_part =  _safe_mean_terms(terms)[1]
-    print('nce', nce_part)
 
     # Calculate the score parts
     trace.compute_score_parts()
