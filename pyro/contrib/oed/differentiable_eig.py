@@ -178,3 +178,76 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
         return _safe_mean_terms(terms)
 
     return loss_fn
+
+
+def _saddle_marginal_loss(model, guide, observation_labels, target_labels):
+    """Marginal loss: to evaluate directly use `marginal_eig` setting `num_steps=0`."""
+
+    def loss_fn(design, num_particles, control_variate=0., **kwargs):
+        expanded_design = lexpand(design, num_particles)
+
+        # Sample from p(y | d)
+        trace = poutine.trace(model).get_trace(expanded_design)
+        y_dict = {l: trace.nodes[l]["value"] for l in observation_labels}
+
+        # Run through q(y | d)
+        conditional_guide = pyro.condition(guide, data=y_dict)
+        cond_trace = poutine.trace(conditional_guide).get_trace(
+            expanded_design, observation_labels, target_labels)
+        cond_trace.compute_log_prob()
+
+        terms = -sum(cond_trace.nodes[l]["log_prob"] for l in observation_labels)
+
+        trace.compute_log_prob()
+        terms += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+        q_loss, eig_estimate = _safe_mean_terms(terms)
+
+        # Calculate the score parts
+        trace.compute_score_parts()
+        prescore_function = sum(trace.nodes[l]["score_parts"][1] for l in observation_labels)
+        grad_terms = (terms.detach() - control_variate) * prescore_function
+
+        d_loss = _safe_mean_terms(grad_terms)[0]
+        return d_loss, q_loss, eig_estimate
+
+    return loss_fn
+
+
+def marginal_gradient_eig(model, design, observation_labels, target_labels,
+                          num_samples, num_steps, guide, optim,
+                          final_design=None, final_num_samples=None, burn_in_steps=0):
+
+    if isinstance(observation_labels, str):
+        observation_labels = [observation_labels]
+    if isinstance(target_labels, str):
+        target_labels = [target_labels]
+    loss_fn = _saddle_marginal_loss(model, guide, observation_labels, target_labels)
+
+    if final_design is None:
+        final_design = design
+    if final_num_samples is None:
+        final_num_samples = num_samples
+
+    params = None
+    for step in range(num_steps):
+        if params is not None:
+            pyro.infer.util.zero_grads(params)
+        with poutine.trace(param_only=True) as param_capture:
+            d_loss, q_loss, eig_estimate = loss_fn(design, num_samples)
+        params = set(site["value"].unconstrained()
+                     for site in param_capture.trace.nodes.values())
+        if torch.isnan(d_loss) or torch.isnan(q_loss):
+            raise ArithmeticError("Encountered NaN loss in marginal_gradient_eig")
+        q_loss.backward(retain_graph=True)
+        optim(params)
+        if step > burn_in_steps:
+            (-d_loss).backward(retain_graph=True)
+            optim(params)
+        try:
+            optim.step()
+        except AttributeError:
+            pass
+        logging.debug("{} {} {}".format(step, pyro.param("xi"), pyro.param("xi").shape))
+
+    _, _, eig_estimates = loss_fn(final_design, final_num_samples, evaluation=True)
+    return eig_estimates
