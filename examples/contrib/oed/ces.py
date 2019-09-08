@@ -187,10 +187,10 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
             pyro.set_rng_seed(seed)
         marginal_mu_init, marginal_log_sigma_init = 0., 6.
         oed_n_samples, oed_n_steps, oed_final_n_samples, oed_lr = 10, 1250, 2000, [0.1, 0.01, 0.001]
-        elbo_n_samples, elbo_n_steps, elbo_lr = 10, 1000, 0.04
+        elbo_n_samples, elbo_n_steps, elbo_lr = 10, 6000, 0.01
         num_acq = 50
         num_bo_steps = 4
-        num_grad_steps = 4000
+        num_grad_steps = 2000
         num_grad_acq = 1
         design_dim = 6
 
@@ -318,14 +318,14 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                     
                     eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                         model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
-                        N=N, M=100, **kwargs)
+                        N=N, M=50, **kwargs)
                     loss = neg_loss(eig_loss)
                     start_lr, end_lr = 0.01, 0.001
                     gamma = (end_lr / start_lr) ** (1 / num_grad_steps)
                     scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                           'gamma': gamma})
 
-                ape = opt_eig_ape_loss(design_prototype, loss, num_samples=500, num_steps=num_grad_steps,
+                ape = opt_eig_ape_loss(design_prototype, loss, num_samples=50, num_steps=num_grad_steps,
                                        optim=scheduler, final_num_samples=500)
                 min_ape, d_star_index = torch.min(ape, dim=1)
                 logging.info('min loss {}'.format(min_ape))

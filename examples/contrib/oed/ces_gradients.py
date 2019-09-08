@@ -11,7 +11,10 @@ import pyro
 import pyro.optim as optim
 import pyro.distributions as dist
 from pyro.contrib.util import iter_plates_to_shape, rexpand, rmv
-from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss
+from pyro.contrib.oed.differentiable_eig import (
+        _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss,
+        differentiable_nce_proposal_eig
+        )
 from pyro import poutine
 from pyro.contrib.oed.eig import _eig_from_ape
 from pyro.util import is_bad
@@ -52,6 +55,16 @@ def make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma
 
     return ces_model
 
+
+def proposal(design):
+
+        batch_shape = design.shape[:-2]
+        with ExitStack() as stack:
+            for plate in iter_plates_to_shape(batch_shape):
+                stack.enter_context(plate)
+            emission_dist = dist.CensoredSigmoidNormal(torch.tensor([0.]), torch.tensor([50.]), 1 - epsilon, epsilon).to_event(1)
+            pyro.sample("y", emission_dist)
+        
 
 class PosteriorGuide(nn.Module):
     def __init__(self):
@@ -146,10 +159,10 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         xi_init = 0.01 + 99.99 * torch.rand(6)
         observation_sd = torch.tensor(.005)
         # Change the prior distribution here
-        #model_learn_xi = make_ces_model(torch.ones(1, 2), torch.ones(1, 3),
-        #                                torch.ones(1), .001*torch.ones(1), observation_sd, xi_init=xi_init)
-        model_learn_xi = make_ces_model(torch.tensor([[1000., 1000.]]), torch.tensor([[20000., 3000., 5000.]]),
-                                        torch.tensor([1.5]), torch.tensor([.01]), observation_sd, xi_init=xi_init)
+        model_learn_xi = make_ces_model(torch.ones(1, 2), torch.ones(1, 3),
+                                        torch.ones(1), .001*torch.ones(1), observation_sd, xi_init=xi_init)
+        #model_learn_xi = make_ces_model(torch.tensor([[100., 100.]]), torch.tensor([[200., 300., 500.]]),
+        #                                torch.tensor([1.5]), torch.tensor([.01]), observation_sd, xi_init=xi_init)
 
         # Fix correct loss
         if estimator == 'posterior':
@@ -160,6 +173,12 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
                 N=N, M=100, **kwargs)
+            loss = neg_loss(eig_loss)
+
+        elif estimator == 'nce-proposal':
+            eig_loss = lambda d, N, **kwargs: differentiable_nce_proposal_eig(
+                    model=model_learn_xi, design=d, observation_labels=["y"], target_labels=['rho', 'alpha', 'slope'],
+                    proposal=proposal, N=N, M=100, **kwargs)
             loss = neg_loss(eig_loss)
 
         elif estimator == 'ace':
@@ -176,7 +195,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 
         design_prototype = torch.zeros(1, 1, 6)  # this is annoying, code needs refactor
 
-        xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=10,
+        xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=100,
                                                               num_steps=num_steps, optim=scheduler)
 
         if estimator == 'posterior':
