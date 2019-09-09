@@ -135,6 +135,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
             pyro.infer.util.zero_grads(params)
         with poutine.trace(param_only=True) as param_capture:
             agg_loss, loss = loss_fn(design, num_samples, evaluation=True, control_variate=baseline)
+        baseline = loss.detach()
         params = set(site["value"].unconstrained()
                      for site in param_capture.trace.nodes.values())
         if torch.isnan(agg_loss):
@@ -194,7 +195,7 @@ def marginal_gradient_eig(model, design, observation_labels, target_labels,
     return xi_history, est_loss_history
 
 
-def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
+def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, end_lr):
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
         experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
@@ -211,7 +212,8 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             seed = int(torch.rand(tuple()) * 2 ** 30)
             pyro.set_rng_seed(seed)
 
-        xi_init = 0.01 + 99.99 * torch.rand(6)
+        #xi_init = 0.01 + 99.99 * torch.rand(6)
+        xi_init = torch.ones(6)
         observation_sd = torch.tensor(.005)
         # Change the prior distribution here
         model_learn_xi = make_ces_model(torch.ones(1, 2), torch.ones(1, 3),
@@ -254,11 +256,11 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         design_prototype = torch.zeros(1, 1, 6)  # this is annoying, code needs refactor
 
         if estimator != 'saddle-marginal':
-            xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=10,
+            xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=num_samples,
                                                                   num_steps=num_steps, optim=scheduler)
         else:
             xi_history, est_loss_history = marginal_gradient_eig(
-                model_learn_xi, design_prototype, "y", ["rho", "alpha", "slope"], num_samples=10, num_steps=num_steps,
+                model_learn_xi, design_prototype, "y", ["rho", "alpha", "slope"], num_samples=num_samples, num_steps=num_steps,
                 guide=guide, optim=scheduler, burn_in_steps=num_steps // 10)
 
         if estimator == 'posterior':
@@ -279,6 +281,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a linear model")
     parser.add_argument("--num-steps", default=2000, type=int)
+    parser.add_argument("--num-samples", default=10, type=int)
     # parser.add_argument("--num-parallel", default=10, type=int)
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--estimator", default="posterior", type=str)
@@ -286,4 +289,4 @@ if __name__ == "__main__":
     parser.add_argument("--start-lr", default=0.01, type=float)
     parser.add_argument("--end-lr", default=0.0005, type=float)
     args = parser.parse_args()
-    main(args.num_steps, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)
+    main(args.num_steps, args.num_samples, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)
