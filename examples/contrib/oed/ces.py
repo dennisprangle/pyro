@@ -303,6 +303,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                 design_prototype = torch.zeros(num_parallel, num_grad_acq, 1, design_dim)  # this is annoying, code needs refactor
 
                 if typ == 'posterior-grad':
+
                     #posterior_guide.apply(weight_reset)
 
                     loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
@@ -331,7 +332,6 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                 results['min loss'] = min_ape
                 X = pyro.param("xi").detach().clone()
                 d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2)
-
 
             elif typ == 'rand':
                 d_star_design = .01 + 99.99 * torch.rand((num_parallel, 1, 1, design_dim))

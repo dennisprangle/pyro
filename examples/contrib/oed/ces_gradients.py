@@ -2,6 +2,7 @@ import torch
 from torch.distributions import constraints
 from torch import nn
 import argparse
+import math
 import subprocess
 import datetime
 import pickle
@@ -213,13 +214,15 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
             pyro.set_rng_seed(seed)
 
         #xi_init = 0.01 + 99.99 * torch.rand(6)
-        xi_init = torch.ones(6)
+        xi_init = torch.tensor([10., .1, .1, 10., .1, .1])
         observation_sd = torch.tensor(.005)
         # Change the prior distribution here
-        model_learn_xi = make_ces_model(torch.ones(1, 2), torch.ones(1, 3),
-                                        torch.ones(1), 3.*torch.ones(1), observation_sd, xi_init=xi_init)
-        #model_learn_xi = make_ces_model(torch.tensor([[100., 100.]]), torch.tensor([[200., 300., 500.]]),
-        #                                torch.tensor([1.5]), torch.tensor([.01]), observation_sd, xi_init=xi_init)
+        # model_learn_xi = make_ces_model(torch.ones(1, 2), torch.ones(1, 3),
+        #                                 torch.ones(1), 3.*torch.ones(1), observation_sd, xi_init=xi_init)
+        model_learn_xi = make_ces_model(torch.tensor([[1., 1.]]), torch.tensor([[184., 247., 418.]]),
+                                       torch.tensor([2.32]), torch.tensor([.0148]), observation_sd, xi_init=xi_init)
+
+        contrastive_samples = num_samples ** 2
 
         # Fix correct loss
         if estimator == 'posterior':
@@ -229,18 +232,19 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
         elif estimator == 'nce':
             eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
-                N=N, M=100, **kwargs)
+                N=N, M=contrastive_samples, **kwargs)
             loss = neg_loss(eig_loss)
 
         elif estimator == 'nce-proposal':
             eig_loss = lambda d, N, **kwargs: differentiable_nce_proposal_eig(
                     model=model_learn_xi, design=d, observation_labels=["y"], target_labels=['rho', 'alpha', 'slope'],
-                    proposal=proposal, N=N, M=100, **kwargs)
+                    proposal=proposal, N=N, M=contrastive_samples, **kwargs)
             loss = neg_loss(eig_loss)
 
         elif estimator == 'ace':
             guide = PosteriorGuide()
-            eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, 10, ["y"], ["rho", "alpha", "slope"])
+            eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"],
+                                                    ["rho", "alpha", "slope"])
             loss = neg_loss(eig_loss)
 
         elif estimator == 'saddle-marginal':

@@ -30,11 +30,11 @@ S = 3
 
 
 def upper_lower(array):
-    # centre = array.mean(1)
-    # se = array.std(1)/np.sqrt(array.shape[1])
-    # upper, lower = centre + se, centre - se
-    # return lower, centre, upper
-    return np.percentile(array, 75, axis=1), np.percentile(array, 50, axis=1), np.percentile(array, 25, axis=1)
+    centre = array.mean(1)
+    se = array.std(1)/np.sqrt(array.shape[1])
+    upper, lower = centre + se, centre - se
+    return lower, centre, upper
+    # return np.percentile(array, 75, axis=1), np.percentile(array, 50, axis=1), np.percentile(array, 25, axis=1)
 
 
 def rlogdet(M):
@@ -74,6 +74,7 @@ def main(fnames, findices, plot):
             try:
                 while True:
                     results = pickle.load(results_file)
+                    print(results['design_time'])
                     # Compute entropy and L2 distance to the true fixed effects
                     if 'rho0' in results:
                         rho0, rho1, alpha_concentration = results['rho0'], results['rho1'], results['alpha_concentration']
