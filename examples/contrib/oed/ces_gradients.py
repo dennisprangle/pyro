@@ -21,7 +21,7 @@ from pyro.util import is_bad
 
 
 # TODO read from torch float spec
-epsilon = torch.tensor(2**-24)
+epsilon = torch.tensor(2**-22)
 
 
 def get_git_revision_hash():
@@ -258,7 +258,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
                                                                   num_steps=num_steps, optim=scheduler)
         else:
             xi_history, est_loss_history = marginal_gradient_eig(
-                model_learn_xi, design_prototype, "y", ["rho", "alpha", "slope"], num_samples=100, num_steps=num_steps,
+                model_learn_xi, design_prototype, "y", ["rho", "alpha", "slope"], num_samples=10, num_steps=num_steps,
                 guide=guide, optim=scheduler, burn_in_steps=num_steps // 10)
 
         if estimator == 'posterior':

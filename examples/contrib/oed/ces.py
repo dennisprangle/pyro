@@ -23,7 +23,7 @@ from pyro.util import is_bad
 
 
 # TODO read from torch float spec
-epsilon = torch.tensor(2**-24)
+epsilon = torch.tensor(2**-22)
 
 
 def get_git_revision_hash():
