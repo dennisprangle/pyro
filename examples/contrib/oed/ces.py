@@ -187,8 +187,8 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         elbo_n_samples, elbo_n_steps, elbo_lr = 10, 1000, 0.04
         num_acq = 50
         num_bo_steps = 4
-        num_grad_steps = 2000
-        num_grad_acq = 50
+        grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 12, 2000, 0.0025, 0.00025
+        num_grad_acq = 5
         design_dim = 6
 
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
@@ -295,11 +295,12 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
             elif typ in ['posterior-grad', 'nce-grad']:
                 constraint = torch.distributions.constraints.interval(1e-6, 100.)
-                xi_init = .01 + 99.99 * torch.rand((num_parallel, num_grad_acq, 1, design_dim))
-                pyro.param("xi", xi_init[:, [0], ...], constraint=constraint)
+                xi_init = .01 + 99.99 * torch.rand((num_parallel, num_grad_acq, 1, design_dim // 2))
+                xi_init = torch.cat([xi_init, xi_init], dim=-1)
+                pyro.param("xi", xi_init, constraint=constraint)
 
                 model_learn_xi = make_learn_xi_model(model, xi_init, constraint)
-                design_prototype = torch.zeros(num_parallel, 1, 1, 6)  # this is annoying, code needs refactor
+                design_prototype = torch.zeros(num_parallel, num_grad_acq, 1, design_dim)  # this is annoying, code needs refactor
 
                 if typ == 'posterior-grad':
                     #posterior_guide.apply(weight_reset)
@@ -307,28 +308,23 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                     loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
                     start_lr, end_lr = 0.01, 0.0005
-                    gamma = (end_lr / start_lr) ** (1 / num_grad_steps)
+                    gamma = (end_lr / start_lr) ** (1 / grad_n_steps)
                     scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                           'gamma': gamma})
                 elif typ == 'nce-grad':
 
-                    _, nce_on_init = nce_eig(model_learn_xi, xi_init, "y", ["rho", "alpha", "slope"], N=500, M=50)
-                    max_nce, idx = torch.max(nce_on_init, dim=1)
-                    small_init = xi_init[torch.arange(num_parallel), idx, ...].unsqueeze(-2)
-                    logging.info("Initializing gradient method at {}".format(small_init.squeeze()))
-
-                    pyro.get_param_store().replace_param("xi", small_init, pyro.param("xi"))
+                    pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
 
                     eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                         model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
-                        N=N, M=10, **kwargs)
+                        N=N, M=grad_n_samples ** 2, **kwargs)
                     loss = neg_loss(eig_loss)
-                    start_lr, end_lr = 0.04, 0.004
-                    gamma = (end_lr / start_lr) ** (1 / num_grad_steps)
+                    start_lr, end_lr = grad_start_lr, grad_end_lr
+                    gamma = (end_lr / start_lr) ** (1 / grad_n_steps)
                     scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                           'gamma': gamma})
 
-                ape = opt_eig_ape_loss(design_prototype, loss, num_samples=100, num_steps=num_grad_steps,
+                ape = opt_eig_ape_loss(design_prototype, loss, num_samples=grad_n_samples, num_steps=grad_n_steps,
                                        optim=scheduler, final_num_samples=500)
                 min_ape, d_star_index = torch.min(ape, dim=1)
                 logging.info('min loss {}'.format(min_ape))
