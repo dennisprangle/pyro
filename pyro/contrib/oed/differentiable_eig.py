@@ -31,13 +31,15 @@ def _differentiable_posterior_loss(model, guide, observation_labels, target_labe
         cond_trace.compute_log_prob()
 
         terms = -sum(cond_trace.nodes[l]["log_prob"] for l in target_labels)
+        ape_estimate = _safe_mean_terms(terms)[1]
 
         # Calculate the score parts
         trace.compute_score_parts()
         prescore_function = sum(trace.nodes[l]["score_parts"][1] for l in observation_labels)
-        terms += (terms.detach() - control_variate) * prescore_function
+        grad_terms = terms + (terms.detach() - control_variate) * prescore_function
 
-        return _safe_mean_terms(terms)
+        surrogate_loss = _safe_mean_terms(grad_terms)[0]
+        return surrogate_loss, ape_estimate
 
     return loss_fn
 

@@ -17,6 +17,7 @@ import pyro.optim as optim
 import pyro.poutine as poutine
 from pyro.contrib.oed.eig import _eig_from_ape
 from pyro.contrib.oed.eig import _posterior_loss
+from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss
 from pyro.contrib.util import rmv, iter_plates_to_shape, lexpand, rvv, rexpand
 
 
@@ -49,17 +50,14 @@ def make_model(prior_mean, prior_covariance, ec_votes_tensor):
     def model(design_prototype):
         polling_allocation = pyro.param('xi', xi_init, constraint=constraints.positive)
         polling_allocation = polling_allocation * 1000 / polling_allocation.sum(-1)
-        polling_allocation.expand(design_prototype.shape)
+        polling_allocation = polling_allocation.expand(design_prototype.shape)
 
         with ExitStack() as stack:
             for plate in iter_plates_to_shape(polling_allocation.shape[:-1]):
                 stack.enter_context(plate)
             theta = pyro.sample("theta", dist.MultivariateNormal(prior_mean, covariance_matrix=prior_covariance))
-            theta = torch.sigmoid(theta)
-            mean = polling_allocation * theta
-            sd = torch.sqrt(polling_allocation * theta * (1. - theta))
-            poll_results = pyro.sample("y", dist.Normal(mean, sd).to_event(1))
-            dem_win_state = (theta > 0.5).float()
+            poll_results = pyro.sample("y", dist.Binomial(polling_allocation, logits=theta).to_event(1))
+            dem_win_state = (theta > 0.).float()
             dem_electoral_college_votes = ec_votes_tensor * dem_win_state
             dem_win = (dem_electoral_college_votes.sum(-1) / ec_votes_tensor.sum(-1) > .5).float()
             pyro.sample("w", dist.Delta(dem_win))
@@ -155,7 +153,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         # Fix correct loss
         if estimator == 'posterior':
             guide = OutcomePredictor()
-            loss = _posterior_loss(model, guide, ["y"], ["w"])
+            loss = _differentiable_posterior_loss(model, guide, ["y"], ["w"])
 
         # elif estimator == 'nce':
         #     eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
@@ -192,7 +190,6 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
                                          "State": frame.index}).set_index("State")
         print(final_allocation)
 
-
         with open(results_file, 'wb') as f:
             pickle.dump(results, f)
 
@@ -205,6 +202,6 @@ if __name__ == "__main__":
     parser.add_argument("--estimator", default="posterior", type=str)
     parser.add_argument("--seed", default=-1, type=int)
     parser.add_argument("--start-lr", default=0.001, type=float)
-    parser.add_argument("--end-lr", default=0.0001, type=float)
+    parser.add_argument("--end-lr", default=0.00001, type=float)
     args = parser.parse_args()
     main(args.num_steps, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)
