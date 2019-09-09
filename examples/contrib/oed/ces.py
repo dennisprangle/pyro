@@ -187,7 +187,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         elbo_n_samples, elbo_n_steps, elbo_lr = 10, 1000, 0.04
         num_acq = 50
         num_bo_steps = 4
-        grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 12, 2000, 0.0025, 0.00025
+        grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 10, 1000, 0.0025, 0.00025
         num_grad_acq = 5
         design_dim = 6
 
