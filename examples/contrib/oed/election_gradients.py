@@ -114,7 +114,8 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         xi_history.append(pyro.param('xi').detach().clone())
         optim(params)
         optim.step()
-        print(pyro.param("xi"))
+        print("Design:", pyro.param("xi").squeeze())
+        print("EIG estimate:", loss.squeeze())
 
     xi_history.append(pyro.param('xi').detach().clone())
 
