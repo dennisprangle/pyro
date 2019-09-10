@@ -35,10 +35,11 @@ def prepare_prior_from_data():
     as_tensor = torch.tensor(frame.values, dtype=torch.float)
     logits = torch.log(as_tensor[..., idx] / as_tensor[..., idx + 1]).transpose(0, 1)
     mean = logits.mean(0)
-    sample_covariance = (1 / (logits.shape[0] - 1)) * (
-            (logits.unsqueeze(-1) - mean) * (logits.unsqueeze(-2) - mean)
-    ).sum(0)
-    prior_covariance = sample_covariance + 0.01 * torch.eye(sample_covariance.shape[0])
+    # sample_covariance = (1 / (logits.shape[0] - 1)) * (
+    #         (logits.unsqueeze(-1) - mean) * (logits.unsqueeze(-2) - mean)
+    # ).sum(0)
+    # prior_covariance = sample_covariance + 0.01 * torch.eye(sample_covariance.shape[0])
+    prior_covariance = 0.05 * torch.eye(mean.shape[-1]) + 0.02 * torch.ones(mean.shape[-1], mean.shape[-1])
 
     return prior_mean, prior_covariance, ec_votes_tensor, frame
 
