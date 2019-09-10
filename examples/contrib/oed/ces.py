@@ -1,7 +1,6 @@
 import torch
 from torch.distributions import transform_to
 from torch import nn
-from torch._jit_internal import weak_module, weak_script_method
 import argparse
 import subprocess
 import datetime
@@ -106,7 +105,6 @@ def marginal_guide(mu_init, log_sigma_init, shape, label):
     return guide
 
 
-@weak_module
 class TensorLinear(nn.Module):
 
     __constants__ = ['bias']
@@ -130,7 +128,6 @@ class TensorLinear(nn.Module):
             bound = 1 / math.sqrt(fan_in)
             nn.init.uniform_(self.bias, -bound, bound)
 
-    @weak_script_method
     def forward(self, input):
         return rmv(input, self.weight) + self.bias
 
