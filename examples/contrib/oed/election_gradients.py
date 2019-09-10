@@ -72,12 +72,14 @@ class OutcomePredictor(nn.Module):
         super().__init__()
         self.lin1 = nn.Linear(51, 256)
         self.lin2 = nn.Linear(256, 256)
-        self.lin3 = nn.Linear(256, 1)
+        self.lin3 = nn.Linear(256, 256)
+        self.out_layer = nn.Linear(256, 1)
 
     def compute_dem_probability(self, y):
         y = nn.functional.relu(self.lin1(y))
         y = nn.functional.relu(self.lin2(y))
-        return self.lin3(y)
+        y = nn.functional.relu(self.lin3(y))
+        return self.out_layer(y)
 
     def forward(self, y_dict, design, observation_labels, target_labels):
         pyro.module("posterior_guide", self)
@@ -115,7 +117,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         optim(params)
         optim.step()
         print("Design:", pyro.param("xi").squeeze())
-        print("EIG estimate:", loss.squeeze())
+        print("APE estimate:", loss.squeeze())
 
     xi_history.append(pyro.param('xi').detach().clone())
 
