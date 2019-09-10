@@ -1,11 +1,13 @@
 import torch
 from torch.distributions import transform_to
 from torch import nn
+from torch._jit_internal import weak_module, weak_script_method
 import argparse
 import subprocess
 import datetime
 import pickle
 import time
+import math
 import os
 from functools import partial
 from contextlib import ExitStack
@@ -104,16 +106,44 @@ def marginal_guide(mu_init, log_sigma_init, shape, label):
     return guide
 
 
-class PosteriorGuide(nn.Module):
-    def __init__(self):
-        super(PosteriorGuide, self).__init__()
-        self.linear1 = nn.Linear(1, 256)
-        self.linear2 = nn.Linear(256, 256)
-        self.rho_concentration = nn.Linear(256, 2)
-        self.alpha_concentration = nn.Linear(256, 3)
-        self.slope_mu = nn.Linear(256, 1)
-        self.slope_sigma = nn.Linear(256, 1)
+@weak_module
+class TensorLinear(nn.Module):
 
+    __constants__ = ['bias']
+
+    def __init__(self, *shape, bias=True):
+        super(TensorLinear, self).__init__()
+        self.in_features = shape[-2]
+        self.out_features = shape[-1]
+        self.batch_dims = shape[:-2]
+        self.weight = nn.Parameter(torch.Tensor(*shape))
+        if bias:
+            self.bias = nn.Parameter(torch.Tensor(*self.batch_dims, self.out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / math.sqrt(fan_in)
+            nn.init.uniform_(self.bias, -bound, bound)
+
+    @weak_script_method
+    def forward(self, input):
+        return rmv(input, self.weight) + self.bias
+
+
+class PosteriorGuide(nn.Module):
+    def __init__(self, batch_shape):
+        super(PosteriorGuide, self).__init__()
+        self.linear1 = TensorLinear(*batch_shape, 1, 256)
+        self.linear2 = TensorLinear(*batch_shape, 256, 256)
+        self.rho_concentration = TensorLinear(*batch_shape, 256, 2)
+        self.alpha_concentration = TensorLinear(*batch_shape, 256, 3)
+        self.slope_mu = TensorLinear(*batch_shape, 256, 1)
+        self.slope_sigma = TensorLinear(*batch_shape, 256, 1)
         self.softplus = nn.Softplus()
 
     def forward(self, y_dict, design_prototype, observation_labels, target_labels):
@@ -192,7 +222,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         design_dim = 6
 
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
-        posterior_guide = PosteriorGuide()
+        posterior_guide = PosteriorGuide((num_parallel, num_grad_acq))
 
         prior = make_ces_model(torch.ones(num_parallel, 1, 2), torch.ones(num_parallel, 1, 3),
                                torch.ones(num_parallel, 1), 3.*torch.ones(num_parallel, 1), observation_sd)
