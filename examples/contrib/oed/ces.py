@@ -187,8 +187,8 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         elbo_n_samples, elbo_n_steps, elbo_lr = 10, 1000, 0.04
         num_acq = 50
         num_bo_steps = 4
-        grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 10, 1000, 0.0025, 0.00025
-        num_grad_acq = 5
+        grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 9, 1000, 0.0025, 0.00025
+        num_grad_acq = 8
         design_dim = 6
 
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
@@ -305,10 +305,11 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                 if typ == 'posterior-grad':
 
                     #posterior_guide.apply(weight_reset)
+                    pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
 
                     loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
-                    start_lr, end_lr = 0.01, 0.0005
+                    start_lr, end_lr = grad_start_lr, grad_end_lr
                     gamma = (end_lr / start_lr) ** (1 / grad_n_steps)
                     scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                           'gamma': gamma})

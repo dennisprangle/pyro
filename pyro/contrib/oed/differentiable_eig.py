@@ -27,21 +27,16 @@ def _differentiable_posterior_loss(model, guide, observation_labels, target_labe
             y_dict, expanded_design, observation_labels, target_labels)
         cond_trace.compute_log_prob()
 
-        logging.debug(str([(l, is_bad(cond_trace.nodes[l]["log_prob"])) for l in target_labels]))
-        logging.debug(str(([(l, is_bad(cond_trace.nodes[l]["log_prob"])) for l in target_labels])))
-        logging.debug(str(([(l, cond_trace.nodes[l]["log_prob"]) for l in target_labels])))
         terms = -sum(cond_trace.nodes[l]["log_prob"] for l in target_labels)
-        # print(torch.isnan(terms).any())
+        ape_estimate = _safe_mean_terms(terms)[1]
 
         # Calculate the score parts
         trace.compute_score_parts()
         prescore_function = sum(trace.nodes[l]["score_parts"][1] for l in observation_labels)
-        logging.debug('prescore {}'.format(is_bad(prescore_function)))
         terms += (terms.detach() - control_variate) * prescore_function
 
-        result = _safe_mean_terms(terms)
-        logging.debug("loss {}".format(result[0]))
-        return result
+        result = _safe_mean_terms(terms)[0]
+        return result, ape_estimate
 
     return loss_fn
 
