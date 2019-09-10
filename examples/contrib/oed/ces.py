@@ -114,7 +114,7 @@ class TensorLinear(nn.Module):
         self.in_features = shape[-2]
         self.out_features = shape[-1]
         self.batch_dims = shape[:-2]
-        self.weight = nn.Parameter(torch.Tensor(*shape))
+        self.weight = nn.Parameter(torch.Tensor(*self.batch_dims, self.out_features, self.in_features))
         if bias:
             self.bias = nn.Parameter(torch.Tensor(*self.batch_dims, self.out_features))
         else:
@@ -129,7 +129,7 @@ class TensorLinear(nn.Module):
             nn.init.uniform_(self.bias, -bound, bound)
 
     def forward(self, input):
-        return rmv(input, self.weight) + self.bias
+        return rmv(self.weight, input) + self.bias
 
 
 class PosteriorGuide(nn.Module):
