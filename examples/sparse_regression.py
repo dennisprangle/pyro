@@ -8,9 +8,9 @@ import math
 import pyro
 import pyro.distributions as dist
 from pyro import poutine
-from pyro.contrib.autoguide import AutoDelta
+from pyro.infer.autoguide import AutoDelta
 from pyro.infer import Trace_ELBO
-from pyro.contrib.autoguide.initialization import init_to_median
+from pyro.infer.autoguide import init_to_median
 
 from torch.optim import Adam
 
@@ -126,7 +126,7 @@ def compute_posterior_stats(X, Y, msq, lam, eta1, xisq, c, var_obs, jitter=1.0e-
     std = ((var * vec.unsqueeze(-1)).sum(-2) * vec.unsqueeze(-1)).sum(-2).clamp(min=0.0).sqrt()
 
     # select active dimensions (those that are non-zero with sufficient statistical significance)
-    active_dims = (((mu - 4.0 * std) > 0.0) | ((mu + 4.0 * std) < 0.0)).byte()
+    active_dims = (((mu - 4.0 * std) > 0.0) | ((mu + 4.0 * std) < 0.0)).bool()
     active_dims = active_dims.nonzero().squeeze(-1)
 
     print("Identified the following active dimensions:", active_dims.data.numpy().flatten())
@@ -164,7 +164,7 @@ def compute_posterior_stats(X, Y, msq, lam, eta1, xisq, c, var_obs, jitter=1.0e-
     var = var.reshape(left_dims.size(0), 4, left_dims.size(0), 4).diagonal(dim1=-4, dim2=-2)
     std = ((var * vec.unsqueeze(-1)).sum(-2) * vec.unsqueeze(-1)).sum(-2).clamp(min=0.0).sqrt()
 
-    active_quad_dims = (((mu - 4.0 * std) > 0.0) | ((mu + 4.0 * std) < 0.0)) & (mu.abs() > 1.0e-4).byte()
+    active_quad_dims = (((mu - 4.0 * std) > 0.0) | ((mu + 4.0 * std) < 0.0)) & (mu.abs() > 1.0e-4).bool()
     active_quad_dims = active_quad_dims.nonzero()
 
     active_quadratic_dims = np.stack([left_dims[active_quad_dims].data.numpy().flatten(),
@@ -306,7 +306,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    assert pyro.__version__.startswith('0.3.4')
+    assert pyro.__version__.startswith('0.4.1')
     parser = argparse.ArgumentParser(description='Krylov KIT')
     parser.add_argument('--num-data', type=int, default=750)
     parser.add_argument('--num-steps', type=int, default=1000)

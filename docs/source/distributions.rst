@@ -189,6 +189,13 @@ SpanningTree
     :undoc-members:
     :show-inheritance:
 
+Unit
+----
+.. autoclass:: pyro.distributions.Unit
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 VonMises
 --------
 .. autoclass:: pyro.distributions.VonMises
@@ -199,6 +206,13 @@ VonMises
 VonMises3D
 ----------
 .. autoclass:: pyro.distributions.VonMises3D
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+ZeroInflatedPoisson
+-------------------
+.. autoclass:: pyro.distributions.ZeroInflatedPoisson
     :members:
     :undoc-members:
     :show-inheritance:
