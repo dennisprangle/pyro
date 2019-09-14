@@ -18,7 +18,7 @@ import pyro.distributions as dist
 from pyro.contrib.util import iter_plates_to_shape, lexpand, rexpand, rmv
 from pyro.contrib.oed.eig import marginal_eig, elbo_learn, nmc_eig, nce_eig
 import pyro.contrib.gp as gp
-from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_nce_eig
+from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss
 from pyro.contrib.oed.eig import opt_eig_ape_loss
 from pyro.util import is_bad
 
@@ -135,16 +135,19 @@ class TensorLinear(nn.Module):
 class PosteriorGuide(nn.Module):
     def __init__(self, batch_shape):
         super(PosteriorGuide, self).__init__()
-        self.linear1 = TensorLinear(*batch_shape, 1, 256)
-        self.linear2 = TensorLinear(*batch_shape, 256, 256)
-        self.rho_concentration = TensorLinear(*batch_shape, 256, 2)
-        self.alpha_concentration = TensorLinear(*batch_shape, 256, 3)
-        self.slope_mu = TensorLinear(*batch_shape, 256, 1)
-        self.slope_sigma = TensorLinear(*batch_shape, 256, 1)
+        n_hidden = 64
+        self.linear1 = TensorLinear(*batch_shape, 1, n_hidden)
+        self.linear2 = TensorLinear(*batch_shape, n_hidden, n_hidden)
+        self.rho_concentration = TensorLinear(*batch_shape, n_hidden, 2)
+        self.alpha_concentration = TensorLinear(*batch_shape, n_hidden, 3)
+        self.slope_mu = TensorLinear(*batch_shape, n_hidden, 1)
+        self.slope_sigma = TensorLinear(*batch_shape, n_hidden, 1)
         self.softplus = nn.Softplus()
 
-    def forward(self, y_dict, design_prototype, observation_labels, target_labels):
+    def forward(self, y_dict, design_prototype, observation_labels, target_labels, t=0):
+        import time
         y = y_dict["y"]
+        print(y.shape)
         y, y1m = y.clamp(1e-35, 1), (1. - y).clamp(1e-35, 1)
         s = y.log() - y1m.log()
         x = self.softplus(self.linear1(s))
@@ -156,6 +159,7 @@ class PosteriorGuide(nn.Module):
 
         logging.debug("rho_concentration {} alpha concentration {}".format(rho_concentration, alpha_concentration))
         logging.debug("slope mu {} sigma {}".format(slope_mu, slope_sigma))
+        print('forward through network', time.time() - t)
         
         pyro.module("posterior_guide", self)
 
@@ -320,7 +324,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                 results['max EIG'] = max_eig
                 d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2).unsqueeze(-2)
 
-            elif typ in ['posterior-grad', 'nce-grad']:
+            elif typ in ['posterior-grad', 'nce-grad', 'ace-grad']:
                 constraint = torch.distributions.constraints.interval(1e-6, 100.)
                 xi_init = .01 + 99.99 * torch.rand((num_parallel, num_grad_acq, 1, design_dim // 2))
                 xi_init = torch.cat([xi_init, xi_init], dim=-1)
@@ -348,6 +352,17 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                         model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
                         N=N, M=grad_n_samples ** 2, **kwargs)
                     loss = neg_loss(eig_loss)
+                    start_lr, end_lr = grad_start_lr, grad_end_lr
+                    gamma = (end_lr / start_lr) ** (1 / grad_n_steps)
+                    scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
+                                                          'gamma': gamma})
+
+                elif typ == 'ace-grad':
+
+                    pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
+
+                    loss = _differentiable_ace_eig_loss(model_learn_xi, posterior_guide, grad_n_samples ** 2,
+                            ["y"], ["rho", "alpha", "slope"])
                     start_lr, end_lr = grad_start_lr, grad_end_lr
                     gamma = (end_lr / start_lr) ** (1 / grad_n_steps)
                     scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},

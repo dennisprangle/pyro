@@ -632,8 +632,7 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
     params = None
     history = []
     for step in range(num_steps):
-        if step % 100 == 0:
-            print(step)
+        print(step)
         if params is not None:
             pyro.infer.util.zero_grads(params)
         with poutine.trace(param_only=True) as param_capture:
@@ -650,6 +649,7 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
             optim.step()
         except AttributeError:
             pass
+        #print(pyro.param("xi").detach().squeeze())
 
     _, loss = loss_fn(final_design, final_num_samples, evaluation=True)
     if return_history:

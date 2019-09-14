@@ -119,34 +119,45 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
         N = num_particles
         expanded_design = lexpand(design, N)
 
+        import time
+        t = time.time()
         # Sample from p(y, theta | d)
+        print('start')
         trace = poutine.trace(model).get_trace(expanded_design)
         y_dict_exp = {l: lexpand(trace.nodes[l]["value"], M) for l in observation_labels}
         y_dict = {l: trace.nodes[l]["value"] for l in observation_labels}
         theta_dict = {l: trace.nodes[l]["value"] for l in target_labels}
+        print('first sample', time.time() - t)
 
         trace.compute_log_prob()
         marginal_terms_cross = sum(trace.nodes[l]["log_prob"] for l in target_labels)
         marginal_terms_cross += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+        print('calculate lp', time.time() - t)
 
+        
         reguide_trace = poutine.trace(pyro.condition(guide, data=theta_dict)).get_trace(
-            y_dict, expanded_design, observation_labels, target_labels
+            y_dict, expanded_design, observation_labels, target_labels, t=t
         )
+        print('reguide', time.time() - t)
         reguide_trace.compute_log_prob()
         marginal_terms_cross -= sum(reguide_trace.nodes[l]["log_prob"] for l in target_labels)
+        print('reguide lp', time.time() - t)
 
         # Sample M times from q(theta | y, d) for each y
         reexpanded_design = lexpand(expanded_design, M)
         guide_trace = poutine.trace(guide).get_trace(
-            y_dict_exp, reexpanded_design, observation_labels, target_labels
+            y_dict, reexpanded_design, observation_labels, target_labels, t=t
         )
+        print('guide', time.time() - t)
         theta_y_dict = {l: guide_trace.nodes[l]["value"] for l in target_labels}
         theta_y_dict.update(y_dict_exp)
         guide_trace.compute_log_prob()
+        print('guide lp', time.time() - t)
 
         # Re-run that through the model to compute the joint
         model_trace = poutine.trace(pyro.condition(model, data=theta_y_dict)).get_trace(reexpanded_design)
         model_trace.compute_log_prob()
+        print('model log prob again', time.time() - t)
 
         marginal_terms_proposal = -sum(guide_trace.nodes[l]["log_prob"] for l in target_labels)
         marginal_terms_proposal += sum(model_trace.nodes[l]["log_prob"] for l in target_labels)
@@ -156,6 +167,7 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
         terms = -marginal_terms.logsumexp(0) + math.log(M + 1)
 
         terms += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+        print('got eig', time.time() -t)
 
         # Calculate the score parts
         trace.compute_score_parts()
@@ -169,6 +181,7 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
         # prescore_function += guide_score_component
 
         terms += (terms.detach() - control_variate) * prescore_function
+        print('add prescore', time.time() -t)
 
         return _safe_mean_terms(terms)
 
