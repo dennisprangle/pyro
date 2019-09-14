@@ -25,6 +25,8 @@ def get_git_revision_hash():
 
 N = 10
 xi_init = 0.1*torch.ones(2)
+prior_mean = torch.tensor(0.)
+prior_sd = torch.tensor(1.0)
 
 
 @lru_cache(5)
@@ -57,6 +59,107 @@ def semi_analytic_eig(design, prior_mean, prior_sd, n_samples=1000):
     marginal = likelihoods.logsumexp(-2, keepdim=True) - math.log(n_samples)
     kls = (likelihoods.exp() * (likelihoods - marginal)).sum(-1)
     return kls.mean(-1)
+
+
+def summed_nce_loss(prior_mean, prior_sd):
+    def loss(design_placeholder, num_samples=1000, control_variate=0., **kwargs):
+        design = pyro.param('xi', xi_init, constraint=constraints.positive)
+        with pyro.plate("plate0", num_samples):
+            samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
+
+        lp1m1 = -(samples * design[..., [0]]).unsqueeze(-1)
+        lp2m1 = -(samples * design[..., [1]]).unsqueeze(-1)
+
+        def log_prob(lp1m1, lp2m1):
+            lp1 = (1 - lp1m1.exp()).log()
+            lp2 = (1 - lp2m1.exp()).log()
+
+            y = make_y_space(N)
+            log_prob_y = torch.lgamma(torch.tensor(N + 1, dtype=torch.float)) - torch.lgamma(y[:, 0] + 1) - torch.lgamma(y[:, 1] + 1) \
+                         - torch.lgamma(N - y.sum(-1) + 1) + y[:, 0] * lp1 + y[:, 1] * lp2 + (N - y[:, 0]) * lp1m1 \
+                         + (N - y[:, 0] - y[:, 1]) * lp2m1
+            return log_prob_y
+
+        likelihoods = log_prob(lp1m1, lp2m1)
+        marginal = likelihoods.logsumexp(-2, keepdim=True) - math.log(num_samples)
+        eig_estimate = (likelihoods.exp() * (likelihoods - marginal)).sum(-1).mean(-1)
+        surrogate_loss = (likelihoods.exp() * (likelihoods - marginal - control_variate).detach()).sum(-1).mean(-1).sum()
+        return surrogate_loss, eig_estimate
+    return loss
+
+
+def summed_posterior_loss(prior_mean, prior_sd):
+    def loss(design_placeholder, num_samples=1000, control_variate=0., **kwargs):
+        design = pyro.param('xi', xi_init, constraint=constraints.positive)
+        with pyro.plate("plate0", num_samples):
+            samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
+
+        lp1m1 = -(samples * design[..., [0]]).unsqueeze(-1)
+        lp2m1 = -(samples * design[..., [1]]).unsqueeze(-1)
+
+        def log_prob(lp1m1, lp2m1):
+            lp1 = (1 - lp1m1.exp()).log()
+            lp2 = (1 - lp2m1.exp()).log()
+
+            y = make_y_space(N)
+            log_prob_y = torch.lgamma(torch.tensor(N + 1, dtype=torch.float)) - torch.lgamma(y[:, 0] + 1) - torch.lgamma(y[:, 1] + 1) \
+                         - torch.lgamma(N - y.sum(-1) + 1) + y[:, 0] * lp1 + y[:, 1] * lp2 + (N - y[:, 0]) * lp1m1 \
+                         + (N - y[:, 0] - y[:, 1]) * lp2m1
+            return log_prob_y
+
+        likelihoods = log_prob(lp1m1, lp2m1)
+        posterior_mean = pyro.param("q_mean", prior_mean.clone().expand(66))
+        posterior_sd = pyro.param("q_sd", prior_sd.clone().expand(66), constraint=constraints.positive)
+        q_dist = dist.LogNormal(posterior_mean, posterior_sd)
+        qlp = q_dist.log_prob(samples.unsqueeze(-1).expand(num_samples, 66))
+        eig_estimate = -(likelihoods.exp() * qlp).sum(-1).mean(-1)
+        surrogate_loss = -(likelihoods.exp() * (qlp - control_variate)).sum(-1).mean(-1).sum()
+        return surrogate_loss, eig_estimate
+    return loss
+
+
+def summed_ace_loss(prior_mean, prior_sd):
+    def loss(design_placeholder, num_samples=1000, control_variate=0., **kwargs):
+        design = pyro.param('xi', xi_init, constraint=constraints.positive)
+        posterior_mean = pyro.param("q_mean", prior_mean.clone().expand(66))
+        posterior_sd = 1e-6 + pyro.param("q_sd", prior_sd.clone().expand(66), constraint=constraints.positive)
+        with pyro.plate("plate0", num_samples):
+            samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
+            contrastive_samples = pyro.sample("b_contrast", dist.LogNormal(posterior_mean, posterior_sd).to_event(1))
+
+        lp1m1 = -(samples * design[..., [0]]).unsqueeze(-1)
+        lp2m1 = -(samples * design[..., [1]]).unsqueeze(-1)
+        clp1m1 = -(contrastive_samples * design[..., [0]])
+        clp2m1 = -(contrastive_samples * design[..., [1]])
+
+        def log_prob(lp1m1, lp2m1):
+            lp1 = (1 - lp1m1.exp()).log()
+            lp2 = (1 - lp2m1.exp()).log()
+
+            y = make_y_space(N)
+            log_prob_y = torch.lgamma(torch.tensor(N + 1, dtype=torch.float)) - torch.lgamma(y[:, 0] + 1) - torch.lgamma(y[:, 1] + 1) \
+                         - torch.lgamma(N - y.sum(-1) + 1) + y[:, 0] * lp1 + y[:, 1] * lp2 + (N - y[:, 0]) * lp1m1 \
+                         + (N - y[:, 0] - y[:, 1]) * lp2m1
+            return log_prob_y
+
+        likelihoods = log_prob(lp1m1, lp2m1)
+        contrastive_log_prob = log_prob(clp1m1, clp2m1)
+        # print(torch.isinf(likelihoods).any(), torch.isinf(contrastive_log_prob).any())
+        p_samples = dist.LogNormal(prior_mean, prior_sd).log_prob(samples)
+        q_samples = dist.LogNormal(posterior_mean, posterior_sd).log_prob(samples.unsqueeze(-1))
+        p_contrastive = dist.LogNormal(prior_mean, prior_sd).log_prob(contrastive_samples)
+        q_contrastive = dist.LogNormal(posterior_mean, posterior_sd).log_prob(contrastive_samples)
+        sample_terms = likelihoods + p_samples.unsqueeze(-1) - q_samples
+        contrastive_terms = contrastive_log_prob + p_contrastive - q_contrastive
+        marginals = torch.cat((sample_terms.unsqueeze(-2),
+                               contrastive_terms.expand(num_samples, num_samples, 66)), dim=-2
+                              ).logsumexp(-2) - math.log(num_samples + 1)
+        eig_estimate = (likelihoods.exp() * (likelihoods - marginals)).sum(-1).mean(-1)
+        # surrogate_loss = (likelihoods.exp() * (likelihoods - marginals - control_variate).detach()).sum(-1).mean(-1).sum() \
+        #     + (likelihoods.exp().detach() * q_samples).sum(-1).mean(-1).sum()
+        surrogate_loss = eig_estimate.sum()
+        return surrogate_loss, eig_estimate
+    return loss
 
 
 def model_learn_xi(design_prototype):
@@ -129,6 +232,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         xi_history.append(pyro.param('xi').detach().clone())
         optim(params)
         optim.step()
+        print(pyro.param("xi"))
 
     xi_history.append(pyro.param('xi').detach().clone())
 
@@ -163,18 +267,16 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 
         # Fix correct loss
         if estimator == 'posterior':
-            guide = PosteriorGuide()
-            loss = _differentiable_posterior_loss(model_learn_xi, guide, ["i1", "i2"], ["b"])
+            # guide = PosteriorGuide()
+            # loss = _differentiable_posterior_loss(model_learn_xi, guide, ["i1", "i2"], ["b"])
+            loss = summed_posterior_loss(prior_mean, prior_sd)
 
         elif estimator == 'nce':
-            eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
-                model=model_learn_xi, design=d, observation_labels=["i1", "i2"], target_labels=["b"], N=N, M=10,
-                **kwargs)
+            eig_loss = summed_nce_loss(prior_mean, prior_sd)
             loss = neg_loss(eig_loss)
 
         elif estimator == 'ace':
-            guide = PosteriorGuide()
-            eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, 10, ["i1", "i2"], ["b"])
+            eig_loss = summed_ace_loss(torch.tensor(0.), torch.tensor(2.5))
             loss = neg_loss(eig_loss)
 
         else:
@@ -193,7 +295,10 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, ["b"], est_loss_history, True, {})
         else:
             est_eig_history = -est_loss_history
-        eig_history = semi_analytic_eig(xi_history, torch.tensor(0.), torch.tensor(0.25))
+        eig_history = semi_analytic_eig(xi_history, prior_mean, prior_sd, n_samples=200)
+        eig_history[-1] = semi_analytic_eig(xi_history[-1, ...], prior_mean, prior_sd, n_samples=20000)
+        print(eig_history.shape)
+        print(eig_history[-1])
 
         # Build heatmap
         grid_points = 100
@@ -206,7 +311,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         d1 = xi1.expand(grid_points, grid_points).unsqueeze(-1)
         d2 = xi2.unsqueeze(-1).expand(grid_points, grid_points).unsqueeze(-1)
         d = torch.cat([d1, d2], dim=-1)
-        eig_heatmap = semi_analytic_eig(d, torch.tensor(0.), torch.tensor(0.25))
+        eig_heatmap = semi_analytic_eig(d, prior_mean, prior_sd, n_samples=200)
         extent = [b0low, b0up, b1low, b1up]
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
