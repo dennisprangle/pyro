@@ -151,10 +151,9 @@ def summed_ace_loss(prior_mean, prior_sd):
         q_contrastive = dist.LogNormal(posterior_mean, posterior_sd).log_prob(contrastive_samples)
         sample_terms = likelihoods + p_samples.unsqueeze(-1) - q_samples
         contrastive_terms = contrastive_log_prob + p_contrastive - q_contrastive
-        marginals = torch.cat((sample_terms.unsqueeze(-2),
-                               contrastive_terms.expand(num_samples, num_samples, 66)), dim=-2
-                              ).logsumexp(-2) - math.log(num_samples + 1)
-        eig_estimate = (likelihoods.exp() * (likelihoods - marginals)).sum(-1).mean(-1)
+        # nmc_part = contrastive_terms.logsumexp(-2, keepdim=True)
+        marginals = torch.cat([sample_terms.unsqueeze(-2), lexpand(contrastive_terms, num_samples)], dim=-2).logsumexp(-2) - math.log(num_samples + 1)
+        eig_estimate = (likelihoods.exp() * (likelihoods - marginals).detach()).sum(-1).mean(-1)
         # surrogate_loss = (likelihoods.exp() * (likelihoods - marginals - control_variate).detach()).sum(-1).mean(-1).sum() \
         #     + (likelihoods.exp().detach() * q_samples).sum(-1).mean(-1).sum()
         surrogate_loss = eig_estimate.sum()
@@ -276,7 +275,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             loss = neg_loss(eig_loss)
 
         elif estimator == 'ace':
-            eig_loss = summed_ace_loss(torch.tensor(0.), torch.tensor(2.5))
+            eig_loss = summed_ace_loss(prior_mean, prior_sd)
             loss = neg_loss(eig_loss)
 
         else:
