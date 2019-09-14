@@ -41,4 +41,5 @@ if __name__ == "__main__":
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--sampling-interval", default=20, type=int)
     args = parser.parse_args()
+
     main(args.name, args.sampling_interval)
