@@ -125,15 +125,15 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
         theta_dict = {l: trace.nodes[l]["value"] for l in target_labels}
 
         trace.compute_log_prob()
-        marginal_terms_cross = sum(trace.nodes[l]["log_prob"] for l in target_labels)
-        marginal_terms_cross += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+        logw0 = sum(trace.nodes[l]["log_prob"] for l in target_labels)
+        logw0 += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
         
         reguide_trace = poutine.trace(pyro.condition(guide, data=theta_dict)).get_trace(
             y_dict, expanded_design, observation_labels, target_labels
         )
         reguide_trace.compute_log_prob()
-        q_theta_terms = sum(reguide_trace.nodes[l]["log_prob"] for l in target_labels)
-        marginal_terms_cross -= q_theta_terms
+        q_theta0_terms = sum(reguide_trace.nodes[l]["log_prob"] for l in target_labels)
+        logw0 -= q_theta0_terms
 
         # Sample M times from q(theta | y, d) for each y
         reexpanded_design = lexpand(expanded_design, M)
@@ -148,12 +148,13 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
         model_trace = poutine.trace(pyro.condition(model, data=theta_y_dict)).get_trace(reexpanded_design)
         model_trace.compute_log_prob()
 
-        marginal_terms_proposal = -sum(guide_trace.nodes[l]["log_prob"] for l in target_labels)
-        marginal_terms_proposal += sum(model_trace.nodes[l]["log_prob"] for l in target_labels)
-        marginal_terms_proposal += sum(model_trace.nodes[l]["log_prob"] for l in observation_labels)
+        logwm = -sum(guide_trace.nodes[l]["log_prob"] for l in target_labels)
+        logwm += sum(model_trace.nodes[l]["log_prob"] for l in target_labels)
+        logwm += sum(model_trace.nodes[l]["log_prob"] for l in observation_labels)
 
-        marginal_terms = torch.cat([lexpand(marginal_terms_cross, 1), marginal_terms_proposal])
-        terms = -marginal_terms.logsumexp(0) + math.log(M + 1)
+        marginal_terms = torch.cat([lexpand(logw0, 1), logwm])
+        logsumw = marginal_terms.logsumexp(0)
+        terms = -logsumw + math.log(M + 1)
 
         terms += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
         eig_estimate = _safe_mean_terms(terms)[1]
@@ -171,8 +172,9 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
 
         # TODO this is not valid
         # Potentially a place to use double reparameterization
-        xi_grad_terms = (terms.detach() - control_variate) * prescore_function
-        phi_grad_terms = q_theta_terms
+        xi_grad_terms = (terms - control_variate).detach() * prescore_function
+        phi_grad_terms = (logw0 - logsumw).detach().exp() * q_theta0_terms + \
+                         (logwm - logsumw).detach().exp().pow(2) * logwm
         surrogate_loss = _safe_mean_terms(xi_grad_terms + phi_grad_terms)[0]
 
         return surrogate_loss, eig_estimate
