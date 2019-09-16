@@ -256,10 +256,14 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
         xi_init = torch.cat([xi_init, xi_init], dim=-1)
         observation_sd = torch.tensor(.005)
         # Change the prior distribution here
+        # rho_concentration = torch.tensor([[1., 1.]])
+        # alpha_concentration = torch.tensor([[184., 247., 418.]])
+        # slope_mu = torch.tensor([2.32])
+        # slope_sigma = torch.tensor([.0148])
         rho_concentration = torch.tensor([[1., 1.]])
-        alpha_concentration = torch.tensor([[184., 247., 418.]])
-        slope_mu = torch.tensor([2.32])
-        slope_sigma = torch.tensor([.0148])
+        alpha_concentration = torch.tensor([[1., 1., 1.]])
+        slope_mu = torch.tensor([1.])
+        slope_sigma = torch.tensor([3.])
         model_learn_xi = make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma,
                                         observation_sd, xi_init=xi_init)
 
