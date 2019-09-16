@@ -122,7 +122,7 @@ class PosteriorGuide(nn.Module):
         rho_concentration = self.softplus(final[..., 0:2]) + self.prior_rho_concentration
         alpha_concentration = self.softplus(final[..., 2:5]) + self.prior_alpha_concentration
         slope_mu = self.prior_slope_mu + 3 * 2 * (-1 + 2 * torch.sigmoid(final[..., 5]))
-        slope_sigma = self.prior_slope_sigma * (1e-6 + self.softplus(final[..., 6]))
+        slope_sigma = self.prior_slope_sigma * (1e-6 + 2 * torch.sigmoid(final[..., 6]))
 
         logging.debug("rho_concentration {} {} alpha concentration {} {}".format(
             rho_concentration.min().item(), rho_concentration.max().item(),
@@ -186,6 +186,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         optim(params)
         optim.step()
         print(pyro.param("xi").squeeze())
+        print('eig', baseline.squeeze())
 
     xi_history.append(pyro.param('xi').detach().clone())
 
