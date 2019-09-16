@@ -163,8 +163,6 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
         print('guide lp', time.time() - t)
 
         # Re-run that through the model to compute the joint
-        print('true theta', theta_dict)
-        print('approximagte theta', theta_y_dict)
         model_trace = poutine.trace(pyro.condition(model, data=theta_y_dict)).get_trace(reexpanded_design)
         model_trace.compute_log_prob()
         print('model log prob again', time.time() - t)

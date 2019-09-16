@@ -50,12 +50,14 @@ def make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma
             U1rho = (rmv(d1.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             U2rho = (rmv(d2.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             mean = slope * (U1rho - U2rho)
+            print('slope', slope.min().item(), slope.max().item())
+            print('u diff', (U1rho - U2rho).min().item(), (U1rho - U2rho).max().item())
             logging.debug('latent samples: rho {} alpha {} slope mean {} slope median {}'.format(
                 rho.mean().item(), alpha.mean().item(), slope.mean().item(), slope.median().item()))
-            logging.debug('mean: mean {} sd {} min {} max {}'.format(
+            print('mean: mean {} sd {} min {} max {}'.format(
                 mean.mean().item(), mean.std().item(), mean.min().item(), mean.max().item()))
             sd = slope * observation_sd * (1 + torch.norm(d1 - d2, dim=-1, p=2))
-            logging.debug('sd: mean {}, sd {}, min {}, max {}'.format(sd.mean(), sd.std(), sd.min(), sd.max()))
+            print('sd: mean {}, sd {}, min {}, max {}'.format(sd.mean(), sd.std(), sd.min(), sd.max()))
             mean.register_hook(lambda x: print('emission mean gradient', x.min(), x.max()))
             sd.register_hook(lambda x: print('emission sd gradient', x.min(), x.max()))
             emission_dist = dist.CensoredSigmoidNormal(mean, sd, 1 - epsilon, epsilon).to_event(1)
@@ -162,7 +164,7 @@ class PosteriorGuide(nn.Module):
 
         rho_concentration = self.softplus(final[..., 0:2]) + self.prior_rho_concentration
         alpha_concentration = self.softplus(final[..., 2:5]) + self.prior_alpha_concentration
-        slope_mu = self.prior_slope_mu + (-2 + self.softplus(final[..., 5]))
+        slope_mu = self.prior_slope_mu +  6 * (-1 + 2 * torch.sigmoid(final[..., 5]))
         slope_sigma = self.prior_slope_sigma * (1e-6 + self.softplus(final[..., 6])) 
         #rho_concentration = 1e-6 + self.softplus(self.rho_concentration(x))
         #alpha_concentration = 1e-6 + self.softplus(self.alpha_concentration(x))
@@ -235,7 +237,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         num_acq = 50
         num_bo_steps = 4
         grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 9, 1000, 0.0025, 0.00025
-        num_grad_acq = 8
+        num_grad_acq = 1
         design_dim = 6
 
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
