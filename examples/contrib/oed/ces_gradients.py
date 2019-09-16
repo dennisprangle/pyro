@@ -252,8 +252,8 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
             seed = int(torch.rand(tuple()) * 2 ** 30)
             pyro.set_rng_seed(seed)
 
-        #xi_init = 0.01 + 99.99 * torch.rand(6)
-        xi_init = torch.tensor([10., .1, .1, 10., .1, .1])
+        xi_init = .01 + 99.99 * torch.rand(6 // 2)
+        xi_init = torch.cat([xi_init, xi_init], dim=-1)
         observation_sd = torch.tensor(.005)
         # Change the prior distribution here
         rho_concentration = torch.tensor([[1., 1.]])
