@@ -5,32 +5,42 @@ import subprocess
 import datetime
 import pickle
 import time
+import os
 from functools import partial
 from contextlib import ExitStack
+import logging
 
 import pyro
 import pyro.optim as optim
 import pyro.distributions as dist
-from pyro.contrib.util import iter_plates_to_shape, lexpand, rexpand, rmv
-from pyro.contrib.oed.eig import marginal_eig, elbo_learn, nmc_eig
+from pyro.contrib.util import iter_plates_to_shape, rexpand, rmv
+from pyro.contrib.oed.eig import marginal_eig, elbo_learn, nmc_eig, nce_eig
 import pyro.contrib.gp as gp
+from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss
+from pyro.contrib.oed.eig import opt_eig_ape_loss
+from pyro.util import is_bad
+
+from ces_gradients import PosteriorGuide
 
 
 # TODO read from torch float spec
-epsilon = torch.tensor(2**-24)
+epsilon = torch.tensor(2**-22)
 
 
 def get_git_revision_hash():
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
 
 
-def make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma, observation_sd, observation_label="y"):
+def make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma, observation_sd, observation_label="y"):
     def ces_model(design):
+        if is_bad(design):
+            raise ArithmeticError("bad design, contains nan or inf")
         batch_shape = design.shape[:-2]
         with ExitStack() as stack:
             for plate in iter_plates_to_shape(batch_shape):
                 stack.enter_context(plate)
-            rho = 0.01 + 0.99 * pyro.sample("rho", dist.Beta(rho0.expand(batch_shape), rho1.expand(batch_shape)))
+            rho_shape = batch_shape + (rho_concentration.shape[-1],)
+            rho = 0.01 + 0.99 * pyro.sample("rho", dist.Dirichlet(rho_concentration.expand(rho_shape))).select(-1, 0)
             alpha_shape = batch_shape + (alpha_concentration.shape[-1],)
             alpha = pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
             slope = pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
@@ -39,10 +49,15 @@ def make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma, obser
             U1rho = (rmv(d1.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             U2rho = (rmv(d2.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             mean = slope * (U1rho - U2rho)
-            # print('latent samples:', rho.mean(), alpha.mean(), slope.mean(), slope.median())
-            # print('mean', mean.mean(), mean.std(), mean.min(), mean.max())
             sd = slope * observation_sd * (1 + torch.norm(d1 - d2, dim=-1, p=2))
-            # print('sd', sd.mean(), sd.std(), sd.min(), sd.max())
+
+            logging.debug('rho max {} min {}'.format(rho.max().item(), rho.min().item()))
+            logging.debug('latent samples: rho {} alpha {} slope mean {} slope median {}'.format(
+                rho.mean().item(), alpha.mean().item(), slope.mean().item(), slope.median().item()))
+            logging.debug('mean: mean {} sd {} min {} max {}'.format(
+                mean.mean().item(), mean.std().item(), mean.min().item(), mean.max().item()))
+            logging.debug('sd: mean {}, sd {}, min {}, max {}'.format(sd.mean(), sd.std(), sd.min(), sd.max()))
+
             emission_dist = dist.CensoredSigmoidNormal(mean, sd, 1 - epsilon, epsilon).to_event(1)
             y = pyro.sample(observation_label, emission_dist)
             return y
@@ -50,9 +65,18 @@ def make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma, obser
     return ces_model
 
 
+def make_learn_xi_model(model, xi_init, constraint):
+    def model_learn_xi(design_prototype):
+        design = pyro.param("xi", xi_init, constraint=constraint)
+        design = design.expand(design_prototype.shape)
+        design.register_hook(lambda x: print('design gradient', x.min(), x.max()))
+        return model(design)
+    return model_learn_xi
+
+
 def elboguide(design, dim=10):
-    rho0 = pyro.param("rho0", torch.ones(dim, 1), constraint=torch.distributions.constraints.positive)
-    rho1 = pyro.param("rho1", torch.ones(dim, 1), constraint=torch.distributions.constraints.positive)
+    rho_concentration = pyro.param("rho_concentration", torch.ones(dim, 1, 2),
+                                   constraint=torch.distributions.constraints.positive)
     alpha_concentration = pyro.param("alpha_concentration", torch.ones(dim, 1, 3),
                                      constraint=torch.distributions.constraints.positive)
     slope_mu = pyro.param("slope_mu", torch.ones(dim, 1))
@@ -62,7 +86,8 @@ def elboguide(design, dim=10):
     with ExitStack() as stack:
         for plate in iter_plates_to_shape(batch_shape):
             stack.enter_context(plate)
-        pyro.sample("rho", dist.Beta(rho0.expand(batch_shape), rho1.expand(batch_shape)))
+        rho_shape = batch_shape + (rho_concentration.shape[-1],)
+        pyro.sample("rho", dist.Dirichlet(rho_concentration.expand(rho_shape)))
         alpha_shape = batch_shape + (alpha_concentration.shape[-1],)
         pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
         pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape),
@@ -75,9 +100,6 @@ def marginal_guide(mu_init, log_sigma_init, shape, label):
         log_sigma = pyro.param("marginal_log_sigma", log_sigma_init * torch.ones(*shape))
         ends = pyro.param("marginal_ends", 1./3 * torch.ones(*shape, 3),
                           constraint=torch.distributions.constraints.simplex)
-        # print('ends', ends)
-        # print('mu', mu)
-        # print('log_sigma', log_sigma)
         response_dist = dist.CensoredSigmoidNormalEnds(
             loc=mu, scale=torch.exp(log_sigma), upper_lim=1. - epsilon, lower_lim=epsilon,
             p0=ends[..., 0], p1=ends[..., 1], p2=ends[..., 2]
@@ -86,17 +108,33 @@ def marginal_guide(mu_init, log_sigma_init, shape, label):
     return guide
 
 
-def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
+def neg_loss(loss):
+    def new_loss(*args, **kwargs):
+        return (-a for a in loss(*args, **kwargs))
+    return new_loss
+
+
+def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, loglevel):
+    numeric_level = getattr(logging, loglevel.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError("Invalid log level: {}".format(loglevel))
+    logging.basicConfig(level=numeric_level)
+
     output_dir = "./run_outputs/ces/"
     if not experiment_name:
         experiment_name = output_dir+"{}".format(datetime.datetime.now().isoformat())
     else:
         experiment_name = output_dir+experiment_name
     results_file = experiment_name + '.result_stream.pickle'
+    try:
+        os.remove(results_file)
+    except OSError:
+        logging.info("File {} does not exist yet".format(results_file))
     typs = typs.split(",")
     observation_sd = torch.tensor(.005)
 
     for typ in typs:
+        logging.info("Type {}".format(typ))
         pyro.clear_param_store()
         if seed >= 0:
             pyro.set_rng_seed(seed)
@@ -108,26 +146,30 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
         elbo_n_samples, elbo_n_steps, elbo_lr = 10, 1000, 0.04
         num_acq = 50
         num_bo_steps = 4
+        grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 9, 1000, 0.0025, 0.00025
+        num_grad_acq = 8
         design_dim = 6
 
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
+        posterior_guide = PosteriorGuide((num_parallel, num_grad_acq))
 
-        prior = make_ces_model(torch.ones(num_parallel, 1), torch.ones(num_parallel, 1), torch.ones(num_parallel, 1, 3),
+        prior = make_ces_model(torch.ones(num_parallel, 1, 2), torch.ones(num_parallel, 1, 3),
                                torch.ones(num_parallel, 1), 3.*torch.ones(num_parallel, 1), observation_sd)
-        rho0, rho1 = torch.ones(num_parallel, 1), torch.ones(num_parallel, 1)
+        rho_concentration = torch.ones(num_parallel, 1, 2)
         alpha_concentration = torch.ones(num_parallel, 1, 3)
         slope_mu, slope_sigma = torch.ones(num_parallel, 1), 3.*torch.ones(num_parallel, 1)
 
-        true_model = pyro.condition(make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma,
+        true_model = pyro.condition(make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma,
                                                    observation_sd),
-                                    {"rho": torch.tensor(.9), "alpha": torch.tensor([.2, .3, .5]),
+                                    {"rho": torch.tensor([.9, .1]), "alpha": torch.tensor([.2, .3, .5]),
                                      "slope": torch.tensor(10.)})
 
         d_star_designs = torch.tensor([])
         ys = torch.tensor([])
 
         for step in range(num_steps):
-            model = make_ces_model(rho0, rho1, alpha_concentration, slope_mu, slope_sigma, observation_sd)
+            logging.info("Step {}".format(step))
+            model = make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma, observation_sd)
             results = {'typ': typ, 'step': step, 'git-hash': get_git_revision_hash(), 'seed': seed,
                        'lengthscale': lengthscale, 'observation_sd': observation_sd}
 
@@ -144,10 +186,10 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
                     def f(X):
                         n_steps = oed_n_steps // len(oed_lr)
                         for lr in oed_lr:
-                            marginal_eig(model, X, observation_labels="y", target_labels=["rho", "alpha", "slope"],
+                            marginal_eig(model, X, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
                                          num_samples=oed_n_samples, num_steps=n_steps, guide=guide,
                                          optim=optim.Adam({"lr": lr}))
-                        return marginal_eig(model, X, observation_labels="y", target_labels=["rho", "alpha", "slope"],
+                        return marginal_eig(model, X, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
                                             num_samples=oed_n_samples, num_steps=1, guide=guide,
                                             final_num_samples=oed_final_n_samples, optim=optim.Adam({"lr": 1e-6}))
                 elif typ == 'nmc':
@@ -206,36 +248,76 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale):
                     y = torch.cat([y, y_acquire], dim=1)
 
                 max_eig, d_star_index = torch.max(y, dim=1)
-                print('max EIG', max_eig)
+                logging.info('max EIG {}'.format(max_eig))
                 results['max EIG'] = max_eig
                 d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2).unsqueeze(-2)
+
+            elif typ in ['posterior-grad', 'nce-grad', 'ace-grad']:
+                constraint = torch.distributions.constraints.interval(1e-6, 100.)
+                xi_init = .01 + 99.99 * torch.rand((num_parallel, num_grad_acq, 1, design_dim // 2))
+                xi_init = torch.cat([xi_init, xi_init], dim=-1)
+                pyro.param("xi", xi_init, constraint=constraint)
+
+                model_learn_xi = make_learn_xi_model(model, xi_init, constraint)
+                design_prototype = torch.zeros(num_parallel, num_grad_acq, 1, design_dim)  # this is annoying, code needs refactor
+
+                pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
+
+                if typ == 'posterior-grad':
+
+                    posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
+                    loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
+
+                elif typ == 'nce-grad':
+
+                    eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
+                        model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
+                        N=N, M=grad_n_samples ** 2, **kwargs)
+                    loss = neg_loss(eig_loss)
+
+                elif typ == 'ace-grad':
+
+                    posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
+                    loss = _differentiable_ace_eig_loss(model_learn_xi, posterior_guide, grad_n_samples ** 2,
+                            ["y"], ["rho", "alpha", "slope"])
+
+                start_lr, end_lr = grad_start_lr, grad_end_lr
+                gamma = (end_lr / start_lr) ** (1 / grad_n_steps)
+                scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
+                                                      'gamma': gamma})
+                ape = opt_eig_ape_loss(design_prototype, loss, num_samples=grad_n_samples, num_steps=grad_n_steps,
+                                       optim=scheduler, final_num_samples=500)
+                min_ape, d_star_index = torch.min(ape, dim=1)
+                logging.info('min loss {}'.format(min_ape))
+                results['min loss'] = min_ape
+                X = pyro.param("xi").detach().clone()
+                d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2)
 
             elif typ == 'rand':
                 d_star_design = .01 + 99.99 * torch.rand((num_parallel, 1, 1, design_dim))
 
             elapsed = time.time() - t
-            print('elapsed design time', elapsed)
+            logging.info('elapsed design time {}'.format(elapsed))
             results['design_time'] = elapsed
             results['d_star_design'] = d_star_design
-            print('design', d_star_design.squeeze(), d_star_design.shape)
+            logging.info('design {} {}'.format(d_star_design.squeeze(), d_star_design.shape))
             d_star_designs = torch.cat([d_star_designs, d_star_design], dim=-2)
             y = true_model(d_star_design)
             ys = torch.cat([ys, y], dim=-1)
-            print('ys', ys.squeeze(), ys.shape)
+            logging.info('ys {} {}'.format(ys.squeeze(), ys.shape))
             results['y'] = y
 
             elbo_learn(
                 prior, d_star_designs, ["y"], ["rho", "alpha", "slope"], elbo_n_samples, elbo_n_steps,
                 partial(elboguide, dim=num_parallel), {"y": ys}, optim.Adam({"lr": elbo_lr})
             )
-            rho0 = pyro.param("rho0").detach().data.clone()
-            rho1 = pyro.param("rho1").detach().data.clone()
+            rho_concentration = pyro.param("rho_concentration").detach().data.clone()
             alpha_concentration = pyro.param("alpha_concentration").detach().data.clone()
             slope_mu = pyro.param("slope_mu").detach().data.clone()
             slope_sigma = pyro.param("slope_sigma").detach().data.clone()
-            print("rho0", rho0, "rho1", rho1, "alpha_concentration", alpha_concentration, "slope_mu", slope_mu,
-                  "slope_sigma", slope_sigma)
-            results['rho0'], results['rho1'], results['alpha_concentration'] = rho0, rho1, alpha_concentration
+            logging.info("rho_concentration {} \n alpha_concentration {} \n slope_mu {} \n slope_sigma {}".format(
+                rho_concentration.squeeze(), alpha_concentration.squeeze(), slope_mu.squeeze(), slope_sigma.squeeze()))
+            results['rho_concentration'], results['alpha_concentration'] = rho_concentration, alpha_concentration
             results['slope_mu'], results['slope_sigma'] = slope_mu, slope_sigma
 
             with open(results_file, 'ab') as f:
@@ -251,5 +333,6 @@ if __name__ == "__main__":
     parser.add_argument("--typs", nargs="?", default="rand", type=str)
     parser.add_argument("--seed", nargs="?", default=-1, type=int)
     parser.add_argument("--lengthscale", nargs="?", default=10., type=float)
+    parser.add_argument("--loglevel", default="info", type=str)
     args = parser.parse_args()
-    main(args.num_steps, args.num_parallel, args.name, args.typs, args.seed, args.lengthscale)
+    main(args.num_steps, args.num_parallel, args.name, args.typs, args.seed, args.lengthscale, args.loglevel)

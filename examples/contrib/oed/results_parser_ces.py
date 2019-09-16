@@ -21,7 +21,9 @@ VALUE_LABELS = {"Entropy": "Posterior entropy",
                 "alpha_rmse": "RMSE in $\\mathbf{\\alpha}$ estimate",
                 "slope_rmse": 'RMSE in $u$ estimate',
                 "total_rmse": 'Total RMSE'}
-LABELS = {'marginal': 'BOED marginal (ours)', 'rand': 'Random design (baseline)', 'nmc': 'BOED NMC (baseline)'}
+LABELS = {'marginal': 'Foster et al. (baseline)', 'rand': 'Random design (baseline)', 'nmc': 'BOED NMC (baseline)',
+          'posterior-grad': "Posterior gradient", 'nce-grad': "NCE gradient (ours)"}
+
 MARKERS = ['o', 'D', '^', '*']
 
 S = 3
@@ -73,7 +75,12 @@ def main(fnames, findices, plot):
                 while True:
                     results = pickle.load(results_file)
                     # Compute entropy and L2 distance to the true fixed effects
-                    rho0, rho1, alpha_concentration = results['rho0'], results['rho1'], results['alpha_concentration']
+                    if 'rho0' in results:
+                        rho0, rho1, alpha_concentration = results['rho0'], results['rho1'], results['alpha_concentration']
+                    else:
+                        rho_concentration = results['rho_concentration']
+                        rho0, rho1 = rho_concentration.unbind(-1)
+                        alpha_concentration = results['alpha_concentration']
                     slope_mu, slope_sigma = results['slope_mu'], results['slope_sigma']
                     rho_dist = torch.distributions.Beta(rho0, rho1)
                     alpha_dist = torch.distributions.Dirichlet(alpha_concentration)
@@ -101,9 +108,9 @@ def main(fnames, findices, plot):
         for statistic in ["Entropy", "rho_rmse", "alpha_rmse", "slope_rmse"]:
             plt.figure(figsize=(5, 5))
             for i, k in enumerate(reformed[statistic]):
-                e = reformed[statistic][k].squeeze()
+                e = reformed[statistic][k].squeeze()[1:]
                 lower, centre, upper = upper_lower(e)
-                x = np.arange(1, e.shape[0]+1)
+                x = np.arange(2, e.shape[0]+2)
                 plt.plot(x, centre, linestyle='-', markersize=8, color=COLOURS[i], marker=MARKERS[i], linewidth=2)
                 plt.fill_between(x, upper, lower, color=COLOURS[i] + [.2])
             plt.xlabel("Step", fontsize=22)
