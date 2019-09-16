@@ -253,7 +253,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
                 if typ == 'posterior-grad':
 
-                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 20, 3000, 0.0025, 0.00025
+                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 20, 2000, 0.0025, 0.00025
                     num_grad_acq = 10
                     posterior_guide = PosteriorGuide((num_parallel, num_grad_acq))
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
