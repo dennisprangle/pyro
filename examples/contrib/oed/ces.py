@@ -145,8 +145,6 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         elbo_n_samples, elbo_n_steps, elbo_lr = 10, 1000, 0.04
         num_acq = 50
         num_bo_steps = 4
-        grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 9, 1000, 0.0025, 0.00025
-        num_grad_acq = 8
         design_dim = 6
 
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
@@ -264,11 +262,15 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
                 if typ == 'posterior-grad':
 
+                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 20, 3000, 0.0025, 0.00025
+                    num_grad_acq = 10
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
                     loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
                 elif typ == 'nce-grad':
 
+                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 9, 1000, 0.0025, 0.00025
+                    num_grad_acq = 8
                     eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                         model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
                         N=N, M=grad_n_samples ** 2, **kwargs)
@@ -276,6 +278,8 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
                 elif typ == 'ace-grad':
 
+                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 5, 1000, 0.0025, 0.00025
+                    num_grad_acq = 8
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
                     loss = _differentiable_ace_eig_loss(model_learn_xi, posterior_guide, grad_n_samples ** 2,
                             ["y"], ["rho", "alpha", "slope"])
