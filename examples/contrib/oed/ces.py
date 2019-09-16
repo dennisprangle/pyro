@@ -1,12 +1,10 @@
 import torch
 from torch.distributions import transform_to
-from torch import nn
 import argparse
 import subprocess
 import datetime
 import pickle
 import time
-import math
 import os
 from functools import partial
 from contextlib import ExitStack
@@ -15,12 +13,14 @@ import logging
 import pyro
 import pyro.optim as optim
 import pyro.distributions as dist
-from pyro.contrib.util import iter_plates_to_shape, lexpand, rexpand, rmv
+from pyro.contrib.util import iter_plates_to_shape, rexpand, rmv
 from pyro.contrib.oed.eig import marginal_eig, elbo_learn, nmc_eig, nce_eig
 import pyro.contrib.gp as gp
 from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss
 from pyro.contrib.oed.eig import opt_eig_ape_loss
 from pyro.util import is_bad
+
+from ces_gradients import PosteriorGuide
 
 
 # TODO read from torch float spec
@@ -45,21 +45,19 @@ def make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma
             alpha = pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
             slope = pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
             rho, slope = rexpand(rho, design.shape[-2]), rexpand(slope, design.shape[-2])
-            logging.debug('rho max {} min {}'.format(rho.max().item(), rho.min().item()))
             d1, d2 = design[..., 0:3], design[..., 3:6]
             U1rho = (rmv(d1.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             U2rho = (rmv(d2.pow(rho.unsqueeze(-1)), alpha)).pow(1./rho)
             mean = slope * (U1rho - U2rho)
-            print('slope', slope.min().item(), slope.max().item())
-            print('u diff', (U1rho - U2rho).min().item(), (U1rho - U2rho).max().item())
+            sd = slope * observation_sd * (1 + torch.norm(d1 - d2, dim=-1, p=2))
+
+            logging.debug('rho max {} min {}'.format(rho.max().item(), rho.min().item()))
             logging.debug('latent samples: rho {} alpha {} slope mean {} slope median {}'.format(
                 rho.mean().item(), alpha.mean().item(), slope.mean().item(), slope.median().item()))
-            print('mean: mean {} sd {} min {} max {}'.format(
+            logging.debug('mean: mean {} sd {} min {} max {}'.format(
                 mean.mean().item(), mean.std().item(), mean.min().item(), mean.max().item()))
-            sd = slope * observation_sd * (1 + torch.norm(d1 - d2, dim=-1, p=2))
-            print('sd: mean {}, sd {}, min {}, max {}'.format(sd.mean(), sd.std(), sd.min(), sd.max()))
-            mean.register_hook(lambda x: print('emission mean gradient', x.min(), x.max()))
-            sd.register_hook(lambda x: print('emission sd gradient', x.min(), x.max()))
+            logging.debug('sd: mean {}, sd {}, min {}, max {}'.format(sd.mean(), sd.std(), sd.min(), sd.max()))
+
             emission_dist = dist.CensoredSigmoidNormal(mean, sd, 1 - epsilon, epsilon).to_event(1)
             y = pyro.sample(observation_label, emission_dist)
             return y
@@ -110,94 +108,6 @@ def marginal_guide(mu_init, log_sigma_init, shape, label):
     return guide
 
 
-class TensorLinear(nn.Module):
-
-    __constants__ = ['bias']
-
-    def __init__(self, *shape, bias=True):
-        super(TensorLinear, self).__init__()
-        self.in_features = shape[-2]
-        self.out_features = shape[-1]
-        self.batch_dims = shape[:-2]
-        self.weight = nn.Parameter(torch.Tensor(*self.batch_dims, self.out_features, self.in_features))
-        if bias:
-            self.bias = nn.Parameter(torch.Tensor(*self.batch_dims, self.out_features))
-        else:
-            self.register_parameter('bias', None)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-        if self.bias is not None:
-            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
-            bound = 1 / math.sqrt(fan_in)
-            nn.init.uniform_(self.bias, -bound, bound)
-
-    def forward(self, input):
-        return rmv(self.weight, input) + self.bias
-
-
-class PosteriorGuide(nn.Module):
-    def __init__(self, batch_shape):
-        super(PosteriorGuide, self).__init__()
-        n_hidden = 64
-        self.linear1 = TensorLinear(*batch_shape, 1, n_hidden)
-        self.linear2 = TensorLinear(*batch_shape, n_hidden, n_hidden)
-        self.output_layer = TensorLinear(*batch_shape, n_hidden, 2 + 3 + 1 + 1)
-        self.softplus = nn.Softplus()
-        self.relu = nn.ReLU()
-
-    def set_prior(self, rho_concentration, alpha_concentration, slope_mu, slope_sigma):
-
-        self.prior_rho_concentration = rho_concentration
-        self.prior_alpha_concentration = alpha_concentration
-        self.prior_slope_mu = slope_mu
-        self.prior_slope_sigma = slope_sigma
-
-    def forward(self, y_dict, design_prototype, observation_labels, target_labels):
-        y = y_dict["y"]
-        y, y1m = y.clamp(1e-35, 1), (1. - y).clamp(1e-35, 1)
-        s = y.log() - y1m.log()
-        x = self.relu(self.linear1(s))
-        x = self.relu(self.linear2(x))
-        final = self.output_layer(x)
-
-        rho_concentration = self.softplus(final[..., 0:2]) + self.prior_rho_concentration
-        alpha_concentration = self.softplus(final[..., 2:5]) + self.prior_alpha_concentration
-        slope_mu = self.prior_slope_mu +  6 * (-1 + 2 * torch.sigmoid(final[..., 5]))
-        slope_sigma = self.prior_slope_sigma * (1e-6 + self.softplus(final[..., 6])) 
-        #rho_concentration = 1e-6 + self.softplus(self.rho_concentration(x))
-        #alpha_concentration = 1e-6 + self.softplus(self.alpha_concentration(x))
-        #slope_mu = self.slope_mu(x).squeeze(-1)
-        #slope_sigma = 1e-6 + self.softplus(self.slope_sigma(x)).squeeze(-1)
-        print('slope distribution', slope_sigma.min(), slope_sigma.max(), slope_mu.min(), slope_mu.max())
-        rho_concentration.register_hook(lambda x: print('rho grad', x.max(), x.min()))
-        alpha_concentration.register_hook(lambda x: print('alpha grad', x.max(), x.min()))
-        slope_mu.register_hook(lambda x: print('slope mu grad', x.max(), x.min()))
-        #slope_sigma.register_hook(lambda x: print('slope sigma grad', x.max(), x.min()))
-
-        logging.debug("rho_concentration {} alpha concentration {}".format(rho_concentration, alpha_concentration))
-        logging.debug("slope mu {} sigma {}".format(slope_mu, slope_sigma))
-        
-        pyro.module("posterior_guide", self)
-
-        batch_shape = design_prototype.shape[:-2]
-        with ExitStack() as stack:
-            for plate in iter_plates_to_shape(batch_shape):
-                stack.enter_context(plate)
-
-            rho_shape = batch_shape + (rho_concentration.shape[-1],)
-            pyro.sample("rho", dist.Dirichlet(rho_concentration.expand(rho_shape)))
-            alpha_shape = batch_shape + (alpha_concentration.shape[-1],)
-            pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
-            pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
-
-
-def weight_reset(m):
-    if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-        m.reset_parameters()
-
-
 def neg_loss(loss):
     def new_loss(*args, **kwargs):
         return (-a for a in loss(*args, **kwargs))
@@ -237,7 +147,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         num_acq = 50
         num_bo_steps = 4
         grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 9, 1000, 0.0025, 0.00025
-        num_grad_acq = 1
+        num_grad_acq = 8
         design_dim = 6
 
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
@@ -355,7 +265,6 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
                 if typ == 'posterior-grad':
 
-                    #posterior_guide.apply(weight_reset)
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
                     loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 

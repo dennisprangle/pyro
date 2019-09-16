@@ -6,6 +6,7 @@ import math
 import subprocess
 import datetime
 import pickle
+import logging
 from contextlib import ExitStack
 
 import pyro
@@ -57,38 +58,77 @@ def make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma
     return ces_model
 
 
-def proposal(design):
+# def proposal(design):
+#
+#         batch_shape = design.shape[:-2]
+#         with ExitStack() as stack:
+#             for plate in iter_plates_to_shape(batch_shape):
+#                 stack.enter_context(plate)
+#             emission_dist = dist.CensoredSigmoidNormal(torch.tensor([0.]), torch.tensor([50.]), 1 - epsilon, epsilon).to_event(1)
+#             pyro.sample("y", emission_dist)
 
-        batch_shape = design.shape[:-2]
-        with ExitStack() as stack:
-            for plate in iter_plates_to_shape(batch_shape):
-                stack.enter_context(plate)
-            emission_dist = dist.CensoredSigmoidNormal(torch.tensor([0.]), torch.tensor([50.]), 1 - epsilon, epsilon).to_event(1)
-            pyro.sample("y", emission_dist)
-        
+
+class TensorLinear(nn.Module):
+
+    __constants__ = ['bias']
+
+    def __init__(self, *shape, bias=True):
+        super(TensorLinear, self).__init__()
+        self.in_features = shape[-2]
+        self.out_features = shape[-1]
+        self.batch_dims = shape[:-2]
+        self.weight = nn.Parameter(torch.Tensor(*self.batch_dims, self.out_features, self.in_features))
+        if bias:
+            self.bias = nn.Parameter(torch.Tensor(*self.batch_dims, self.out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / math.sqrt(fan_in)
+            nn.init.uniform_(self.bias, -bound, bound)
+
+    def forward(self, input):
+        return rmv(self.weight, input) + self.bias
+
 
 class PosteriorGuide(nn.Module):
-    def __init__(self):
+    def __init__(self, batch_shape):
         super(PosteriorGuide, self).__init__()
-        self.linear1 = nn.Linear(1, 256)
-        self.linear2 = nn.Linear(256, 256)
-        self.rho_concentration = nn.Linear(256, 2)
-        self.alpha_concentration = nn.Linear(256, 3)
-        self.slope_mu = nn.Linear(256, 1)
-        self.slope_sigma = nn.Linear(256, 1)
-
+        n_hidden = 64
+        self.linear1 = TensorLinear(*batch_shape, 1, n_hidden)
+        self.linear2 = TensorLinear(*batch_shape, n_hidden, n_hidden)
+        self.output_layer = TensorLinear(*batch_shape, n_hidden, 2 + 3 + 1 + 1)
         self.softplus = nn.Softplus()
+        self.relu = nn.ReLU()
+
+    def set_prior(self, rho_concentration, alpha_concentration, slope_mu, slope_sigma):
+        self.prior_rho_concentration = rho_concentration
+        self.prior_alpha_concentration = alpha_concentration
+        self.prior_slope_mu = slope_mu
+        self.prior_slope_sigma = slope_sigma
 
     def forward(self, y_dict, design_prototype, observation_labels, target_labels):
         y = y_dict["y"]
         y, y1m = y.clamp(1e-35, 1), (1. - y).clamp(1e-35, 1)
         s = y.log() - y1m.log()
-        x = self.softplus(self.linear1(s))
-        x = self.softplus(self.linear2(x))
-        rho_concentration = 1e-6 + self.softplus(self.rho_concentration(x))
-        alpha_concentration = 1e-6 + self.softplus(self.alpha_concentration(x))
-        slope_mu = self.slope_mu(x).squeeze(-1)
-        slope_sigma = 1e-6 + self.softplus(self.slope_sigma(x)).squeeze(-1)
+        x = self.relu(self.linear1(s))
+        x = self.relu(self.linear2(x))
+        final = self.output_layer(x)
+
+        rho_concentration = self.softplus(final[..., 0:2]) + self.prior_rho_concentration
+        alpha_concentration = self.softplus(final[..., 2:5]) + self.prior_alpha_concentration
+        slope_mu = self.prior_slope_mu + 6 * (-1 + 2 * torch.sigmoid(final[..., 5]))
+        slope_sigma = self.prior_slope_sigma * (1e-6 + self.softplus(final[..., 6]))
+
+        logging.debug("rho_concentration {} {} alpha concentration {} {}".format(
+            rho_concentration.min().item(), rho_concentration.max().item(),
+            alpha_concentration.min().item(), alpha_concentration.max().item()))
+        logging.debug("slope mu {} {} sigma {} {}".format(
+            slope_mu.min().item(), slope_mu.max().item(), slope_sigma.min().item(), slope_sigma.max().item()))
 
         pyro.module("posterior_guide", self)
 
@@ -96,7 +136,6 @@ class PosteriorGuide(nn.Module):
         with ExitStack() as stack:
             for plate in iter_plates_to_shape(batch_shape):
                 stack.enter_context(plate)
-
             rho_shape = batch_shape + (rho_concentration.shape[-1],)
             pyro.sample("rho", dist.Dirichlet(rho_concentration.expand(rho_shape)))
             alpha_shape = batch_shape + (alpha_concentration.shape[-1],)
@@ -217,16 +256,19 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
         xi_init = torch.tensor([10., .1, .1, 10., .1, .1])
         observation_sd = torch.tensor(.005)
         # Change the prior distribution here
-        # model_learn_xi = make_ces_model(torch.ones(1, 2), torch.ones(1, 3),
-        #                                 torch.ones(1), 3.*torch.ones(1), observation_sd, xi_init=xi_init)
-        model_learn_xi = make_ces_model(torch.tensor([[1., 1.]]), torch.tensor([[184., 247., 418.]]),
-                                       torch.tensor([2.32]), torch.tensor([.0148]), observation_sd, xi_init=xi_init)
+        rho_concentration = torch.tensor([[1., 1.]])
+        alpha_concentration = torch.tensor([[184., 247., 418.]])
+        slope_mu = torch.tensor([2.32])
+        slope_sigma = torch.tensor([.0148])
+        model_learn_xi = make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma,
+                                        observation_sd, xi_init=xi_init)
 
         contrastive_samples = num_samples ** 2
 
         # Fix correct loss
         if estimator == 'posterior':
-            guide = PosteriorGuide()
+            guide = PosteriorGuide(tuple())
+            guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
             loss = _differentiable_posterior_loss(model_learn_xi, guide, ["y"], ["rho", "alpha", "slope"])
 
         elif estimator == 'nce':
@@ -235,14 +277,15 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
                 N=N, M=contrastive_samples, **kwargs)
             loss = neg_loss(eig_loss)
 
-        elif estimator == 'nce-proposal':
-            eig_loss = lambda d, N, **kwargs: differentiable_nce_proposal_eig(
-                    model=model_learn_xi, design=d, observation_labels=["y"], target_labels=['rho', 'alpha', 'slope'],
-                    proposal=proposal, N=N, M=contrastive_samples, **kwargs)
-            loss = neg_loss(eig_loss)
+        # elif estimator == 'nce-proposal':
+        #     eig_loss = lambda d, N, **kwargs: differentiable_nce_proposal_eig(
+        #             model=model_learn_xi, design=d, observation_labels=["y"], target_labels=['rho', 'alpha', 'slope'],
+        #             proposal=proposal, N=N, M=contrastive_samples, **kwargs)
+        #     loss = neg_loss(eig_loss)
 
         elif estimator == 'ace':
-            guide = PosteriorGuide()
+            guide = PosteriorGuide(tuple())
+            guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
             eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"],
                                                     ["rho", "alpha", "slope"])
             loss = neg_loss(eig_loss)

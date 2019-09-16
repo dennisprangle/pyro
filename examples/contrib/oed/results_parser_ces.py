@@ -74,7 +74,6 @@ def main(fnames, findices, plot):
             try:
                 while True:
                     results = pickle.load(results_file)
-                    #print(results['design_time'])
                     # Compute entropy and L2 distance to the true fixed effects
                     if 'rho0' in results:
                         rho0, rho1, alpha_concentration = results['rho0'], results['rho1'], results['alpha_concentration']
