@@ -173,7 +173,7 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
         # TODO this is not valid
         # Potentially a place to use double reparameterization
         xi_grad_terms = (terms - control_variate).detach() * prescore_function
-        phi_grad_terms = (logw0 - logsumw).detach().exp() * q_theta0_terms + \
+        phi_grad_terms = (logw0 - logsumw).detach().exp() * q_theta0_terms - \
                          (logwm - logsumw).detach().exp().pow(2) * logwm
         surrogate_loss = _safe_mean_terms(xi_grad_terms + phi_grad_terms)[0]
 
