@@ -65,9 +65,9 @@ def make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma
     return ces_model
 
 
-def make_learn_xi_model(model, xi_init, constraint):
+def make_learn_xi_model(model):
     def model_learn_xi(design_prototype):
-        design = pyro.param("xi", xi_init, constraint=constraint)
+        design = pyro.param("xi")
         design = design.expand(design_prototype.shape)
         return model(design)
     return model_learn_xi
@@ -148,7 +148,6 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         design_dim = 6
 
         guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
-        posterior_guide = PosteriorGuide((num_parallel, num_grad_acq))
 
         prior = make_ces_model(torch.ones(num_parallel, 1, 2), torch.ones(num_parallel, 1, 3),
                                torch.ones(num_parallel, 1), 3.*torch.ones(num_parallel, 1), observation_sd)
@@ -250,20 +249,13 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                 d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2).unsqueeze(-2)
 
             elif typ in ['posterior-grad', 'nce-grad', 'ace-grad']:
-                constraint = torch.distributions.constraints.interval(1e-6, 100.)
-                xi_init = .01 + 99.99 * torch.rand((num_parallel, num_grad_acq, 1, design_dim // 2))
-                xi_init = torch.cat([xi_init, xi_init], dim=-1)
-                pyro.param("xi", xi_init, constraint=constraint)
-
-                model_learn_xi = make_learn_xi_model(model, xi_init, constraint)
-                design_prototype = torch.zeros(num_parallel, num_grad_acq, 1, design_dim)  # this is annoying, code needs refactor
-
-                pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
+                model_learn_xi = make_learn_xi_model(model)
 
                 if typ == 'posterior-grad':
 
                     grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 20, 3000, 0.0025, 0.00025
                     num_grad_acq = 10
+                    posterior_guide = PosteriorGuide((num_parallel, num_grad_acq))
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
                     loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
@@ -279,10 +271,18 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                 elif typ == 'ace-grad':
 
                     grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 5, 1000, 0.0025, 0.00025
-                    num_grad_acq = 8
+                    num_grad_acq = 5
+                    posterior_guide = PosteriorGuide((num_parallel, num_grad_acq))
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
                     loss = _differentiable_ace_eig_loss(model_learn_xi, posterior_guide, grad_n_samples ** 2,
                             ["y"], ["rho", "alpha", "slope"])
+
+                constraint = torch.distributions.constraints.interval(1e-6, 100.)
+                xi_init = .01 + 99.99 * torch.rand((num_parallel, num_grad_acq, 1, design_dim // 2))
+                xi_init = torch.cat([xi_init, xi_init], dim=-1)
+                pyro.param("xi", xi_init, constraint=constraint)
+                pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
+                design_prototype = torch.zeros(num_parallel, num_grad_acq, 1, design_dim)  # this is annoying, code needs refactor
 
                 start_lr, end_lr = grad_start_lr, grad_end_lr
                 gamma = (end_lr / start_lr) ** (1 / grad_n_steps)
