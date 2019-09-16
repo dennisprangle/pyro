@@ -113,49 +113,75 @@ def differentiable_nce_proposal_eig(model, design, observation_labels, target_la
     return (surrogate_loss, nce_part)
 
 
+def desc(t):
+    return "max {} min {} median {}".format(t.max().item(), t.min().item(), t.median().item())
+
+
 def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_labels):
 
     def loss_fn(design, num_particles, control_variate=0., **kwargs):
+        print('design', pyro.param("xi").detach().squeeze())
         N = num_particles
         expanded_design = lexpand(design, N)
 
+        import time
+        t = time.time()
         # Sample from p(y, theta | d)
+        print('start')
         trace = poutine.trace(model).get_trace(expanded_design)
         y_dict_exp = {l: lexpand(trace.nodes[l]["value"], M) for l in observation_labels}
         y_dict = {l: trace.nodes[l]["value"] for l in observation_labels}
         theta_dict = {l: trace.nodes[l]["value"] for l in target_labels}
+        print('first sample', time.time() - t)
 
         trace.compute_log_prob()
         marginal_terms_cross = sum(trace.nodes[l]["log_prob"] for l in target_labels)
         marginal_terms_cross += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+        print('marginal_terms_cross', desc(marginal_terms_cross))
+        print('calculate lp', time.time() - t)
 
+        
         reguide_trace = poutine.trace(pyro.condition(guide, data=theta_dict)).get_trace(
             y_dict, expanded_design, observation_labels, target_labels
         )
+        print('reguide', time.time() - t)
         reguide_trace.compute_log_prob()
-        marginal_terms_cross -= sum(reguide_trace.nodes[l]["log_prob"] for l in target_labels)
+        q_theta_terms = sum(reguide_trace.nodes[l]["log_prob"] for l in target_labels)
+        marginal_terms_cross -= q_theta_terms
+        print('marginal_terms_cross', desc(marginal_terms_cross))
+        print('reguide lp', time.time() - t)
 
         # Sample M times from q(theta | y, d) for each y
         reexpanded_design = lexpand(expanded_design, M)
         guide_trace = poutine.trace(guide).get_trace(
-            y_dict_exp, reexpanded_design, observation_labels, target_labels
+            y_dict, reexpanded_design, observation_labels, target_labels,
         )
+        print('guide', time.time() - t)
         theta_y_dict = {l: guide_trace.nodes[l]["value"] for l in target_labels}
         theta_y_dict.update(y_dict_exp)
         guide_trace.compute_log_prob()
+        print('guide lp', time.time() - t)
 
         # Re-run that through the model to compute the joint
         model_trace = poutine.trace(pyro.condition(model, data=theta_y_dict)).get_trace(reexpanded_design)
         model_trace.compute_log_prob()
+        print('model log prob again', time.time() - t)
 
         marginal_terms_proposal = -sum(guide_trace.nodes[l]["log_prob"] for l in target_labels)
+        print("subtract q terms for theta", desc(marginal_terms_proposal))
         marginal_terms_proposal += sum(model_trace.nodes[l]["log_prob"] for l in target_labels)
+        print("add prior term", desc(marginal_terms_proposal))
         marginal_terms_proposal += sum(model_trace.nodes[l]["log_prob"] for l in observation_labels)
+        print('add likelihood terms for marginal term prop', desc(marginal_terms_proposal))
 
         marginal_terms = torch.cat([lexpand(marginal_terms_cross, 1), marginal_terms_proposal])
         terms = -marginal_terms.logsumexp(0) + math.log(M + 1)
 
         terms += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+        print('got eig', time.time() -t)
+        print('terms', desc(terms))
+        print('eig', _safe_mean_terms(terms)[1])
+        eig_estimate = _safe_mean_terms(terms)[1]
 
         # Calculate the score parts
         trace.compute_score_parts()
@@ -168,9 +194,13 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
         #     guide_score_component = guide_score_component.sum(0)
         # prescore_function += guide_score_component
 
-        terms += (terms.detach() - control_variate) * prescore_function
+        xi_grad_terms = (terms.detach() - control_variate) * prescore_function
+        phi_grad_terms = q_theta_terms
+        surrogate_loss = _safe_mean_terms(xi_grad_terms + phi_grad_terms)[0]
+        print('add prescore', time.time() -t)
+        print('terms', desc(terms))
 
-        return _safe_mean_terms(terms)
+        return surrogate_loss, eig_estimate
 
     return loss_fn
 

@@ -632,8 +632,7 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
     params = None
     history = []
     for step in range(num_steps):
-        if step % 100 == 0:
-            print(step)
+        print(step)
         if params is not None:
             pyro.infer.util.zero_grads(params)
         with poutine.trace(param_only=True) as param_capture:
@@ -642,7 +641,9 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
                      for site in param_capture.trace.nodes.values())
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
+        print('agg_loss', agg_loss)
         agg_loss.backward(retain_graph=True)
+        print('after backward')
         if return_history:
             history.append(loss)
         optim(params)
@@ -650,6 +651,9 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
             optim.step()
         except AttributeError:
             pass
+        for site in param_capture.trace.nodes.values():
+            print(site['name'], site['value'].unconstrained().max(), site['value'].unconstrained().min())
+        #print(pyro.param("xi").detach().squeeze())
 
     _, loss = loss_fn(final_design, final_num_samples, evaluation=True)
     if return_history:
