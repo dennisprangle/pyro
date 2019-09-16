@@ -69,7 +69,6 @@ def make_learn_xi_model(model, xi_init, constraint):
     def model_learn_xi(design_prototype):
         design = pyro.param("xi", xi_init, constraint=constraint)
         design = design.expand(design_prototype.shape)
-        design.register_hook(lambda x: print('design gradient', x.min(), x.max()))
         return model(design)
     return model_learn_xi
 
