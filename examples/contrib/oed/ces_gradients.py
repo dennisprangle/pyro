@@ -146,7 +146,7 @@ class PosteriorGuide(nn.Module):
 class LinearPosteriorGuide(nn.Module):
     def __init__(self, batch_shape):
         super(LinearPosteriorGuide, self).__init__()
-        self.param = nn.Parameter(torch.zeros(*batch_shape, 2 + 3 + 1 + 1))
+        self.param = nn.Parameter(torch.zeros(*batch_shape, 2, 2 + 3 + 1 + 1))
         self.softplus = nn.Softplus()
 
     def set_prior(self, rho_concentration, alpha_concentration, slope_mu, slope_sigma):
@@ -158,12 +158,12 @@ class LinearPosteriorGuide(nn.Module):
 
     def forward(self, y_dict, design_prototype, observation_labels, target_labels):
         y = y_dict["y"]
-        final = y - 0.5
-
-        rho_concentration = self.softplus(final * self.param[..., 0:2]) + self.prior_rho_concentration
-        alpha_concentration = self.softplus(final * self.param[..., 2:5]) + self.prior_alpha_concentration
-        slope_mu = self.prior_slope_mu + 3 * 2 * (-1 + 2 * torch.sigmoid(final.squeeze(-1) * self.param[..., 5]))
-        slope_sigma = self.prior_slope_sigma * (1e-6 + 2 * torch.sigmoid(final.squeeze(-1) * self.param[..., 6]))
+        final = self.param[..., 0, :] * y + self.param[..., 1, :] * (1. - y)
+        
+        rho_concentration = self.softplus(final[..., 0:2]) + self.prior_rho_concentration
+        alpha_concentration = self.softplus(final[..., 2:5]) + self.prior_alpha_concentration
+        slope_mu = self.prior_slope_mu + 3 * 2 * (-1 + 2 * torch.sigmoid(final[..., 5]))
+        slope_sigma = self.prior_slope_sigma * (1e-6 + 2 * torch.sigmoid(final[..., 6]))
 
         logging.debug("rho_concentration {} {} alpha concentration {} {}".format(
             rho_concentration.min().item(), rho_concentration.max().item(),
