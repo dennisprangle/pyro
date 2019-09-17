@@ -154,12 +154,12 @@ class LinearPosteriorGuide(nn.Module):
         self.prior_alpha_concentration = alpha_concentration
         self.prior_slope_mu = slope_mu
         self.prior_slope_sigma = slope_sigma
+        self.param = nn.Parameter(torch.zeros(self.param.shape))
 
     def forward(self, y_dict, design_prototype, observation_labels, target_labels):
         y = y_dict["y"]
         final = y - 0.5
 
-        print(self.param)
         rho_concentration = self.softplus(final * self.param[..., 0:2]) + self.prior_rho_concentration
         alpha_concentration = self.softplus(final * self.param[..., 2:5]) + self.prior_alpha_concentration
         slope_mu = self.prior_slope_mu + 3 * 2 * (-1 + 2 * torch.sigmoid(final.squeeze(-1) * self.param[..., 5]))

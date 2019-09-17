@@ -20,7 +20,7 @@ from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, 
 from pyro.contrib.oed.eig import opt_eig_ape_loss
 from pyro.util import is_bad
 
-from ces_gradients import PosteriorGuide
+from ces_gradients import PosteriorGuide, LinearPosteriorGuide
 
 
 # TODO read from torch float spec
@@ -270,9 +270,9 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
                 elif typ == 'ace-grad':
 
-                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 7, 800, 0.0025, 0.00025
+                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 8, 800, 0.005, 0.0005
                     num_grad_acq = 8
-                    posterior_guide = PosteriorGuide((num_parallel, num_grad_acq))
+                    posterior_guide = LinearPosteriorGuide((num_parallel, num_grad_acq))
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
                     eig_loss = _differentiable_ace_eig_loss(model_learn_xi, posterior_guide, grad_n_samples ** 2,
                                                             ["y"], ["rho", "alpha", "slope"])
