@@ -143,6 +143,47 @@ class PosteriorGuide(nn.Module):
             pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
 
 
+class LinearPosteriorGuide(nn.Module):
+    def __init__(self, batch_shape):
+        super(LinearPosteriorGuide, self).__init__()
+        self.param = nn.Parameter(torch.zeros(*batch_shape, 2 + 3 + 1 + 1))
+        self.softplus = nn.Softplus()
+
+    def set_prior(self, rho_concentration, alpha_concentration, slope_mu, slope_sigma):
+        self.prior_rho_concentration = rho_concentration
+        self.prior_alpha_concentration = alpha_concentration
+        self.prior_slope_mu = slope_mu
+        self.prior_slope_sigma = slope_sigma
+
+    def forward(self, y_dict, design_prototype, observation_labels, target_labels):
+        y = y_dict["y"]
+        final = y - 0.5
+
+        print(self.param)
+        rho_concentration = self.softplus(final * self.param[..., 0:2]) + self.prior_rho_concentration
+        alpha_concentration = self.softplus(final * self.param[..., 2:5]) + self.prior_alpha_concentration
+        slope_mu = self.prior_slope_mu + 3 * 2 * (-1 + 2 * torch.sigmoid(final.squeeze(-1) * self.param[..., 5]))
+        slope_sigma = self.prior_slope_sigma * (1e-6 + 2 * torch.sigmoid(final.squeeze(-1) * self.param[..., 6]))
+
+        logging.debug("rho_concentration {} {} alpha concentration {} {}".format(
+            rho_concentration.min().item(), rho_concentration.max().item(),
+            alpha_concentration.min().item(), alpha_concentration.max().item()))
+        logging.debug("slope mu {} {} sigma {} {}".format(
+            slope_mu.min().item(), slope_mu.max().item(), slope_sigma.min().item(), slope_sigma.max().item()))
+
+        pyro.module("posterior_guide", self)
+
+        batch_shape = design_prototype.shape[:-2]
+        with ExitStack() as stack:
+            for plate in iter_plates_to_shape(batch_shape):
+                stack.enter_context(plate)
+            rho_shape = batch_shape + (rho_concentration.shape[-1],)
+            pyro.sample("rho", dist.Dirichlet(rho_concentration.expand(rho_shape)))
+            alpha_shape = batch_shape + (alpha_concentration.shape[-1],)
+            pyro.sample("alpha", dist.Dirichlet(alpha_concentration.expand(alpha_shape)))
+            pyro.sample("slope", dist.LogNormal(slope_mu.expand(batch_shape), slope_sigma.expand(batch_shape)))
+
+
 def marginal_guide(mu_init, log_sigma_init, shape, label):
     def guide(design, observation_labels, target_labels):
         mu = pyro.param("marginal_mu", mu_init * torch.ones(*shape))
@@ -257,14 +298,14 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
         xi_init = torch.cat([xi_init, xi_init], dim=-1)
         observation_sd = torch.tensor(.005)
         # Change the prior distribution here
-        # rho_concentration = torch.tensor([[1., 1.]])
-        # alpha_concentration = torch.tensor([[184., 247., 418.]])
-        # slope_mu = torch.tensor([2.32])
-        # slope_sigma = torch.tensor([.0148])
         rho_concentration = torch.tensor([[1., 1.]])
-        alpha_concentration = torch.tensor([[1., 1., 1.]])
-        slope_mu = torch.tensor([1.])
-        slope_sigma = torch.tensor([3.])
+        alpha_concentration = torch.tensor([[184., 247., 418.]])
+        slope_mu = torch.tensor([2.32])
+        slope_sigma = torch.tensor([.0148])
+        # rho_concentration = torch.tensor([[1., 1.]])
+        # alpha_concentration = torch.tensor([[1., 1., 1.]])
+        # slope_mu = torch.tensor([1.])
+        # slope_sigma = torch.tensor([3.])
         model_learn_xi = make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma,
                                         observation_sd, xi_init=xi_init)
 
@@ -289,7 +330,7 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
         #     loss = neg_loss(eig_loss)
 
         elif estimator == 'ace':
-            guide = PosteriorGuide(tuple())
+            guide = LinearPosteriorGuide(tuple())
             guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
             eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"],
                                                     ["rho", "alpha", "slope"])
