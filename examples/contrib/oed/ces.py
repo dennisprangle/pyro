@@ -270,11 +270,12 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
                 elif typ == 'ace-grad':
 
-                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 7, 700, 0.001, 0.001
+                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 10, 1500, 0.0025, 0.001
                     num_grad_acq = 8
+                    grad_contrast_samples = 10
                     posterior_guide = LinearPosteriorGuide((num_parallel, num_grad_acq))
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
-                    eig_loss = _differentiable_ace_eig_loss(model_learn_xi, posterior_guide, grad_n_samples ** 2,
+                    eig_loss = _differentiable_ace_eig_loss(model_learn_xi, posterior_guide, grad_contrast_samples,
                                                             ["y"], ["rho", "alpha", "slope"])
                     loss = neg_loss(eig_loss)
 
