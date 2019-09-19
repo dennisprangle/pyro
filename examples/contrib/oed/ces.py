@@ -261,7 +261,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
                 elif typ == 'nce-grad':
 
-                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 10, 1500, 0.0025, 0.001
+                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 10, 3000, 0.0025, 0.001
                     num_grad_acq = 8
                     grad_contrast_samples = 10
                     eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
