@@ -146,7 +146,7 @@ class PosteriorGuide(nn.Module):
 class LinearPosteriorGuide(nn.Module):
     def __init__(self, batch_shape):
         super(LinearPosteriorGuide, self).__init__()
-        self.param = nn.Parameter(torch.zeros(*batch_shape, 3, 2 + 3 + 1 + 1))
+        pyro.param("q_param", torch.zeros(*batch_shape, 4, 2 + 3 + 1 + 1))
         self.softplus = nn.Softplus()
         self.relu = nn.ReLU()
 
@@ -155,13 +155,15 @@ class LinearPosteriorGuide(nn.Module):
         self.prior_alpha_concentration = alpha_concentration
         self.prior_slope_mu = slope_mu
         self.prior_slope_sigma = slope_sigma
-        self.param = nn.Parameter(torch.zeros(self.param.shape))
+        pyro.get_param_store().replace_param("q_param", torch.zeros(pyro.param("q_param").shape), pyro.param("q_param"))
 
     def forward(self, y_dict, design_prototype, observation_labels, target_labels):
+        param = pyro.param("q_param")
         y = y_dict["y"]
         y, y1m = y.clamp(1e-35, 1), (1. - y).clamp(1e-35, 1)
         s = y.log() - y1m.log()
-        final = self.param[..., 0, :] + self.param[..., 1, :] * s + self.param[..., 2, :] * (1e-6 + s).abs().log()
+        final = param[..., 0, :] + param[..., 1, :] * s + param[..., 2, :] * (1e-6 + s).abs().log() + \
+                param[..., 3, :] * (s > 0.).float()
         
         rho_concentration =  1e-6 + self.relu(self.prior_rho_concentration + final[..., 0:2])
         alpha_concentration = 1e-6 + self.relu(self.prior_alpha_concentration + final[..., 2:5])
@@ -174,7 +176,6 @@ class LinearPosteriorGuide(nn.Module):
         logging.debug("slope mu {} {} sigma {} {}".format(
             slope_mu.min().item(), slope_mu.max().item(), slope_sigma.min().item(), slope_sigma.max().item()))
 
-        pyro.module("posterior_guide", self)
 
         batch_shape = design_prototype.shape[:-2]
         with ExitStack() as stack:
