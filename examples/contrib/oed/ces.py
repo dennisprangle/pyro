@@ -270,7 +270,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
                 elif typ == 'ace-grad':
 
-                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 10, 10000, 0.0001, 0.0001
+                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 7, 700, 0.001, 0.001
                     num_grad_acq = 8
                     posterior_guide = LinearPosteriorGuide((num_parallel, num_grad_acq))
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
