@@ -175,6 +175,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, num_
             t = time.time()
 
             if typ in ['marginal', 'nmc']:
+                # Suggested num_acquisition = 50
                 if num_acquisition < 50:
                     raise ValueError("Setting num_acquisition too low")
                 # Initialization
@@ -258,12 +259,14 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, num_
 
                 if typ == 'posterior-grad':
 
+                    # Suggested num_gradient_steps = 5000
                     posterior_guide = LinearPosteriorGuide((num_parallel, num_acquisition))
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
                     loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
                 elif typ == 'nce-grad':
 
+                    # Suggested num_gradient_steps = 2500
                     eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                         model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
                         N=N, M=num_contrast_samples, **kwargs)
@@ -271,6 +274,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, num_
 
                 elif typ == 'ace-grad':
 
+                    # Suggested num_gradient_steps = 1500
                     posterior_guide = LinearPosteriorGuide((num_parallel, num_acquisition))
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
                     eig_loss = _differentiable_ace_eig_loss(model_learn_xi, posterior_guide, num_contrast_samples,
