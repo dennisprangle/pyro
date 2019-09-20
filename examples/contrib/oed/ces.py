@@ -113,7 +113,8 @@ def neg_loss(loss):
     return new_loss
 
 
-def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, loglevel):
+def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, num_gradient_steps, num_samples,
+         num_contrast_samples, num_acquisition, obs_sd, loglevel):
     numeric_level = getattr(logging, loglevel.upper(), None)
     if not isinstance(numeric_level, int):
         raise ValueError("Invalid log level: {}".format(loglevel))
@@ -130,7 +131,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
     except OSError:
         logging.info("File {} does not exist yet".format(results_file))
     typs = typs.split(",")
-    observation_sd = torch.tensor(.005)
+    observation_sd = torch.tensor(obs_sd)
 
     for typ in typs:
         logging.info("Type {}".format(typ))
@@ -143,11 +144,10 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
         marginal_mu_init, marginal_log_sigma_init = 0., 6.
         oed_n_samples, oed_n_steps, oed_final_n_samples, oed_lr = 10, 1250, 2000, [0.1, 0.01, 0.001]
         elbo_n_samples, elbo_n_steps, elbo_lr = 10, 1000, 0.04
-        num_acq = 50
         num_bo_steps = 4
         design_dim = 6
 
-        guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acq, 1), "y")
+        guide = marginal_guide(marginal_mu_init, marginal_log_sigma_init, (num_parallel, num_acquisition, 1), "y")
 
         prior = make_ces_model(torch.ones(num_parallel, 1, 2), torch.ones(num_parallel, 1, 3),
                                torch.ones(num_parallel, 1), 3.*torch.ones(num_parallel, 1), observation_sd)
@@ -167,16 +167,20 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
             logging.info("Step {}".format(step))
             model = make_ces_model(rho_concentration, alpha_concentration, slope_mu, slope_sigma, observation_sd)
             results = {'typ': typ, 'step': step, 'git-hash': get_git_revision_hash(), 'seed': seed,
-                       'lengthscale': lengthscale, 'observation_sd': observation_sd}
+                       'lengthscale': lengthscale, 'observation_sd': observation_sd,
+                       'num_gradient_steps': num_gradient_steps, 'num_samples': num_samples,
+                       'num_contrast_samples': num_contrast_samples, 'num_acquisition': num_acquisition}
 
             # Design phase
             t = time.time()
 
             if typ in ['marginal', 'nmc']:
+                if num_acquisition < 50:
+                    raise ValueError("Setting num_acquisition too low")
                 # Initialization
                 noise = torch.tensor(0.2).pow(2)
                 # X = 100*rexpand(torch.rand((num_parallel, num_acq)), 4)
-                X = .01 + 99.99 * torch.rand((num_parallel, num_acq, 1, design_dim))
+                X = .01 + 99.99 * torch.rand((num_parallel, num_acquisition, 1, design_dim))
 
                 if typ == 'marginal':
                     def f(X):
@@ -214,7 +218,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
                     Kff = kernel(X)
                     Kff += noise * torch.eye(Kff.shape[-1])
                     Lff = Kff.cholesky(upper=False)
-                    Xinit = .01 + 99.99 * torch.rand((num_parallel, num_acq, design_dim))
+                    Xinit = .01 + 99.99 * torch.rand((num_parallel, num_acquisition, design_dim))
                     unconstrained_Xnew = transform_to(constraint).inv(Xinit).detach().clone().requires_grad_(True)
                     minimizer = torch.optim.LBFGS([unconstrained_Xnew], max_eval=20)
 
@@ -250,48 +254,41 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, logl
 
             elif typ in ['posterior-grad', 'nce-grad', 'ace-grad']:
                 model_learn_xi = make_learn_xi_model(model)
+                grad_start_lr, grad_end_lr = 0.0025, 0.001
 
                 if typ == 'posterior-grad':
 
-                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 20, 5000, 0.0025, 0.001
-                    num_grad_acq = 8
-                    posterior_guide = LinearPosteriorGuide((num_parallel, num_grad_acq))
+                    posterior_guide = LinearPosteriorGuide((num_parallel, num_acquisition))
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
                     loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
                 elif typ == 'nce-grad':
 
-                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 10, 1500, 0.0025, 0.001
-                    num_grad_acq = 8
-                    grad_contrast_samples = 10
                     eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                         model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
-                        N=N, M=grad_contrast_samples, **kwargs)
+                        N=N, M=num_contrast_samples, **kwargs)
                     loss = neg_loss(eig_loss)
 
                 elif typ == 'ace-grad':
 
-                    grad_n_samples, grad_n_steps, grad_start_lr, grad_end_lr = 10, 1500, 0.0025, 0.001
-                    num_grad_acq = 8
-                    grad_contrast_samples = 10
-                    posterior_guide = LinearPosteriorGuide((num_parallel, num_grad_acq))
+                    posterior_guide = LinearPosteriorGuide((num_parallel, num_acquisition))
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
-                    eig_loss = _differentiable_ace_eig_loss(model_learn_xi, posterior_guide, grad_contrast_samples,
+                    eig_loss = _differentiable_ace_eig_loss(model_learn_xi, posterior_guide, num_contrast_samples,
                                                             ["y"], ["rho", "alpha", "slope"])
                     loss = neg_loss(eig_loss)
 
                 constraint = torch.distributions.constraints.interval(1e-6, 100.)
-                xi_init = .01 + 99.99 * torch.rand((num_parallel, num_grad_acq, 1, design_dim // 2))
+                xi_init = .01 + 99.99 * torch.rand((num_parallel, num_acquisition, 1, design_dim // 2))
                 xi_init = torch.cat([xi_init, xi_init], dim=-1)
                 pyro.param("xi", xi_init, constraint=constraint)
                 pyro.get_param_store().replace_param("xi", xi_init, pyro.param("xi"))
-                design_prototype = torch.zeros(num_parallel, num_grad_acq, 1, design_dim)  # this is annoying, code needs refactor
+                design_prototype = torch.zeros(num_parallel, num_acquisition, 1, design_dim)  # this is annoying, code needs refactor
 
                 start_lr, end_lr = grad_start_lr, grad_end_lr
-                gamma = (end_lr / start_lr) ** (1 / grad_n_steps)
+                gamma = (end_lr / start_lr) ** (1 / num_gradient_steps)
                 scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                                       'gamma': gamma})
-                ape = opt_eig_ape_loss(design_prototype, loss, num_samples=grad_n_samples, num_steps=grad_n_steps,
+                ape = opt_eig_ape_loss(design_prototype, loss, num_samples=num_samples, num_steps=num_gradient_steps,
                                        optim=scheduler, final_num_samples=500)
                 min_ape, d_star_index = torch.min(ape, dim=1)
                 logging.info('min loss {}'.format(min_ape))
@@ -340,5 +337,12 @@ if __name__ == "__main__":
     parser.add_argument("--seed", nargs="?", default=-1, type=int)
     parser.add_argument("--lengthscale", nargs="?", default=10., type=float)
     parser.add_argument("--loglevel", default="info", type=str)
+    parser.add_argument("--num-gradient-steps", default=1000, type=int)
+    parser.add_argument("--num-samples", default=10, type=int)
+    parser.add_argument("--num-contrast-samples", default=10, type=int)
+    parser.add_argument("--num-acquisition", default=8, type=int)
+    parser.add_argument("--observation-sd", default=0.005, type=float)
     args = parser.parse_args()
-    main(args.num_steps, args.num_parallel, args.name, args.typs, args.seed, args.lengthscale, args.loglevel)
+    main(args.num_steps, args.num_parallel, args.name, args.typs, args.seed, args.lengthscale,
+         args.num_gradient_steps, args.num_samples, args.num_contrast_samples, args.num_acquisiton,
+         args.observation_sd, args.loglevel)
