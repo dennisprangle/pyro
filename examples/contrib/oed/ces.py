@@ -344,5 +344,5 @@ if __name__ == "__main__":
     parser.add_argument("--observation-sd", default=0.005, type=float)
     args = parser.parse_args()
     main(args.num_steps, args.num_parallel, args.name, args.typs, args.seed, args.lengthscale,
-         args.num_gradient_steps, args.num_samples, args.num_contrast_samples, args.num_acquisiton,
+         args.num_gradient_steps, args.num_samples, args.num_contrast_samples, args.num_acquisition,
          args.observation_sd, args.loglevel)
