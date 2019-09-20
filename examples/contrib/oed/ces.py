@@ -330,7 +330,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, num_
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CES (Constant Elasticity of Substitution) indifference"
                                                  " iterated experiment design")
-    parser.add_argument("--num-steps", nargs="?", default=25, type=int)
+    parser.add_argument("--num-steps", nargs="?", default=20, type=int)
     parser.add_argument("--num-parallel", nargs="?", default=10, type=int)
     parser.add_argument("--name", nargs="?", default="", type=str)
     parser.add_argument("--typs", nargs="?", default="rand", type=str)
