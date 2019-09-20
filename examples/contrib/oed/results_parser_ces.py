@@ -37,12 +37,14 @@ MARKERS = {'ace-grad': 'o',
 S = 3
 
 
-def upper_lower(array):
-    centre = array.mean(1)
-    se = array.std(1)/np.sqrt(array.shape[1])
-    upper, lower = centre + se, centre - se
-    return lower, centre, upper
-    # return np.percentile(array, 75, axis=1), np.percentile(array, 50, axis=1), np.percentile(array, 25, axis=1)
+def upper_lower(array, percentile=False):
+    if percentile:
+        return np.percentile(array, 75, axis=1), np.percentile(array, 50, axis=1), np.percentile(array, 25, axis=1)
+    else:
+        centre = array.mean(1)
+        se = array.std(1)/np.sqrt(array.shape[1])
+        upper, lower = centre + se, centre - se
+        return lower, centre, upper
 
 
 def rlogdet(M):
@@ -63,7 +65,7 @@ def rtrace(M):
     return bound.view(old_shape)
 
 
-def main(fnames, findices, plot):
+def main(fnames, findices, plot, percentile):
     fnames = fnames.split(",")
     findices = map(int, findices.split(","))
 
@@ -117,7 +119,7 @@ def main(fnames, findices, plot):
             plt.figure(figsize=(5, 5))
             for i, k in enumerate(reformed[statistic]):
                 e = reformed[statistic][k].squeeze()[1:]
-                lower, centre, upper = upper_lower(e)
+                lower, centre, upper = upper_lower(e, percentile=percentile)
                 x = np.arange(2, e.shape[0]+2)
                 plt.plot(x, centre, linestyle='-', markersize=8, color=COLOURS[k], marker=MARKERS[k], linewidth=1.5)
                 plt.fill_between(x, upper, lower, color=COLOURS[k] + [.1])
@@ -144,5 +146,9 @@ if __name__ == "__main__":
     feature_parser.add_argument('--plot', dest='plot', action='store_true')
     feature_parser.add_argument('--no-plot', dest='plot', action='store_false')
     parser.set_defaults(plot=True)
+    percentile_parser = parser.add_mutually_exclusive_group(required=False)
+    percentile_parser.add_argument("--percentile", dest='percentile', action='store_true')
+    percentile_parser.add_argument("--no-percentile", dest='percentile', action='store_false')
+    parser.set_defaults(percentile=False)
     args = parser.parse_args()
-    main(args.fnames, args.findices, args.plot)
+    main(args.fnames, args.findices, args.plot, args.percentile)
