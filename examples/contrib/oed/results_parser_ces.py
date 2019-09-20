@@ -24,7 +24,8 @@ VALUE_LABELS = {"Entropy": "Posterior entropy",
                 "rho_rmse": "RMSE in $\\rho$ estimate",
                 "alpha_rmse": "RMSE in $\\mathbf{\\alpha}$ estimate",
                 "slope_rmse": 'RMSE in $u$ estimate',
-                "total_rmse": 'Total RMSE'}
+                "total_rmse": 'Total RMSE',
+                "Imax": "max I"}
 LABELS = {'marginal': 'Marginal BO (baseline)', 'rand': 'Random design (baseline)', 'nmc': 'BOED NMC (baseline)',
           'posterior-grad': "Posterior gradient", 'nce-grad': "NCE gradient", "ace-grad": "ACE gradient"}
 
@@ -37,12 +38,14 @@ MARKERS = {'ace-grad': 'o',
 S = 3
 
 
-def upper_lower(array):
-    centre = array.mean(1)
-    se = array.std(1)/np.sqrt(array.shape[1])
-    upper, lower = centre + se, centre - se
-    return lower, centre, upper
-    # return np.percentile(array, 75, axis=1), np.percentile(array, 50, axis=1), np.percentile(array, 25, axis=1)
+def upper_lower(array, percentile=False):
+    if percentile:
+        return np.percentile(array, 75, axis=1), np.percentile(array, 50, axis=1), np.percentile(array, 25, axis=1)
+    else:
+        centre = array.mean(1)
+        se = array.std(1)/np.sqrt(array.shape[1])
+        upper, lower = centre + se, centre - se
+        return lower, centre, upper
 
 
 def rlogdet(M):
@@ -63,7 +66,7 @@ def rtrace(M):
     return bound.view(old_shape)
 
 
-def main(fnames, findices, plot):
+def main(fnames, findices, plot, percentile):
     fnames = fnames.split(",")
     findices = map(int, findices.split(","))
 
@@ -98,8 +101,13 @@ def main(fnames, findices, plot):
                     slope_rmse = torch.sqrt((slope_dist.mean - torch.tensor(10.)).pow(2) + slope_dist.variance)
                     total_rmse = torch.sqrt(rho_rmse**2 + alpha_rmse**2 + slope_rmse**2)
                     entropy = rho_dist.entropy() + alpha_dist.entropy() + slope_dist.entropy()
+                    try:
+                        eig = -results['min loss']
+                    except:
+                        eig = results['max EIG']
+
                     output = {"rho_rmse": rho_rmse, "alpha_rmse": alpha_rmse, "slope_rmse": slope_rmse,
-                              "Entropy": entropy, "total_rmse": total_rmse}
+                              "Entropy": entropy, "total_rmse": total_rmse, 'Imax': eig}
                     results_dict[results['typ']].append(output)
             except EOFError:
                 continue
@@ -113,11 +121,11 @@ def main(fnames, findices, plot):
         for statistic in possible_stats}
 
     if plot:
-        for statistic in ["Entropy", "rho_rmse", "alpha_rmse", "slope_rmse"]:
+        for statistic in ["Entropy", "rho_rmse", "alpha_rmse", "slope_rmse", "Imax"]:
             plt.figure(figsize=(5, 5))
             for i, k in enumerate(reformed[statistic]):
                 e = reformed[statistic][k].squeeze()[1:]
-                lower, centre, upper = upper_lower(e)
+                lower, centre, upper = upper_lower(e, percentile=percentile)
                 x = np.arange(2, e.shape[0]+2)
                 plt.plot(x, centre, linestyle='-', markersize=8, color=COLOURS[k], marker=MARKERS[k], linewidth=1.5)
                 plt.fill_between(x, upper, lower, color=COLOURS[k] + [.1])
@@ -131,7 +139,7 @@ def main(fnames, findices, plot):
             plt.ylabel(VALUE_LABELS[statistic], fontsize=22)
             # [i.set_linewidth(S/2) for i in plt.gca().spines.values()]
             # plt.gca().tick_params(width=S/2)
-            if statistic != "Entropy":
+            if statistic not in ["Entropy", "Imax"]:
                 plt.yscale('log')
             plt.show()
 
@@ -144,5 +152,9 @@ if __name__ == "__main__":
     feature_parser.add_argument('--plot', dest='plot', action='store_true')
     feature_parser.add_argument('--no-plot', dest='plot', action='store_false')
     parser.set_defaults(plot=True)
+    percentile_parser = parser.add_mutually_exclusive_group(required=False)
+    percentile_parser.add_argument("--percentile", dest='percentile', action='store_true')
+    percentile_parser.add_argument("--no-percentile", dest='percentile', action='store_false')
+    parser.set_defaults(percentile=False)
     args = parser.parse_args()
-    main(args.fnames, args.findices, args.plot)
+    main(args.fnames, args.findices, args.plot, args.percentile)
