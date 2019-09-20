@@ -24,7 +24,8 @@ VALUE_LABELS = {"Entropy": "Posterior entropy",
                 "rho_rmse": "RMSE in $\\rho$ estimate",
                 "alpha_rmse": "RMSE in $\\mathbf{\\alpha}$ estimate",
                 "slope_rmse": 'RMSE in $u$ estimate',
-                "total_rmse": 'Total RMSE'}
+                "total_rmse": 'Total RMSE',
+                "Imax": "max I"}
 LABELS = {'marginal': 'Marginal BO (baseline)', 'rand': 'Random design (baseline)', 'nmc': 'BOED NMC (baseline)',
           'posterior-grad': "Posterior gradient", 'nce-grad': "NCE gradient", "ace-grad": "ACE gradient"}
 
@@ -100,8 +101,13 @@ def main(fnames, findices, plot, percentile):
                     slope_rmse = torch.sqrt((slope_dist.mean - torch.tensor(10.)).pow(2) + slope_dist.variance)
                     total_rmse = torch.sqrt(rho_rmse**2 + alpha_rmse**2 + slope_rmse**2)
                     entropy = rho_dist.entropy() + alpha_dist.entropy() + slope_dist.entropy()
+                    try:
+                        eig = -results['min loss']
+                    except:
+                        eig = results['max EIG']
+
                     output = {"rho_rmse": rho_rmse, "alpha_rmse": alpha_rmse, "slope_rmse": slope_rmse,
-                              "Entropy": entropy, "total_rmse": total_rmse}
+                              "Entropy": entropy, "total_rmse": total_rmse, 'Imax': eig}
                     results_dict[results['typ']].append(output)
             except EOFError:
                 continue
@@ -115,7 +121,7 @@ def main(fnames, findices, plot, percentile):
         for statistic in possible_stats}
 
     if plot:
-        for statistic in ["Entropy", "rho_rmse", "alpha_rmse", "slope_rmse"]:
+        for statistic in ["Entropy", "rho_rmse", "alpha_rmse", "slope_rmse", "Imax"]:
             plt.figure(figsize=(5, 5))
             for i, k in enumerate(reformed[statistic]):
                 e = reformed[statistic][k].squeeze()[1:]
@@ -133,7 +139,7 @@ def main(fnames, findices, plot, percentile):
             plt.ylabel(VALUE_LABELS[statistic], fontsize=22)
             # [i.set_linewidth(S/2) for i in plt.gca().spines.values()]
             # plt.gca().tick_params(width=S/2)
-            if statistic != "Entropy":
+            if statistic not in ["Entropy", "Imax"]:
                 plt.yscale('log')
             plt.show()
 
