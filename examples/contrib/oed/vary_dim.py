@@ -4,8 +4,11 @@ from contextlib import ExitStack
 import math
 import subprocess
 import pickle
+from functools import partial
+import numpy as np
 
 import torch
+from torch.distributions import constraints
 
 import pyro
 import pyro.distributions as dist
@@ -21,38 +24,60 @@ def get_git_revision_hash():
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
 
 
-N = 2
-prior_scale_tril = torch.tensor([[10., 0.], [0., 2.]])
-xi_init = (math.pi/3) * torch.ones(N,)
+def prior_entropy(alpha, D):
+    return analytic_eig_delta_epsilon(alpha, D, torch.tensor(0.0), torch.tensor(0.0), 1.0)
 
 
-def model_learn_xi(design_prototype):
-    thetas = pyro.param('xi', xi_init)
-    xi = lexpand(torch.stack([torch.sin(thetas), torch.cos(thetas)], dim=-1), 1)
+def analytic_eig_delta_epsilon(alpha, D, delta, epsilon, sigmasq):
+    oneplusd = 1.0 + 1.0 / D
+    term1 = 0.5 * D * (oneplusd + delta / sigmasq).log()
+    term2 = 0.5 * D * (oneplusd + epsilon / sigmasq).log()
+    term3 = (1.0 - 0.5 * (alpha * alpha / (oneplusd + delta / sigmasq) + 1.0 / (oneplusd + epsilon / sigmasq))).log()
+    return 0.5 * (term1 + term2 + term3)
+
+
+def analytic_eig_B(alpha, D, B, sigmasq):
+    oneplusd = 1.0 + 1.0 / D
+    term1 = (oneplusd + B / sigmasq).log().sum()
+    term2a = (alpha * alpha / (oneplusd + B[0:int(D/2)] / sigmasq)).sum()
+    term2b = (1.0 / (oneplusd + B[int(D/2):] / sigmasq)).sum()
+    term2 = (1.0 - (term2a + term2b) / D).log()
+    return 0.5 * (term1 + term2)
+
+
+def top_eig(alpha, D, sigmasq, S=1000):
+    delta = torch.arange(S + 1).float() / float(S)
+    epsilon = 1.0 - delta
+    max_eig, optimal_delta = analytic_eig_delta_epsilon(alpha, D, delta, epsilon, sigmasq).max(dim=-1)
+    return max_eig.item(), delta[optimal_delta].item(), epsilon[optimal_delta].item()
+
+
+def get_u(alpha, D):
+    u = torch.ones(D)
+    u[0:int(D/2)] = alpha
+    return u.unsqueeze(-1) / math.sqrt(D)
+
+
+def init_budget_fn(D):
+    b = torch.rand(D)
+    return b / b.sum()
+
+
+def model_learn_design(design_prototype, D=4, alpha=0.5, sigma=1.0):
+    total_budget = 0.5 * D
+    B = total_budget * pyro.param('budget', partial(init_budget_fn, D=D), constraint=constraints.simplex)
+    #xi = lexpand(], dim=-1), 1)
     batch_shape = design_prototype.shape[:-2]
     with ExitStack() as stack:
         for plate in iter_plates_to_shape(batch_shape):
             stack.enter_context(plate)
 
-        x = pyro.sample("x", dist.MultivariateNormal(torch.zeros(2), scale_tril=prior_scale_tril))
-        prediction_mean = rmv(xi, x)
-        return pyro.sample("y", dist.Normal(prediction_mean, torch.tensor(1.)).independent(1))
+        u = get_u(alpha, D)
+        prior_precision = (1.0 + 1.0 / D) * torch.eye(D) - torch.mm(u, u.t())
 
+        x = pyro.sample("x", dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision))
+        return pyro.sample("y", dist.Normal(x * B, sigma * B.sqrt()).to_event(1))
 
-def model_fix_xi(design):
-    batch_shape = design.shape[:-2]
-    with ExitStack() as stack:
-        for plate in iter_plates_to_shape(batch_shape):
-            stack.enter_context(plate)
-
-        x = pyro.sample("x", dist.MultivariateNormal(lexpand(torch.zeros(2), *batch_shape),
-                                                     scale_tril=lexpand(prior_scale_tril, *batch_shape)))
-        prediction_mean = rmv(design, x)
-        return pyro.sample("y", dist.Normal(prediction_mean, torch.tensor(1.)).independent(1))
-
-
-model_fix_xi.w_sds = {"x": prior_scale_tril.diagonal()}
-model_fix_xi.obs_sd = torch.tensor(1.)
 
 
 def make_posterior_guide(d):
@@ -73,7 +98,7 @@ def neg_loss(loss):
     return new_loss
 
 
-def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
+def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, D, alpha, sigma):
 
     params = None
     est_loss_history = []
@@ -82,18 +107,19 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         if params is not None:
             pyro.infer.util.zero_grads(params)
         with poutine.trace(param_only=True) as param_capture:
-            agg_loss, loss = loss_fn(design, num_samples, evaluation=True)
+            agg_loss, loss = loss_fn(design, num_samples, alpha=alpha, D=D, sigma=sigma)
         params = set(site["value"].unconstrained()
                      for site in param_capture.trace.nodes.values())
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
-        agg_loss.backward(retain_graph=True)
-        est_loss_history.append(loss)
-        xi_history.append(pyro.param('xi').detach().clone())
+        agg_loss.backward()
+        #agg_loss.backward(retain_graph=True)
+        est_loss_history.append(loss.detach().clone())
+        xi_history.append(pyro.param('budget').detach().clone())
         optim(params)
         optim.step()
 
-    xi_history.append(pyro.param('xi').detach().clone())
+    xi_history.append(pyro.param('budget').detach().clone())
 
     est_loss_history = torch.stack(est_loss_history)
     xi_history = torch.stack(xi_history)
@@ -101,14 +127,18 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
     return xi_history, est_loss_history
 
 
-def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
-    output_dir = "./run_outputs/gradinfo/"
+def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr, alpha=0.01):
+    output_dir = "./"
     if not experiment_name:
         experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
     else:
         experiment_name = output_dir + experiment_name
     results_file = experiment_name + '.pickle'
     estimators = estimators.split(",")
+
+    D=8
+    sigma=0.25
+    sigmasq=sigma ** 2
 
     for estimator in estimators:
         pyro.clear_param_store()
@@ -119,19 +149,19 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             pyro.set_rng_seed(seed)
 
         # Fix correct loss
-        if estimator == 'posterior':
-            guide = make_posterior_guide(1)
-            loss = _differentiable_posterior_loss(model_learn_xi, guide, "y", "x")
+        #if estimator == 'posterior':
+        #    guide = make_posterior_guide(1)
+        #    loss = _differentiable_posterior_loss(model_learn_xi, guide, "y", "x")
 
-        elif estimator == 'nce':
-            eig_loss = lambda d, N, **kwargs: nce_eig(model=model_learn_xi, design=d, observation_labels="y",
+        if estimator == 'nce':
+            eig_loss = lambda d, N, **kwargs: nce_eig(model=model_learn_design, design=d, observation_labels="y",
                                                       target_labels="x", N=N, M=10, **kwargs)
             loss = neg_loss(eig_loss)
 
-        elif estimator == 'ace':
-            guide = make_posterior_guide(1)
-            eig_loss = _ace_eig_loss(model_learn_xi, guide, 10, "y", "x")
-            loss = neg_loss(eig_loss)
+        #elif estimator == 'ace':
+        #    guide = make_posterior_guide(1)
+        #    eig_loss = _ace_eig_loss(model_learn_xi, guide, 10, "y", "x")
+        #    loss = neg_loss(eig_loss)
 
         else:
             raise ValueError("Unexpected estimator")
@@ -141,39 +171,32 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                               'gamma': gamma})
 
-        design_prototype = torch.zeros(1, N, 2)  # this is annoying, code needs refactor
+        design_prototype = torch.zeros(1, 1, D)  # this is annoying, code needs refactor
 
         xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=10,
-                                                             num_steps=num_steps, optim=scheduler)
+                                                             num_steps=num_steps, optim=scheduler,
+                                                             alpha=alpha, D=D, sigma=sigma)
 
-        if estimator == 'posterior':
-            est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, "x", est_loss_history, True, {})
-        else:
-            est_eig_history = -est_loss_history
-        eig_history = linear_model_ground_truth(
-            model_fix_xi, torch.stack([torch.sin(xi_history), torch.cos(xi_history)], dim=-1), "y", "x")
-
-        # Build heatmap
-        grid_points = 100
-        b0low = min(0, xi_history[:, 0].min()) - 0.1
-        b0up = max(math.pi, xi_history[:, 0].max()) + 0.1
-        b1low = min(0, xi_history[:, 1].min()) - 0.1
-        b1up = max(math.pi, xi_history[:, 1].max()) + 0.1
-        theta1 = torch.linspace(b0low, b0up, grid_points)
-        theta2 = torch.linspace(b1low, b1up, grid_points)
-        d1 = torch.stack([torch.sin(theta1), torch.cos(theta1)], dim=-1).unsqueeze(-2).unsqueeze(1).expand(
-            grid_points, grid_points, 1, 2)
-        d2 = lexpand(torch.stack([torch.sin(theta2), torch.cos(theta2)], dim=-1).unsqueeze(-2), grid_points)
-        d = torch.cat([d1, d2], dim=-2)
-        eig_heatmap = linear_model_ground_truth(model_fix_xi, d, "y", "x")
-        extent = [b0low, b0up, b1low, b1up]
+        #if estimator == 'posterior':
+        #    est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, "x", est_loss_history, True, {})
+        #else:
+        est_eig_history = -est_loss_history
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
-                   'prior_scale_tril': prior_scale_tril, 'xi_history': xi_history, 'est_eig_history': est_eig_history,
-                   'eig_history': eig_history, 'eig_heatmap': eig_heatmap, 'extent': extent}
+                   'xi_history': xi_history, 'est_eig_history': est_eig_history}
 
-        with open(results_file, 'wb') as f:
-            pickle.dump(results, f)
+        print("est_eig_history mean",np.mean(np.array(est_eig_history[-100:])))
+        print("est_eig_history mean",np.mean(np.array(est_eig_history[-200:])))
+        print("est_eig_history mean",np.mean(np.array(est_eig_history[-500:])))
+        print("top_eig", top_eig(alpha, D, sigmasq))
+        print("first_eig", analytic_eig_B(alpha, D, 0.5 * D * xi_history[0], sigmasq))
+        print("final_eig", analytic_eig_B(alpha, D, 0.5 * D * pyro.param('budget'), sigmasq))
+        print("xi[0]", 0.5 * D * xi_history[0])
+        print("xi[-1]", 0.5 * D * xi_history[-1])
+        print("prior entropy", prior_entropy(alpha, D))
+
+        #with open(results_file, 'wb') as f:
+        #    pickle.dump(results, f)
 
 
 if __name__ == "__main__":
@@ -181,9 +204,9 @@ if __name__ == "__main__":
     parser.add_argument("--num-steps", default=2000, type=int)
     # parser.add_argument("--num-parallel", default=10, type=int)
     parser.add_argument("--name", default="", type=str)
-    parser.add_argument("--estimator", default="posterior", type=str)
+    parser.add_argument("--estimator", default="nce", type=str)
     parser.add_argument("--seed", default=-1, type=int)
     parser.add_argument("--start-lr", default=0.1, type=float)
-    parser.add_argument("--end-lr", default=0.001, type=float)
+    parser.add_argument("--end-lr", default=0.0001, type=float)
     args = parser.parse_args()
     main(args.num_steps, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)
