@@ -24,8 +24,8 @@ def get_git_revision_hash():
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
 
 
-def prior_entropy(alpha, D):
-    return analytic_eig_delta_epsilon(alpha, D, torch.tensor(0.0), torch.tensor(0.0), 1.0)
+#def prior_entropy(alpha, D):
+#    return analytic_eig_delta_epsilon(alpha, D, torch.tensor(0.0), torch.tensor(0.0), 1.0)
 
 
 def analytic_eig_delta_epsilon(alpha, D, delta, epsilon, sigmasq):
@@ -181,19 +181,19 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr, alpha=0
         #    est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, "x", est_loss_history, True, {})
         #else:
         est_eig_history = -est_loss_history
+        print("len(est_loss_history)",len(est_loss_history))
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
                    'xi_history': xi_history, 'est_eig_history': est_eig_history}
 
-        print("est_eig_history mean",np.mean(np.array(est_eig_history[-100:])))
+        print("early est_eig_history mean",np.mean(np.array(est_eig_history[100:500])))
         print("est_eig_history mean",np.mean(np.array(est_eig_history[-200:])))
-        print("est_eig_history mean",np.mean(np.array(est_eig_history[-500:])))
         print("top_eig", top_eig(alpha, D, sigmasq))
         print("first_eig", analytic_eig_B(alpha, D, 0.5 * D * xi_history[0], sigmasq))
         print("final_eig", analytic_eig_B(alpha, D, 0.5 * D * pyro.param('budget'), sigmasq))
         print("xi[0]", 0.5 * D * xi_history[0])
         print("xi[-1]", 0.5 * D * xi_history[-1])
-        print("prior entropy", prior_entropy(alpha, D))
+        #print("prior entropy", prior_entropy(alpha, D))
 
         #with open(results_file, 'wb') as f:
         #    pickle.dump(results, f)
@@ -201,7 +201,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr, alpha=0
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a linear model")
-    parser.add_argument("--num-steps", default=2000, type=int)
+    parser.add_argument("--num-steps", default=5000, type=int)
     # parser.add_argument("--num-parallel", default=10, type=int)
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--estimator", default="nce", type=str)

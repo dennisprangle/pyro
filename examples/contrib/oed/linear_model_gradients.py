@@ -82,7 +82,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         if params is not None:
             pyro.infer.util.zero_grads(params)
         with poutine.trace(param_only=True) as param_capture:
-            agg_loss, loss = loss_fn(design, num_samples, evaluation=True)
+            agg_loss, loss = loss_fn(design, num_samples)
         params = set(site["value"].unconstrained()
                      for site in param_capture.trace.nodes.values())
         if torch.isnan(agg_loss):
@@ -153,6 +153,11 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         eig_history = linear_model_ground_truth(
             model_fix_xi, torch.stack([torch.sin(xi_history), torch.cos(xi_history)], dim=-1), "y", "x")
 
+        print("est_eig_history[-1]",est_eig_history[-1])
+        print("est_eig_history[-2]",est_eig_history[-2])
+        print("est_eig_history[-3]",est_eig_history[-3])
+        print("eig_history[-1]", eig_history[-1])
+
         # Build heatmap
         grid_points = 100
         b0low = min(0, xi_history[:, 0].min()) - 0.1
@@ -178,12 +183,12 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a linear model")
-    parser.add_argument("--num-steps", default=2000, type=int)
+    parser.add_argument("--num-steps", default=5000, type=int)
     # parser.add_argument("--num-parallel", default=10, type=int)
     parser.add_argument("--name", default="", type=str)
-    parser.add_argument("--estimator", default="posterior", type=str)
+    parser.add_argument("--estimator", default="nce", type=str)
     parser.add_argument("--seed", default=-1, type=int)
     parser.add_argument("--start-lr", default=0.1, type=float)
-    parser.add_argument("--end-lr", default=0.001, type=float)
+    parser.add_argument("--end-lr", default=0.0001, type=float)
     args = parser.parse_args()
     main(args.num_steps, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)
