@@ -72,7 +72,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
             pyro.infer.util.zero_grads(params)
         with poutine.trace(param_only=True) as param_capture:
             agg_loss, loss = loss_fn(design, num_samples, evaluation=True, control_variate=baseline)
-        baseline = loss.detach()
+        baseline = -loss.detach()
         params = set(site["value"].unconstrained()
                      for site in param_capture.trace.nodes.values())
         if torch.isnan(agg_loss):
@@ -110,8 +110,8 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
             seed = int(torch.rand(tuple()) * 2 ** 30)
             pyro.set_rng_seed(seed)
 
-        D = 20
-        xi_init = torch.linspace(-100., -1e-6, D)
+        D = 10
+        xi_init = torch.linspace(-60., -30, D)
         # xi_init = torch.cat([xi_init, xi_init], dim=-1)
         # Change the prior distribution here
         # prior params
