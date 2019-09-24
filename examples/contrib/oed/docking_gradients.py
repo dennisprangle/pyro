@@ -1,5 +1,6 @@
 import torch
 from torch.distributions import constraints
+import torch.nn.functional as F
 from torch import nn
 import argparse
 import math
@@ -12,7 +13,7 @@ from contextlib import ExitStack
 import pyro
 import pyro.optim as optim
 import pyro.distributions as dist
-from pyro.contrib.util import iter_plates_to_shape, rexpand, rmv
+from pyro.contrib.util import iter_plates_to_shape, lexpand, rmv
 from pyro.contrib.oed.differentiable_eig import (
         _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss,
         differentiable_nce_proposal_eig, _saddle_marginal_loss
@@ -30,8 +31,17 @@ def get_git_revision_hash():
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
 
 
+def invsoftplus(x):
+    return (x.exp() - 1).log()
+
+
+def invsigmoid(y):
+    y, y1m = y.clamp(1e-35, 1), (1. - y).clamp(1e-35, 1)
+    return y.log() - y1m.log()
+
+
 def sigmoid(x, top, bottom, ee50, slope):
-    return (top - bottom) * nn.functional.sigmoid((x - ee50) * slope) + bottom
+    return (top - bottom) * torch.sigmoid((x - ee50) * slope) + bottom
 
 
 def make_docking_model(top_c, bottom_c, ee50_mu, ee50_sigma, slope_mu, slope_sigma, observation_label="y",
@@ -53,6 +63,91 @@ def make_docking_model(top_c, bottom_c, ee50_mu, ee50_sigma, slope_mu, slope_sig
             return y
 
     return docking_model
+
+
+def make_posterior_guide(d, top_prior_c, bottom_prior_c, ee50_prior_mu, ee50_prior_sigma, slope_prior_mu,
+                         slope_prior_sigma):
+    def posterior_guide(y_dict, design, observation_labels, target_labels):
+
+        y = torch.cat(list(y_dict.values()), dim=-1)
+
+        top_mult = pyro.param("A_top", torch.zeros(*d, y.shape[-1]))
+        top_confidence = pyro.param("top_v", top_prior_c.sum(), constraint=constraints.positive)
+        top_c = top_confidence * torch.sigmoid(
+            invsigmoid(top_prior_c[..., 0] / top_prior_c.sum(-1)) + (top_mult * (y - .5)).sum(-1)
+        )
+        top_c = torch.stack([top_c, top_confidence - top_c], dim=-1)
+
+        bottom_mult = pyro.param("A_ bottom", torch.ones(*d, y.shape[-1]))
+        bottom_confidence = pyro.param("bottom_v", bottom_prior_c.sum(), constraint=constraints.positive)
+        bottom_c = bottom_confidence * torch.sigmoid(
+            invsigmoid(bottom_prior_c[..., 0] / bottom_prior_c.sum(-1)) + (bottom_mult * (y - .5)).sum(-1)
+        )
+        bottom_c = torch.stack([bottom_c, bottom_confidence - bottom_c], dim=-1)
+
+        ee50_mult = pyro.param("A_ee50", torch.zeros(*d, y.shape[-1]))
+        ee50_mu = ee50_prior_mu + (ee50_mult * y).sum(-1)
+        ee50_sigma = pyro.param("ee50_sd", ee50_prior_sigma, constraint=constraints.positive)
+
+        slope_mult = pyro.param("A_slope", torch.zeros(*d, y.shape[-1]))
+        slope_mu = slope_prior_mu + (slope_mult * y).sum(-1)
+        slope_sigma = pyro.param("slope_sd", slope_prior_sigma, constraint=constraints.positive)
+
+        print(ee50_mu)
+
+        batch_shape = design.shape[:-1]
+        with ExitStack() as stack:
+            for plate in iter_plates_to_shape(batch_shape):
+                stack.enter_context(plate)
+            pyro.sample("top", dist.Dirichlet(top_c))
+            pyro.sample("bottom", dist.Dirichlet(bottom_c))
+            pyro.sample("ee50", dist.Normal(ee50_mu, ee50_sigma))
+            pyro.sample("slope", dist.Normal(slope_mu, slope_sigma))
+
+    return posterior_guide
+
+
+class PosteriorGuide(nn.Module):
+    def __init__(self, y_dim):
+        super(PosteriorGuide, self).__init__()
+        n_hidden = 64
+        self.linear1 = nn.Linear(y_dim, n_hidden)
+        self.linear2 = nn.Linear(n_hidden, n_hidden)
+        self.output_layer = nn.Linear(n_hidden, 2 + 2 + 2 + 2)
+        self.softplus = nn.Softplus()
+        self.relu = nn.ReLU()
+
+    def set_prior(self, rho_concentration, alpha_concentration, slope_mu, slope_sigma):
+        self.prior_rho_concentration = rho_concentration
+        self.prior_alpha_concentration = alpha_concentration
+        self.prior_slope_mu = slope_mu
+        self.prior_slope_sigma = slope_sigma
+
+    def forward(self, y_dict, design_prototype, observation_labels, target_labels):
+        y = y_dict["y"]
+        x = self.relu(self.linear1(y))
+        x = self.relu(self.linear2(x))
+        final = self.output_layer(x)
+
+        top_c = self.softplus(final[..., 0:2])
+        bottom_c = self.softplus(final[..., 2:4])
+        ee50_mu = final[..., 4]
+        ee50_sigma = final[..., 5]
+        slope_mu = final[..., 6]
+        slope_sigma = self.softplus(final[..., 7])
+
+        pyro.module("posterior_guide", self)
+
+        print(top_c)
+
+        batch_shape = design_prototype.shape[:-1]
+        with ExitStack() as stack:
+            for plate in iter_plates_to_shape(batch_shape):
+                stack.enter_context(plate)
+            pyro.sample("top", dist.Dirichlet(top_c))
+            pyro.sample("bottom", dist.Dirichlet(bottom_c))
+            pyro.sample("ee50", dist.Normal(ee50_mu, ee50_sigma))
+            pyro.sample("slope", dist.Normal(slope_mu, slope_sigma))
 
 
 def neg_loss(loss):
@@ -119,6 +214,7 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
         bottom_prior_concentration = torch.tensor([4., 96.])
         ee50_prior_mu, ee50_prior_sd = torch.tensor(-50.), torch.tensor(15.)
         slope_prior_mu, slope_prior_sd = torch.tensor(-0.15), torch.tensor(0.1)
+
         model_learn_xi = make_docking_model(
             top_prior_concentration, bottom_prior_concentration, ee50_prior_mu, ee50_prior_sd, slope_prior_mu,
             slope_prior_sd, xi_init=xi_init)
@@ -126,12 +222,11 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
         contrastive_samples = num_samples ** 2
 
         # Fix correct loss
-        # if estimator == 'posterior':
-        #     guide = PosteriorGuide(tuple())
-        #     guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
-        #     loss = _differentiable_posterior_loss(model_learn_xi, guide, ["y"], ["rho", "alpha", "slope"])
+        if estimator == 'posterior':
+            guide = PosteriorGuide(D)
+            loss = _differentiable_posterior_loss(model_learn_xi, guide, ["y"], ["top", "bottom", "ee50", "slope"])
 
-        if estimator == 'nce':
+        elif estimator == 'nce':
             eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
                 N=N, M=contrastive_samples, **kwargs)
