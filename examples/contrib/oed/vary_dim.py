@@ -40,10 +40,23 @@ def analytic_eig_B(alpha, D, B, sigmasq):
     return 0.5 * (term1 + term2).item()
 
 
-def optimal_eig(alpha, D, sigmasq, S=10000):
+def optimal_eig(alpha, D, sigmasq, S=500 * 1000):
     delta = torch.arange(S + 1).float() / float(S)
     epsilon = 1.0 - delta
     max_eig, optimal_delta = analytic_eig_delta_epsilon(alpha, D, delta, epsilon, sigmasq).max(dim=-1)
+
+    opt_delta = delta[optimal_delta].item()
+    opt_epsilon = epsilon[optimal_delta].item()
+    delta = opt_delta - 0.01 + 0.02 * torch.arange(S + 1).float() / float(S)
+    epsilon = 1.0 - delta
+    max_eig, optimal_delta = analytic_eig_delta_epsilon(alpha, D, delta, epsilon, sigmasq).max(dim=-1)
+
+    opt_delta = delta[optimal_delta].item()
+    opt_epsilon = epsilon[optimal_delta].item()
+    delta = opt_delta - 0.001 + 0.002 * torch.arange(S + 1).float() / float(S)
+    epsilon = 1.0 - delta
+    max_eig, optimal_delta = analytic_eig_delta_epsilon(alpha, D, delta, epsilon, sigmasq).max(dim=-1)
+
     return max_eig.item(), delta[optimal_delta].item(), epsilon[optimal_delta].item()
 
 
