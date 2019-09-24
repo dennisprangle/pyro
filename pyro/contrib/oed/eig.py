@@ -880,9 +880,7 @@ def _ace_eig_loss(model, guide, M, observation_labels, target_labels):
         marginal_terms = torch.cat([lexpand(marginal_terms_cross, 1), marginal_terms_proposal])
         terms = -marginal_terms.logsumexp(0) + math.log(M + 1)
 
-        # At eval time, add p(y | theta, d) terms
-        if evaluation:
-            terms += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+        terms += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
 
         return _safe_mean_terms(terms)
 
