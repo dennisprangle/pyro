@@ -249,7 +249,8 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
                                                               num_steps=num_steps, optim=scheduler)
 
         if estimator == 'posterior':
-            est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, ["y"], est_loss_history, True, {})
+            est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, ["top", "bottom", "ee50", "slope"],
+                                            est_loss_history, True, {})
         elif estimator in ['nce', 'nce-proposal', 'ace']:
             est_eig_history = -est_loss_history
         else:
