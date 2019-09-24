@@ -275,7 +275,7 @@ def nmc_eig(model, design, observation_labels, target_labels=None,
     return terms.sum(0)/nonnan
 
 
-def nce_eig(model, design, observation_labels, target_labels=None, N=100, M=10, **kwargs):
+def nce_eig(model, design, observation_labels, target_labels=None, N=100, M=10):
     if isinstance(observation_labels, str):  # list of strings instead of strings
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):
@@ -283,7 +283,7 @@ def nce_eig(model, design, observation_labels, target_labels=None, N=100, M=10, 
 
     # Take N samples of the model
     expanded_design = lexpand(design, N)  # N copies of the model
-    trace = poutine.trace(model).get_trace(expanded_design, **kwargs)
+    trace = poutine.trace(model).get_trace(expanded_design)
     trace.compute_log_prob()
     conditional_lp = sum(trace.nodes[l]["log_prob"] for l in observation_labels)
 
@@ -293,7 +293,7 @@ def nce_eig(model, design, observation_labels, target_labels=None, N=100, M=10, 
     # Using (M, 1) instead of (M, N) - acceptable to re-use thetas between ys because
     # theta comes before y in graphical model
     reexpanded_design = lexpand(design, M, 1)  # sample M theta
-    retrace = poutine.trace(conditional_model).get_trace(reexpanded_design, **kwargs)
+    retrace = poutine.trace(conditional_model).get_trace(reexpanded_design)
     retrace.compute_log_prob()
     marginal_log_probs = torch.cat([lexpand(conditional_lp, 1),
                                     sum(retrace.nodes[l]["log_prob"] for l in observation_labels)])
@@ -842,7 +842,7 @@ def _lfire_loss(model_marginal, model_conditional, h, observation_labels, target
 
 def _ace_eig_loss(model, guide, M, observation_labels, target_labels):
 
-    def loss_fn(design, num_particles, evaluation=False, **kwargs):
+    def loss_fn(design, num_particles, evaluation=False):
         N = num_particles
         expanded_design = lexpand(design, N)
 
@@ -857,16 +857,14 @@ def _ace_eig_loss(model, guide, M, observation_labels, target_labels):
         marginal_terms_cross += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
 
         reguide_trace = poutine.trace(pyro.condition(guide, data=theta_dict)).get_trace(
-            y_dict, expanded_design, observation_labels, target_labels
-        )
+            y_dict, expanded_design, observation_labels, target_labels)
         reguide_trace.compute_log_prob()
         marginal_terms_cross -= sum(reguide_trace.nodes[l]["log_prob"] for l in target_labels)
 
         # Sample M times from q(theta | y, d) for each y
         reexpanded_design = lexpand(expanded_design, M)
         guide_trace = poutine.trace(guide).get_trace(
-            y_dict_exp, reexpanded_design, observation_labels, target_labels
-        )
+            y_dict_exp, reexpanded_design, observation_labels, target_labels)
         theta_y_dict = {l: guide_trace.nodes[l]["value"] for l in target_labels}
         theta_y_dict.update(y_dict_exp)
         guide_trace.compute_log_prob()
