@@ -217,7 +217,7 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
             top_prior_concentration, bottom_prior_concentration, ee50_prior_mu, ee50_prior_sd, slope_prior_mu,
             slope_prior_sd, xi_init=xi_init)
 
-        contrastive_samples = num_samples ** 2
+        contrastive_samples = num_samples
 
         # Fix correct loss
         if estimator == 'posterior':

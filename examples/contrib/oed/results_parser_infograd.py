@@ -26,7 +26,7 @@ def main(name, sampling_interval):
     plt.show()
     print(xi_history[-1,...])
 
-    plt.plot(est_eig_history.detach().numpy())
+    plt.plot(est_eig_history.detach().clamp(min=0).numpy())
     if eig_history is not None:
         plt.plot(eig_history.detach().numpy())
         print("Final true EIG", eig_history[-1].item())
