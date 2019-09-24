@@ -23,6 +23,7 @@ def get_git_revision_hash():
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
 
 
+# find the exact EIG (up to a constant) for a design [delta, delta..., epsilon, epsilon, ...]
 def analytic_eig_delta_epsilon(alpha, D, delta, epsilon, sigmasq):
     oneplusd = 1.0 + 1.0 / D
     term1 = 0.5 * D * (oneplusd + delta / sigmasq).log()
@@ -31,7 +32,8 @@ def analytic_eig_delta_epsilon(alpha, D, delta, epsilon, sigmasq):
     return 0.5 * (term1 + term2 + term3)
 
 
-def analytic_eig_B(alpha, D, B, sigmasq):
+# find the exact EIG (up to a constant) for a design B
+def analytic_eig_budget(alpha, D, B, sigmasq):
     oneplusd = 1.0 + 1.0 / D
     term1 = (oneplusd + B / sigmasq).log().sum()
     term2a = (alpha * alpha / (oneplusd + B[0:int(D/2)] / sigmasq)).sum()
@@ -40,12 +42,14 @@ def analytic_eig_B(alpha, D, B, sigmasq):
     return 0.5 * (term1 + term2).item()
 
 
+# find the optimal EIG (up to a constant) for D dimensions. we reduce the optimization
+# to a univariate problem and use brute-force bisectioning to identify the optimum.
 def optimal_eig(alpha, D, sigmasq, S=100 * 1000):
     delta = torch.arange(S + 1).float() / float(S)
     epsilon = 1.0 - delta
     max_eig, optimal_delta = analytic_eig_delta_epsilon(alpha, D, delta, epsilon, sigmasq).max(dim=-1)
 
-    for zoom in [0.01, 0.001, 0.0001, 0.00001]:
+    for zoom in [1.0e-2, 1.0e-4, 1.0e-6]:
         delta = delta[optimal_delta].item() - zoom + 2.0 * zoom * torch.arange(S + 1).float() / float(S)
         epsilon = 1.0 - delta
         max_eig, optimal_delta = analytic_eig_delta_epsilon(alpha, D, delta, epsilon, sigmasq).max(dim=-1)
@@ -53,6 +57,7 @@ def optimal_eig(alpha, D, sigmasq, S=100 * 1000):
     return max_eig.item(), delta[optimal_delta].item(), epsilon[optimal_delta].item()
 
 
+# get the prior precision matrix
 def get_prior_precision(alpha, D):
     u = torch.ones(D).unsqueeze(-1)
     u[0:int(D/2), 0] = alpha
@@ -60,11 +65,13 @@ def get_prior_precision(alpha, D):
     return prior_precision
 
 
+# get the cholesky matrix of the prior precision matrix
 def get_prior_scale_tril(alpha, D):
     precision = get_prior_precision(alpha, D)
     return precision.cholesky()
 
 
+# the total budget in D dimensions
 def total_budget(D):
     return 0.5 * D
 
@@ -116,7 +123,6 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
         agg_loss.backward()
-        #agg_loss.backward(retain_graph=True)
         est_loss_history.append(loss.detach().clone())
         xi_history.append(pyro.param('budget').detach().clone())
         optim(params)
@@ -131,16 +137,12 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
 
 
 def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
-    output_dir = "./"
-    if not experiment_name:
-        experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
-    else:
-        experiment_name = output_dir + experiment_name
+    experiment_name = "{}".format(datetime.datetime.now().isoformat())
     results_file = experiment_name + '.pickle'
     estimators = estimators.split(",")
 
-    alpha = 0.5
-    D = 12
+    alpha = 0.1
+    D = 8
     sigma = 1.0
     sigmasq = sigma ** 2
 
@@ -189,14 +191,17 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 
         initial_design = total_budget(D) * xi_history[0]
         final_design = total_budget(D) * pyro.param('budget')
-        initial_eig = analytic_eig_B(alpha, D, initial_design, sigmasq)
-        final_eig = analytic_eig_B(alpha, D, final_design, sigmasq)
+        initial_eig = analytic_eig_budget(alpha, D, initial_design, sigmasq)
+        flat_eig = analytic_eig_budget(alpha, D, total_budget(D) * torch.ones(D) / D, sigmasq)
+        final_eig = analytic_eig_budget(alpha, D, final_design, sigmasq)
+        eig_normalizer = opt_eig - flat_eig
 
-        print("Initial/Final/Optimal EIG:  %.5f / %.5f / %.5f" % (initial_eig, final_eig, opt_eig))
+        print("Initial/Flat/Final/Optimal EIG:  %.5f / %.5f /  %.5f / %.5f" % (initial_eig, flat_eig, final_eig, opt_eig))
         print("Initial design:\n", initial_design.data.numpy())
         print("Final design:\n", final_design.data.numpy())
         print("Optimal design:\n", opt_design.data.numpy())
         print("Mean Absolute EIG Error: %.5f" % math.fabs(final_eig - opt_eig))
+        print("Normalized Mean Absolute EIG Error: %.5f" % (math.fabs(final_eig - opt_eig) / eig_normalizer))
         print("Mean Absolute Design Error: %.5f" % (final_design - opt_design).abs().sum())
 
         #with open(results_file, 'wb') as f:
@@ -205,10 +210,9 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a linear model")
-    parser.add_argument("--num-steps", default=5000, type=int)
-    # parser.add_argument("--num-parallel", default=10, type=int)
+    parser.add_argument("--num-steps", default=4000, type=int)
     parser.add_argument("--name", default="", type=str)
-    parser.add_argument("--estimator", default="posterior", type=str)
+    parser.add_argument("--estimator", default="ace", type=str)
     parser.add_argument("--seed", default=-1, type=int)
     parser.add_argument("--start-lr", default=0.1, type=float)
     parser.add_argument("--end-lr", default=0.0001, type=float)
