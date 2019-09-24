@@ -164,7 +164,6 @@ class LinearPosteriorGuide(nn.Module):
         s = y.log() - y1m.log()
         final = param[..., 0, :] + param[..., 1, :] * s + param[..., 2, :] * (1e-6 + s).abs().log() + \
                 param[..., 3, :] * (s > 0.).float()
-        print("param", param, param.shape)
         
         rho_concentration =  1e-6 + self.relu(self.prior_rho_concentration + final[..., 0:2])
         alpha_concentration = 1e-6 + self.relu(self.prior_alpha_concentration + final[..., 2:5])
