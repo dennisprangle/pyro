@@ -124,7 +124,7 @@ class PosteriorGuide(nn.Module):
         self.prior_slope_sigma = slope_sigma
 
     def forward(self, y_dict, design_prototype, observation_labels, target_labels):
-        y = y_dict["y"]
+        y = y_dict["y"] - .5
         x = self.relu(self.linear1(y))
         x = self.relu(self.linear2(x))
         final = self.output_layer(x)
@@ -132,13 +132,11 @@ class PosteriorGuide(nn.Module):
         top_c = self.softplus(final[..., 0:2])
         bottom_c = self.softplus(final[..., 2:4])
         ee50_mu = final[..., 4]
-        ee50_sigma = final[..., 5]
+        ee50_sigma = self.softplus(final[..., 5])
         slope_mu = final[..., 6]
         slope_sigma = self.softplus(final[..., 7])
 
         pyro.module("posterior_guide", self)
-
-        print(top_c)
 
         batch_shape = design_prototype.shape[:-1]
         with ExitStack() as stack:
