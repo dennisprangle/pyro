@@ -255,7 +255,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, num_
 
             elif typ in ['posterior-grad', 'nce-grad', 'ace-grad']:
                 model_learn_xi = make_learn_xi_model(model)
-                grad_start_lr, grad_end_lr = 0.0025, 0.001
+                grad_start_lr, grad_end_lr = 0.0005, 0.00025
 
                 if typ == 'posterior-grad':
 
