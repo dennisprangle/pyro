@@ -230,18 +230,11 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
                 N=N, M=contrastive_samples, **kwargs)
             loss = neg_loss(eig_loss)
 
-        # elif estimator == 'nce-proposal':
-        #     eig_loss = lambda d, N, **kwargs: differentiable_nce_proposal_eig(
-        #             model=model_learn_xi, design=d, observation_labels=["y"], target_labels=['rho', 'alpha', 'slope'],
-        #             proposal=proposal, N=N, M=contrastive_samples, **kwargs)
-        #     loss = neg_loss(eig_loss)
-
-        # elif estimator == 'ace':
-        #     guide = LinearPosteriorGuide(tuple())
-        #     guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
-        #     eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"],
-        #                                             ["rho", "alpha", "slope"])
-        #     loss = neg_loss(eig_loss)
+        elif estimator == 'ace':
+            guide = PosteriorGuide(D)
+            eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"],
+                                                    ["top", "bottom", "ee50", "slope"])
+            loss = neg_loss(eig_loss)
 
         else:
             raise ValueError("Unexpected estimator")
@@ -277,7 +270,7 @@ if __name__ == "__main__":
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--estimator", default="posterior", type=str)
     parser.add_argument("--seed", default=-1, type=int)
-    parser.add_argument("--start-lr", default=0.01, type=float)
+    parser.add_argument("--start-lr", default=0.001, type=float)
     parser.add_argument("--end-lr", default=0.0005, type=float)
     args = parser.parse_args()
     main(args.num_steps, args.num_samples, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)
