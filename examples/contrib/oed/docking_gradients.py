@@ -171,7 +171,8 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
         agg_loss.backward(retain_graph=True)
-        est_loss_history.append(loss)
+        if step % 100 == 0:
+            est_loss_history.append(loss)
         xi_history.append(pyro.param('xi').detach().clone())
         optim(params)
         optim.step()
