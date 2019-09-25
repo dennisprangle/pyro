@@ -1,10 +1,17 @@
 import argparse
 import pickle
+import numpy as np
 
 import torch
 import matplotlib.pyplot as plt
 
 output_dir = "./run_outputs/gradinfo/"
+
+
+def ma(a, n=3):
+    ret = np.cumsum(a, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    return ret[n-1:] / n
 
 
 def main(name, sampling_interval):
@@ -18,6 +25,7 @@ def main(name, sampling_interval):
     eig_history = results.get('eig_history')
     eig_heatmap = results.get('eig_heatmap')
     heatmap_extent = results.get('extent')
+    print(ma(est_eig_history.detach().numpy(), 1000)[::1000])
 
     if eig_heatmap is not None:
         plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
