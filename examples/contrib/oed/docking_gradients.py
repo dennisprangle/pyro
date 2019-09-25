@@ -203,8 +203,8 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
             seed = int(torch.rand(tuple()) * 2 ** 30)
             pyro.set_rng_seed(seed)
 
-        D = 10
-        xi_init = torch.linspace(-60., -30, D)
+        D = 100
+        xi_init = torch.linspace(-70., -30, D)
         # xi_init = torch.cat([xi_init, xi_init], dim=-1)
         # Change the prior distribution here
         # prior params
