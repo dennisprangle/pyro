@@ -19,7 +19,7 @@ from pyro.contrib.oed.differentiable_eig import (
         differentiable_nce_proposal_eig, _saddle_marginal_loss
         )
 from pyro import poutine
-from pyro.contrib.oed.eig import _eig_from_ape
+from pyro.contrib.oed.eig import _eig_from_ape, nce_eig, _ace_eig_loss, nmc_eig, vnmc_eig
 from pyro.util import is_bad
 
 
@@ -171,9 +171,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
         agg_loss.backward(retain_graph=True)
-        if step % 100 == 0:
-            est_loss_history.append(loss)
-        xi_history.append(pyro.param('xi').detach().clone())
+        est_loss_history.append(loss)
         optim(params)
         optim.step()
         print(pyro.param("xi").squeeze())
@@ -249,6 +247,16 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
         xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=num_samples,
                                                               num_steps=num_steps, optim=scheduler)
 
+        m_final = 200
+        if estimator == 'nce':
+            final_lower = nce_eig(model_learn_xi, design_prototype, "y", ["top", "bottom", "ee50", "slope"], N=m_final**2, M=m_final)
+            final_upper = nmc_eig(model_learn_xi, design_prototype, "y",  ["top", "bottom", "ee50", "slope"], N=m_final**2, M=m_final)
+        elif estimator == 'ace':
+            ls = _ace_eig_loss(model_learn_xi, guide, m_final, "y", ["top", "bottom", "ee50", "slope"])
+            final_lower = ls(design_prototype, m_final**2)
+            final_upper = vnmc_eig(model_learn_xi, design_prototype, "y", ["top", "bottom", "ee50", "slope"], (m_final**2, m_final), 0, guide, None)
+
+
         if estimator == 'posterior':
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, ["top", "bottom", "ee50", "slope"],
                                             est_loss_history, True, {})
@@ -258,7 +266,7 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
             est_eig_history = est_loss_history
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
-                   'xi_history': xi_history, 'est_eig_history': est_eig_history}
+                'xi_history': xi_history, 'est_eig_history': est_eig_history, 'final_upper': final_upper, 'final_lower': final_lower}
 
         with open(results_file, 'wb') as f:
             pickle.dump(results, f)

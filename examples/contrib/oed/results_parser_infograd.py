@@ -26,6 +26,7 @@ def main(name, sampling_interval):
     eig_heatmap = results.get('eig_heatmap')
     heatmap_extent = results.get('extent')
     print(ma(est_eig_history.detach().numpy(), 1000)[::1000])
+    print(results.get('final_upper'), results.get('final_lower'))
 
     if eig_heatmap is not None:
         plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
