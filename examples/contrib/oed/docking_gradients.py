@@ -182,7 +182,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, lower
         if step % h_freq == 0:
             _, low = lower(design, n_high_acc, evaluation=True)
             _, up = upper(design, n_high_acc, evaluation=True)
-            lower_history.append(lower.detach())
+            lower_history.append(low.detach())
             upper_history.append(up.detach())
 
     xi_history.append(pyro.param('xi').detach().clone())

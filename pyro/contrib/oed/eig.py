@@ -185,7 +185,7 @@ def _vi_ape(model, design, observation_labels, target_labels, vi_parameters, is_
 
 
 def nmc_eig(model, design, observation_labels, target_labels=None,
-            N=100, M=10, M_prime=None, independent_priors=False):
+            N=100, M=10, M_prime=None, independent_priors=False, **kwargs):
     """
    Nested Monte Carlo estimate of the expected information
     gain (EIG). The estimate is, when there are not any random effects,
@@ -270,9 +270,7 @@ def nmc_eig(model, design, observation_labels, target_labels=None,
         - math.log(M)
 
     terms = conditional_lp - marginal_lp
-    nonnan = (~torch.isnan(terms)).sum(0).type_as(terms)
-    terms[torch.isnan(terms)] = 0.
-    return terms.sum(0)/nonnan
+    return _safe_mean_terms(terms)
 
 
 def nce_eig(model, design, observation_labels, target_labels=None, N=100, M=10, **kwargs):
@@ -656,7 +654,7 @@ def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_hist
     if return_history:
         return torch.stack(history), loss
     else:
-        return loss
+        return None, loss
 
 
 def monte_carlo_entropy(model, design, target_labels, num_prior_samples=1000):
