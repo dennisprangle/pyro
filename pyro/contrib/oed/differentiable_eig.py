@@ -68,7 +68,7 @@ def differentiable_nce_eig(model, design, observation_labels, target_labels=None
     # Calculate the score parts
     trace.compute_score_parts()
     prescore_function = sum(trace.nodes[l]["score_parts"][1] for l in observation_labels)
-    grad_terms = (terms.detach() - control_variate) * prescore_function
+    grad_terms = (terms.detach() - control_variate) * prescore_function + terms
 
     surrogate_loss = _safe_mean_terms(grad_terms)[0]
     return (surrogate_loss, nce_part)
@@ -148,13 +148,20 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
         model_trace = poutine.trace(pyro.condition(model, data=theta_y_dict)).get_trace(reexpanded_design)
         model_trace.compute_log_prob()
 
+        detached_theta_y_dict = {l: guide_trace.nodes[l]["value"].detach() for l in target_labels}
+        detached_theta_y_dict.update(y_dict_exp)
+        detached_model_trace = poutine.trace(pyro.condition(model, data=detached_theta_y_dict)
+                                             ).get_trace(reexpanded_design)
+        detached_model_trace.compute_log_prob()
+
         logwm = -sum(guide_trace.nodes[l]["log_prob"] for l in target_labels)
         logwm += sum(model_trace.nodes[l]["log_prob"] for l in target_labels)
+        logwm_detached = logwm.detach().clone()
         logwm += sum(model_trace.nodes[l]["log_prob"] for l in observation_labels)
+        logwm_detached += sum(detached_model_trace.nodes[l]["log_prob"] for l in observation_labels)
 
-        marginal_terms = torch.cat([lexpand(logw0, 1), logwm])
-        logsumw = marginal_terms.logsumexp(0)
-        terms = -logsumw + math.log(M + 1)
+        logsumw_detached = torch.cat([lexpand(logw0, 1), logwm_detached]).logsumexp(0)
+        terms = -logsumw_detached + math.log(M + 1)
 
         terms += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
         eig_estimate = _safe_mean_terms(terms)[1]
@@ -163,18 +170,9 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
         trace.compute_score_parts()
         prescore_function = sum(trace.nodes[l]["score_parts"][1] for l in observation_labels)
 
-        # This is necessary for discrete theta
-        # guide_trace.compute_score_parts()
-        # guide_score_component = sum(guide_trace.nodes[l]["score_parts"][1] for l in target_labels)
-        # if not isinstance(guide_score_component, int):
-        #     guide_score_component = guide_score_component.sum(0)
-        # prescore_function += guide_score_component
-
-        # TODO this is not valid
-        # Potentially a place to use double reparameterization
-        xi_grad_terms = (terms - control_variate).detach() * prescore_function
-        phi_grad_terms = (logw0 - logsumw).detach().exp() * q_theta0_terms - \
-                         (logwm - logsumw).detach().exp().pow(2) * logwm
+        xi_grad_terms = (terms - control_variate).detach() * prescore_function + terms
+        phi_grad_terms = (logw0 - logsumw_detached).detach().exp() * q_theta0_terms - \
+                         (logwm - logsumw_detached).detach().exp().pow(2) * logwm
         surrogate_loss = _safe_mean_terms(xi_grad_terms + phi_grad_terms)[0]
 
         return surrogate_loss, eig_estimate
