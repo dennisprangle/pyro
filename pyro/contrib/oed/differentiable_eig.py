@@ -150,12 +150,13 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
 
         detached_theta_y_dict = {l: guide_trace.nodes[l]["value"].detach() for l in target_labels}
         detached_theta_y_dict.update(y_dict_exp)
-        detached_model_trace = poutine.trace(pyro.condition(model, data=detached_theta_y_dict)).get_trace(reexpanded_design)
+        detached_model_trace = poutine.trace(pyro.condition(model, data=detached_theta_y_dict)
+                                             ).get_trace(reexpanded_design)
         detached_model_trace.compute_log_prob()
 
         logwm = -sum(guide_trace.nodes[l]["log_prob"] for l in target_labels)
         logwm += sum(model_trace.nodes[l]["log_prob"] for l in target_labels)
-        logwm_detached = logwm.detach().clone
+        logwm_detached = logwm.detach().clone()
         logwm += sum(model_trace.nodes[l]["log_prob"] for l in observation_labels)
         logwm_detached += sum(detached_model_trace.nodes[l]["log_prob"] for l in observation_labels)
 
