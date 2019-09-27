@@ -19,7 +19,7 @@ from pyro.contrib.oed.differentiable_eig import (
         differentiable_nce_proposal_eig, _saddle_marginal_loss
         )
 from pyro import poutine
-from pyro.contrib.oed.eig import _eig_from_ape
+from pyro.contrib.oed.eig import _eig_from_ape, nce_eig, _ace_eig_loss, nmc_eig, vnmc_eig
 from pyro.util import is_bad
 
 
@@ -154,10 +154,12 @@ def neg_loss(loss):
     return new_loss
 
 
-def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
+def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, lower, upper, n_high_acc, h_freq):
 
     params = None
     est_loss_history = []
+    lower_history = []
+    upper_history = []
     xi_history = []
     baseline = 0.
     for step in range(num_steps):
@@ -171,22 +173,33 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
         agg_loss.backward(retain_graph=True)
-        est_loss_history.append(loss)
-        xi_history.append(pyro.param('xi').detach().clone())
+        est_loss_history.append(loss.detach())
         optim(params)
         optim.step()
         print(pyro.param("xi").squeeze())
         print('eig', baseline.squeeze())
 
+        if step % h_freq == 0:
+            low = lower(design, n_high_acc, evaluation=True)
+            up = upper(design, n_high_acc, evaluation=True)
+            if isinstance(low, tuple):
+                low = low[1]
+            if isinstance(up, tuple):
+                up = up[1]
+            lower_history.append(low.detach())
+            upper_history.append(up.detach())
+
     xi_history.append(pyro.param('xi').detach().clone())
 
     est_loss_history = torch.stack(est_loss_history)
     xi_history = torch.stack(xi_history)
+    lower_history = torch.stack(lower_history)
+    upper_history = torch.stack(upper_history)
 
-    return xi_history, est_loss_history
+    return xi_history, est_loss_history, lower_history, upper_history
 
 
-def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, end_lr):
+def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, seed, start_lr, end_lr):
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
         experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
@@ -220,21 +233,35 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
         contrastive_samples = num_samples
 
         # Fix correct loss
+        targets = ["top", "bottom", "ee50", "slope"]
         if estimator == 'posterior':
+            m_final = 200
             guide = PosteriorGuide(D)
-            loss = _differentiable_posterior_loss(model_learn_xi, guide, ["y"], ["top", "bottom", "ee50", "slope"])
+            loss = _differentiable_posterior_loss(model_learn_xi, guide, ["y"], targets)
+            high_acc = loss
+            upper_loss = lambda d, N, **kwargs: vnmc_eig(model_learn_xi, d, "y", targets, (N, int(math.sqrt(N))), 0, guide, None)
 
         elif estimator == 'nce':
+            m_final = 400
             eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
-                model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
+                model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
                 N=N, M=contrastive_samples, **kwargs)
             loss = neg_loss(eig_loss)
+            high_acc = lambda d, N, **kwargs: nce_eig(
+                model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
+                N=N, M=int(math.sqrt(N)), **kwargs)
+            upper_loss = lambda d, N, **kwargs: nmc_eig(
+                model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
+                N=N, M=int(math.sqrt(N)), **kwargs)
 
         elif estimator == 'ace':
+            m_final = 200
             guide = PosteriorGuide(D)
             eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"],
                                                     ["top", "bottom", "ee50", "slope"])
             loss = neg_loss(eig_loss)
+            high_acc = _ace_eig_loss(model_learn_xi, guide, m_final, "y", targets)
+            upper_loss = lambda d, N, **kwargs: vnmc_eig(model_learn_xi, d, "y", targets, (N, int(math.sqrt(N))), 0, guide, None)
 
         else:
             raise ValueError("Unexpected estimator")
@@ -245,19 +272,22 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
 
         design_prototype = torch.zeros(1, D)  # this is annoying, code needs refactor
 
-        xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=num_samples,
-                                                              num_steps=num_steps, optim=scheduler)
+        xi_history, est_loss_history, lower_history, upper_history = opt_eig_loss_w_history(
+            design_prototype, loss, num_samples=num_samples, num_steps=num_steps, optim=scheduler, lower=high_acc,
+            upper=upper_loss, n_high_acc=m_final**2, h_freq=high_acc_freq)
 
         if estimator == 'posterior':
-            est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, ["top", "bottom", "ee50", "slope"],
-                                            est_loss_history, True, {})
+            est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, targets, est_loss_history, True, {})
+            lower_history = _eig_from_ape(model_learn_xi, design_prototype, targets, lower_history, True, {})
+
         elif estimator in ['nce', 'nce-proposal', 'ace']:
             est_eig_history = -est_loss_history
         else:
             est_eig_history = est_loss_history
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
-                   'xi_history': xi_history, 'est_eig_history': est_eig_history}
+                   'xi_history': xi_history, 'est_eig_history': est_eig_history,
+                   'lower_history': lower_history, 'upper_history': upper_history}
 
         with open(results_file, 'wb') as f:
             pickle.dump(results, f)
@@ -266,12 +296,13 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, start_lr, en
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a linear model")
     parser.add_argument("--num-steps", default=2000, type=int)
+    parser.add_argument("--high-acc-freq", default=1000, type=int)
     parser.add_argument("--num-samples", default=10, type=int)
     # parser.add_argument("--num-parallel", default=10, type=int)
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--estimator", default="posterior", type=str)
     parser.add_argument("--seed", default=-1, type=int)
     parser.add_argument("--start-lr", default=0.001, type=float)
-    parser.add_argument("--end-lr", default=0.0001, type=float)
+    parser.add_argument("--end-lr", default=0.00001, type=float)
     args = parser.parse_args()
-    main(args.num_steps, args.num_samples, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)
+    main(args.num_steps, args.high_acc_freq, args.num_samples, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)
