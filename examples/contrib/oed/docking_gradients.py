@@ -180,8 +180,12 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, lower
         print('eig', baseline.squeeze())
 
         if step % h_freq == 0:
-            _, low = lower(design, n_high_acc, evaluation=True)
-            _, up = upper(design, n_high_acc, evaluation=True)
+            low = lower(design, n_high_acc, evaluation=True)
+            up = upper(design, n_high_acc, evaluation=True)
+            if isinstance(low, tuple):
+                low = low[1]
+            if isinstance(up, tuple):
+                up = up[1]
             lower_history.append(low.detach())
             upper_history.append(up.detach())
 
