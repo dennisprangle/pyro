@@ -137,6 +137,59 @@ def neg_loss(loss):
     return new_loss
 
 
+def double_reparam_ace_loss(N, M, D=4, alpha=0.5, sigma=1.0):
+    def init_budget_fn():
+        b = torch.rand(D)
+        return b / b.sum()
+
+    B = total_budget(D) * pyro.param('budget', init_budget_fn(), constraint=constraints.simplex)
+    # Draw N samples
+    prior_precision = get_prior_precision(alpha, D)
+    with pyro.plate("plate", N):
+        theta0 = pyro.sample("x", dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision))
+        y = pyro.sample("y", dist.Normal(theta0 * B, sigma * B.sqrt()).to_event(1))
+    # Compute log prob, detaching B
+    lp_theta_0 = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(theta0)
+    lp_y_theta_0 = dist.Normal(theta0 * B, sigma * B.sqrt()).to_event(1).log_prob(y)
+    # Compute q_phi(theta_0 | y), detaching phi and y separately
+    A = pyro.param("A", lambda: torch.zeros(1, D))
+    scale_tril = pyro.param("scale_tril", lambda: lexpand(get_prior_scale_tril(alpha, D), N),
+                            constraint=torch.distributions.constraints.lower_cholesky)
+    lq_theta0_y_detach_phi = dist.MultivariateNormal(A.detach() * y, scale_tril=scale_tril.detach()).log_prob(theta0)
+    lq_theta0_y_detach_y = dist.MultivariateNormal(A * y.detach(), scale_tril=scale_tril).log_prob(theta0)
+
+    # Sample contrastive samples
+    with pyro.plate("plate1", N):
+        with pyro.plate("plate2", M):
+            thetal_detach_phi = pyro.sample("xldphi", dist.MultivariateNormal(A.detach() * y, scale_tril=scale_tril.detach()))
+            thetal_detach_y = pyro.sample("xldy", dist.MultivariateNormal(A * y.detach(), scale_tril=scale_tril))
+
+    lp_theta_l_detach_phi = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(thetal_detach_phi)
+    lp_theta_l_detach_y = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(thetal_detach_y)
+
+    lp_y_theta_l_detach_phi = dist.Normal(thetal_detach_phi * B, sigma * B.sqrt()).to_event(1).log_prob(y)
+    lp_y_theta_l_detach_y = dist.Normal(thetal_detach_y * B.detach(), sigma * B.detach().sqrt()).to_event(1).log_prob(y.detach())
+
+    lq_theta_l_y_detach_phi = dist.MultivariateNormal(A.detach() * y, scale_tril=scale_tril.detach()).log_prob(thetal_detach_phi)
+    lq_theta_l_y_detach_y = dist.MultivariateNormal(A * y.detach(), scale_tril=scale_tril).log_prob(thetal_detach_y)
+
+    y_loss = -torch.cat([lexpand(lp_theta_0 + lp_y_theta_0 - lq_theta0_y_detach_phi, 1),
+                         lp_theta_l_detach_phi + lp_y_theta_l_detach_phi - lq_theta_l_y_detach_phi], dim=0).logsumexp(0) \
+             + math.log(M+1) \
+             + lp_y_theta_0
+    y_loss = y_loss.mean(0)
+
+    log_wl = lp_theta_l_detach_y + lp_y_theta_l_detach_y - lq_theta_l_y_detach_y
+    log_w0 = lp_theta_0 + lp_y_theta_0 - lq_theta0_y_detach_y
+    log_wsum = torch.cat([lexpand(log_w0, 1), log_wl], dim=0).logsumexp(0)
+    phi_loss = (log_w0 - log_wsum).exp().detach() * lq_theta0_y_detach_y - (log_wl - log_wsum).exp().pow(2).detach() * log_wl
+
+    surrogate_loss = (y_loss + phi_loss).mean(0).sum()
+    eig_estimate = y_loss
+
+    return surrogate_loss, eig_estimate
+
+
 # helper function for doing gradient-based minimization of a loss function
 def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
     params = None
@@ -163,7 +216,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
 
 # main experimental loop
 def main(num_trials, estimator, seed, verbose, hyper):
-    assert estimator in ['nce', 'ace', 'posterior', 'exact.bo']
+    assert estimator in ['nce', 'ace', 'ace.dreg', 'posterior', 'exact.bo']
 
     alpha = 0.1  # controls the prior precision matrix
     sigma = 1.0  # observation likelihood noise parameter
@@ -175,9 +228,15 @@ def main(num_trials, estimator, seed, verbose, hyper):
     lengthscale, jitter = torch.tensor(0.2), 1.0e-6
 
     Ds = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+    Ds = [10]
 
     if estimator=='ace':
-        num_steps = 10000  # gradient steps
+        num_steps = 5000  # gradient steps
+        #num_steps = 10000  # gradient steps
+        end_lr = 0.0001
+    elif estimator=='ace.dreg':
+        num_steps = 5000  # gradient steps
+        #num_steps = 10000  # gradient steps
         end_lr = 0.0001
     elif estimator=='nce':
         num_steps = 20000  # gradient steps
@@ -220,6 +279,9 @@ def main(num_trials, estimator, seed, verbose, hyper):
             elif estimator == 'ace':
                 guide = make_posterior_guide(1, alpha, D)
                 loss = neg_loss(_ace_eig_loss(model, guide, 10, "y", "x"))
+
+            elif estimator == 'ace.dreg':
+                loss = neg_loss(lambda d, N: double_reparam_ace_loss(N, 10, D, alpha, sigma))
 
             elif estimator == 'exact.bo':
                 eig = lambda d: analytic_eig_budget(alpha, D, normalized_design(d, D), sigmasq)[0, ...]
@@ -312,8 +374,8 @@ def main(num_trials, estimator, seed, verbose, hyper):
               np.median(results['eig_errors'][D]), np.median(results['design_errors'][D]),
               np.mean(results['elapsed_times'][D]), np.std(results['elapsed_times'][D])))
 
-    with open(estimator + '.pkl', 'wb') as f:
-        pickle.dump(results, f)
+    #with open(estimator + '.pkl', 'wb') as f:
+    #    pickle.dump(results, f)
 
     print(results)
     #print('hyper', hyper)
