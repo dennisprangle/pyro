@@ -99,7 +99,7 @@ def double_reparam_ace_loss(N, M, D=4, alpha=0.5, sigma=1.0):
         y = pyro.sample("y", dist.Normal(theta0 * B, sigma * B.sqrt()).to_event(1))
     # Compute log prob, detaching B
     lp_theta_0 = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(theta0)
-    lp_y_theta_0 = dist.Normal(theta0 * B.detach(), sigma * B.detach().sqrt()).to_event(1).log_prob(y)
+    lp_y_theta_0 = dist.Normal(theta0 * B, sigma * B.sqrt()).to_event(1).log_prob(y)
     # Compute q_phi(theta_0 | y), detaching phi and y separately
     A = pyro.param("A", lambda: torch.zeros(1, D))
     scale_tril = pyro.param("scale_tril", lambda: lexpand(get_prior_scale_tril(alpha, D), N),
@@ -116,7 +116,7 @@ def double_reparam_ace_loss(N, M, D=4, alpha=0.5, sigma=1.0):
     lp_theta_l_detach_phi = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(thetal_detach_phi)
     lp_theta_l_detach_y = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(thetal_detach_y)
 
-    lp_y_theta_l_detach_phi = dist.Normal(thetal_detach_phi * B.detach(), sigma * B.detach().sqrt()).to_event(1).log_prob(y)
+    lp_y_theta_l_detach_phi = dist.Normal(thetal_detach_phi * B, sigma * B.sqrt()).to_event(1).log_prob(y)
     lp_y_theta_l_detach_y = dist.Normal(thetal_detach_y * B.detach(), sigma * B.detach().sqrt()).to_event(1).log_prob(y.detach())
 
     lq_theta_l_y_detach_phi = dist.MultivariateNormal(A.detach() * y, scale_tril=scale_tril.detach()).log_prob(thetal_detach_phi)
