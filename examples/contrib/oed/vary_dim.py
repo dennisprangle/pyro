@@ -20,6 +20,7 @@ from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss
 from pyro.contrib.util import rmv, iter_plates_to_shape, lexpand
 
 
+# get git hash to help with reproducibility
 def get_git_revision_hash():
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
 
@@ -72,7 +73,7 @@ def get_prior_precision(alpha, D):
 # get the cholesky matrix of the prior precision matrix
 def get_prior_scale_tril(alpha, D):
     precision = get_prior_precision(alpha, D)
-    return precision.cholesky()
+    return precision.inverse().cholesky()
 
 
 # the total budget in D dimensions
@@ -80,7 +81,7 @@ def total_budget(D):
     return 0.5 * D
 
 
-# produced a normalized design from an unconstrained design
+# produced a normalized design (i.e budget) from an unconstrained design
 def normalized_design(design, D):
     return total_budget(D) * softmax(design, dim=-1)
 
@@ -118,6 +119,7 @@ def make_model(D=4, alpha=0.5, sigma=1.0, learn_design=True):
         return model_fixed_design
 
 
+# make a multivariate normal variational distribution parameterized by a cholesky factor
 def make_posterior_guide(d, alpha, D):
     def posterior_guide(y_dict, design, observation_labels, target_labels, **kwargs):
         y = torch.cat(list(y_dict.values()), dim=-1)
@@ -128,16 +130,18 @@ def make_posterior_guide(d, alpha, D):
     return posterior_guide
 
 
+# used to negate loss functions
 def neg_loss(loss):
     def new_loss(*args, **kwargs):
         return (-a for a in loss(*args, **kwargs))
     return new_loss
 
 
+# helper function for doing gradient-based minimization of a loss function
 def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
     params = None
-    est_loss_history = []
     xi_history = []
+
     for step in range(num_steps):
         if params is not None:
             pyro.infer.util.zero_grads(params)
@@ -148,39 +152,41 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
         agg_loss.backward()
-        est_loss_history.append(loss.detach().clone())
         xi_history.append(pyro.param('budget').detach().clone())
         optim(params)
         optim.step()
 
     xi_history.append(pyro.param('budget').detach().clone())
 
-    est_loss_history = torch.stack(est_loss_history)
-    xi_history = torch.stack(xi_history)
-
-    return xi_history, est_loss_history
+    return torch.stack(xi_history)
 
 
-def main(num_trials, estimator, seed, verbose):
+# main experimental loop
+def main(num_trials, estimator, seed, verbose, hyper):
     assert estimator in ['nce', 'ace', 'posterior', 'exact.bo']
 
-    alpha = 0.1
-    sigma = 1.0
+    alpha = 0.1  # controls the prior precision matrix
+    sigma = 1.0  # observation likelihood noise parameter
     sigmasq = sigma ** 2
-    start_lr, end_lr = 0.1, 0.0001
+    start_lr = 0.1  # learning rate hyperparameters for gradient methods
 
+    # BO hyperparameters
     num_acquisition, num_parallel = 5, 3
-    lengthscale, jitter = torch.tensor(0.3), 1.0e-5
+    lengthscale, jitter = torch.tensor(0.2), 1.0e-6
 
-    Ds = [2, 4, 8, 16, 24, 32]
+    Ds = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+
     if estimator=='ace':
-        num_steps = 5200
+        num_steps = 10000  # gradient steps
+        end_lr = 0.0001
     elif estimator=='nce':
-        num_steps = 10000
+        num_steps = 20000  # gradient steps
+        end_lr = 0.00001
     elif estimator=='posterior':
-        num_steps = 9800
+        num_steps = 18000  # gradient steps
+        end_lr = 0.0003
     elif estimator=='exact.bo':
-        num_steps = 90  # BO steps
+        num_steps = 110  # BO steps
 
     results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
                'alpha': alpha, 'sigma': sigma, 'num_trials': num_trials, 'num_steps': num_steps,
@@ -193,15 +199,14 @@ def main(num_trials, estimator, seed, verbose):
         results['elapsed_times'][D] = []
         results['eig_errors'][D] = []
         results['design_errors'][D] = []
+
         for trial in range(num_trials):
             pyro.set_rng_seed(seed + 1000 * D + trial)
             t0 = time.time()
             pyro.clear_param_store()
 
-            if 'bo' not in estimator:
-                model = make_model(D=D, alpha=alpha, sigma=sigma, learn_design=True)
-            else:
-                model = make_model(D=D, alpha=alpha, sigma=sigma, learn_design=False)
+            learn_design = False if 'bo' in estimator else True
+            model = make_model(D=D, alpha=alpha, sigma=sigma, learn_design=learn_design)
 
             if estimator == 'posterior':
                 guide = make_posterior_guide(1, alpha, D)
@@ -214,25 +219,27 @@ def main(num_trials, estimator, seed, verbose):
 
             elif estimator == 'ace':
                 guide = make_posterior_guide(1, alpha, D)
-                eig_loss = _ace_eig_loss(model, guide, 10, "y", "x")
-                loss = neg_loss(eig_loss)
+                loss = neg_loss(_ace_eig_loss(model, guide, 10, "y", "x"))
 
             elif estimator == 'exact.bo':
                 eig = lambda d: analytic_eig_budget(alpha, D, normalized_design(d, D), sigmasq)[0, ...]
 
-                design = 0.3 * torch.randn(1, num_acquisition, D)
+                # sample initial designs
+                design = 0.3 * torch.randn(1, num_acquisition, D).double()
                 y = eig(design).detach().clone()
 
-                kernel = gp.kernels.Matern52(input_dim=D, lengthscale=lengthscale, variance=y.var(unbiased=True))
+                kernel = gp.kernels.Matern52(input_dim=D, lengthscale=lengthscale.double(), variance=y.var(unbiased=True))
 
+                # BO loop
                 for i in range(num_steps):
                     Kff = kernel(design)
-                    Kff += jitter * torch.eye(Kff.shape[-1])
+                    Kff += jitter * torch.eye(Kff.shape[-1]).type_as(Kff)
                     Lff = Kff.cholesky(upper=False)
-                    new_design = 0.3 * torch.randn(num_parallel, num_acquisition, D)
+                    new_design = 0.3 * torch.randn(num_parallel, num_acquisition, D).double()
                     new_design.requires_grad_(True)
                     minimizer = torch.optim.LBFGS([new_design], max_eval=20)
 
+                    # define ucb acquisition function
                     def gp_ucb1():
                         minimizer.zero_grad()
                         KXXnew = kernel(design, new_design)
@@ -241,52 +248,46 @@ def main(num_trials, estimator, seed, verbose):
                         mean = rmv(LiK.transpose(-1, -2), Liy.squeeze(-1))
                         KXnewXnew = kernel(new_design)
                         var = (KXnewXnew - LiK.transpose(-1, -2).matmul(LiK)).diagonal(dim1=-2, dim2=-1)
-                        ucb = -(mean + 2*var.sqrt())
+                        ucb = -(mean + 2*var.clamp(min=0.0).sqrt())
                         loss = ucb.sum()
                         torch.autograd.backward(new_design,
                                                 torch.autograd.grad(loss, new_design, retain_graph=True))
                         return loss
 
-                    minimizer.step(gp_ucb1)
+                    minimizer.step(gp_ucb1)  # do minimization with LBFGS
                     new_design = new_design.reshape(-1, D).unsqueeze(0)
                     new_y = eig(new_design).detach().clone()
-                    #y_max, which = torch.max(new_y, dim=-1)
-                    #max_eig = analytic_eig_budget(alpha, D, normalized_design(new_design, D), sigmasq)[0, which]
-                    #print("max_eig", max_eig)
                     design = torch.cat([design, new_design], dim=1)
                     y = torch.cat([y, new_y])
-                    if verbose:
-                        print("max y so far", y.max().item())
 
-                y_max, final_design = torch.max(y, dim=-1)
-                #max_eig = analytic_eig_budget(alpha, D, normalized_design(design, D), sigmasq)[0, which].item()
-                #print("\nfinal best eig", max_eig)
-                final_design = normalized_design(design, D)[0, final_design, :]
+                # choose the best design seen so far
+                _, final_design = torch.max(y, dim=-1)
+                final_design = normalized_design(design, D)[0, final_design, :].float()
 
             else:
                 raise ValueError("Unexpected estimator")
 
-            if 'bo' not in estimator:
-                gamma = (end_lr/start_lr)**(1/num_steps)
-                scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
-                                                      'gamma': gamma})
+            if 'bo' not in estimator:  # do gradient-based optimization for nce/ace/posterior methods
+                gamma = (end_lr / start_lr) ** (1 / num_steps)
+                scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr}, 'gamma': gamma})
 
                 design_prototype = torch.zeros(1, 1, D)
-                design_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=10,
-                                                                          num_steps=num_steps, optim=scheduler)
+                num_samples = 100 if estimator=='posterior' else 10
+                design_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=num_samples,
+                                                        num_steps=num_steps, optim=scheduler)
+                final_design = total_budget(D) * design_history[-1]
 
             tf = time.time()
             if verbose:
                 print("Elapsed time", tf - t0)
             results['elapsed_times'][D].append(tf - t0)
 
+            # compute optimal EIG and optimal design
             opt_eig, opt_delta, opt_epsilon = optimal_eig(alpha, D, sigmasq)
             opt_design = opt_delta * torch.ones(D)
             opt_design[int(D/2):] = opt_epsilon
 
-            if 'bo' not in estimator:
-                final_design = total_budget(D) * design_history[-1]
-
+            # normalize EIG w.r.t. the EIG for a flat budget
             flat_eig = analytic_eig_budget(alpha, D, total_budget(D) * torch.ones(D) / D, sigmasq)
             final_eig = analytic_eig_budget(alpha, D, final_design, sigmasq)
             eig_normalizer = opt_eig - flat_eig
@@ -306,21 +307,24 @@ def main(num_trials, estimator, seed, verbose):
                 print("Mean Absolute Design Error: %.5f" % design_error)
 
     for D in Ds:
-        summary = "[Dimension %d]  Mean Errors: %.4f  %.4f    Time: %.4f +- %.4f"
+        summary = "[Dimension %d]  Mean Errors: %.4f  %.4f   Median Errors: %.4f %.4f  Time: %.4f +- %.4f"
         print(summary % (D, np.mean(results['eig_errors'][D]), np.mean(results['design_errors'][D]),
+              np.median(results['eig_errors'][D]), np.median(results['design_errors'][D]),
               np.mean(results['elapsed_times'][D]), np.std(results['elapsed_times'][D])))
 
     with open(estimator + '.pkl', 'wb') as f:
         pickle.dump(results, f)
 
     print(results)
+    #print('hyper', hyper)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a conjugate gaussian model")
-    parser.add_argument("--num-trials", default=5, type=int)
+    parser.add_argument("--num-trials", default=10, type=int)
     parser.add_argument("--estimator", default="ace", type=str)
     parser.add_argument("--seed", default=0, type=int)
+    parser.add_argument("--hyper", default=0, type=float)
     parser.add_argument("--verbose", default=0, type=int)
     args = parser.parse_args()
-    main(args.num_trials, args.estimator, args.seed, args.verbose)
+    main(args.num_trials, args.estimator, args.seed, args.verbose, args.hyper)
