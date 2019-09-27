@@ -85,6 +85,60 @@ def normalized_design(design, D):
     return total_budget(D) * softmax(design, dim=-1)
 
 
+def init_budget_fn(D):
+    b = torch.rand(D)
+    return b / b.sum()
+
+
+def double_reparam_ace_loss(N, M, D=4, alpha=0.5, sigma=1.0):
+    B = total_budget(D) * pyro.param('budget', init_budget_fn(D), constraint=constraints.simplex)
+    # Draw N samples
+    prior_precision = get_prior_precision(alpha, D)
+    with pyro.plate("plate", N):
+        theta0 = pyro.sample("x", dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision))
+        y = pyro.sample("y", dist.Normal(theta0 * B, sigma * B.sqrt()).to_event(1))
+    # Compute log prob, detaching B
+    lp_theta_0 = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(theta0)
+    lp_y_theta_0 = dist.Normal(theta0 * B.detach(), sigma * B.detach().sqrt()).to_event(1).log_prob(y)
+    # Compute q_phi(theta_0 | y), detaching phi and y separately
+    A = pyro.param("A", lambda: torch.zeros(1, D))
+    scale_tril = pyro.param("scale_tril", lambda: lexpand(get_prior_scale_tril(alpha, D), N),
+                            constraint=torch.distributions.constraints.lower_cholesky)
+    lq_theta0_y_detach_phi = dist.MultivariateNormal(A.detach() * y, scale_tril=scale_tril.detach()).log_prob(theta0)
+    lq_theta0_y_detach_y = dist.MultivariateNormal(A * y.detach(), scale_tril=scale_tril).log_prob(theta0)
+
+    # Sample contrastive samples
+    with pyro.plate("plate1", N):
+        with pyro.plate("plate2", M):
+            thetal_detach_phi = pyro.sample("xldphi", dist.MultivariateNormal(A.detach() * y, scale_tril=scale_tril.detach()))
+            thetal_detach_y = pyro.sample("xldy", dist.MultivariateNormal(A * y.detach(), scale_tril=scale_tril))
+
+    lp_theta_l_detach_phi = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(thetal_detach_phi)
+    lp_theta_l_detach_y = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(thetal_detach_y)
+
+    lp_y_theta_l_detach_phi = dist.Normal(thetal_detach_phi * B.detach(), sigma * B.detach().sqrt()).to_event(1).log_prob(y)
+    lp_y_theta_l_detach_y = dist.Normal(thetal_detach_y * B.detach(), sigma * B.detach().sqrt()).to_event(1).log_prob(y.detach())
+
+    lq_theta_l_y_detach_phi = dist.MultivariateNormal(A.detach() * y, scale_tril=scale_tril.detach()).log_prob(thetal_detach_phi)
+    lq_theta_l_y_detach_y = dist.MultivariateNormal(A * y.detach(), scale_tril=scale_tril).log_prob(thetal_detach_y)
+
+    y_loss = -torch.cat([lexpand(lp_theta_0 + lp_y_theta_0 - lq_theta0_y_detach_phi, 1),
+                         lp_theta_l_detach_phi + lp_y_theta_l_detach_phi - lq_theta_l_y_detach_phi], dim=0).logsumexp(0) \
+             + math.log(M+1) \
+             + lp_y_theta_0
+    y_loss = y_loss.mean(0)
+
+    log_wl = lp_theta_l_detach_y + lp_y_theta_l_detach_y - lq_theta_l_y_detach_y
+    log_wsum = torch.cat([lexpand(lp_theta_0 + lp_y_theta_0 - lq_theta0_y_detach_y, 1),
+                          log_wl], dim=0).logsumexp(0)
+    phi_loss = lq_theta0_y_detach_y - (log_wl - log_wsum).exp().pow(2).detach() * log_wl
+
+    surrogate_loss = (y_loss + phi_loss).mean(0).sum()
+    eig_estimate = y_loss.mean(0)
+
+    return surrogate_loss, eig_estimate
+
+
 # specify the model for given D/alpha/sigma. if learn_design==True,
 # the design is a pyro parameter that gets optimized; otherwise it's a fixed constant.
 def make_model(D=4, alpha=0.5, sigma=1.0, learn_design=True):
@@ -213,8 +267,8 @@ def main(num_trials, estimator, seed, verbose):
                 loss = neg_loss(eig_loss)
 
             elif estimator == 'ace':
-                guide = make_posterior_guide(1, alpha, D)
-                eig_loss = _ace_eig_loss(model, guide, 10, "y", "x")
+                # guide = make_posterior_guide(1, alpha, D)
+                eig_loss = lambda d, N: double_reparam_ace_loss(N, 10, D, alpha, sigma)
                 loss = neg_loss(eig_loss)
 
             elif estimator == 'exact.bo':
