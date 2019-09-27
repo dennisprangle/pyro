@@ -189,6 +189,8 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, lower
 
     est_loss_history = torch.stack(est_loss_history)
     xi_history = torch.stack(xi_history)
+    lower_history = torch.stack(lower_history)
+    upper_history = torch.stack(upper_history)
 
     return xi_history, est_loss_history, lower_history, upper_history
 
@@ -269,16 +271,6 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
         xi_history, est_loss_history, lower_history, upper_history = opt_eig_loss_w_history(
             design_prototype, loss, num_samples=num_samples, num_steps=num_steps, optim=scheduler, lower=high_acc,
             upper=upper_loss, n_high_acc=m_final**2, h_freq=high_acc_freq)
-
-        # m_final = 200
-        # if estimator == 'nce':
-        #     final_lower = nce_eig(model_learn_xi, design_prototype, "y", ["top", "bottom", "ee50", "slope"], N=m_final**2, M=m_final)
-        #     final_upper = nmc_eig(model_learn_xi, design_prototype, "y",  ["top", "bottom", "ee50", "slope"], N=m_final**2, M=m_final)
-        # elif estimator == 'ace':
-        #     ls = _ace_eig_loss(model_learn_xi, guide, m_final, "y", ["top", "bottom", "ee50", "slope"])
-        #     final_lower = ls(design_prototype, m_final**2)
-        #     final_upper = vnmc_eig(model_learn_xi, design_prototype, "y", ["top", "bottom", "ee50", "slope"], (m_final**2, m_final), 0, guide, None)
-
 
         if estimator == 'posterior':
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, targets, est_loss_history, True, {})
