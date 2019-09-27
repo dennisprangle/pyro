@@ -25,6 +25,8 @@ def get_git_revision_hash():
 
 N = 10
 xi_init = 0.1*torch.ones(2)
+prior_mean = torch.tensor(0.)
+prior_sd = torch.tensor(1.0)
 
 
 @lru_cache(5)
@@ -66,7 +68,7 @@ def model_learn_xi(design_prototype):
         for plate in iter_plates_to_shape(batch_shape):
             stack.enter_context(plate)
 
-        b = pyro.sample("b", dist.LogNormal(torch.tensor(0.), torch.tensor(0.25)))
+        b = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
         p1 = 1 - torch.exp(-b * xi[0])
         infected1 = pyro.sample("i1", dist.Binomial(N, p1))
         p2 = 1 - torch.exp(-b * xi[1])
@@ -81,7 +83,6 @@ class PosteriorGuide(nn.Module):
         self.linear2 = nn.Linear(8, 8)
         self.mu = nn.Linear(8, 1)
         self.sigma = nn.Linear(8, 1)
-
         self.softplus = nn.Softplus()
 
     def forward(self, y_dict, design_prototype, observation_labels, target_labels):
@@ -139,12 +140,6 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
 
 
 def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
-    # torch.set_printoptions(precision=10)
-    # design = torch.tensor([[0.9879, 1.8558], [0.8112, 1.4376], [1.0836, 1.5458], [0.96, 1.58]])
-    # eig = semi_analytic_eig(design, torch.tensor(0.), torch.tensor(0.25), n_samples=1000000)
-    # print(-eig + eig[-1, ...])
-    # print((design - torch.tensor([0.96, 1.58])).pow(2).sum(-1).sqrt())
-    # raise
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
         experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
@@ -193,7 +188,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, ["b"], est_loss_history, True, {})
         else:
             est_eig_history = -est_loss_history
-        eig_history = semi_analytic_eig(xi_history, torch.tensor(0.), torch.tensor(0.25))
+        eig_history = semi_analytic_eig(xi_history, prior_mean, prior_sd)
 
         # Build heatmap
         grid_points = 100
@@ -206,7 +201,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         d1 = xi1.expand(grid_points, grid_points).unsqueeze(-1)
         d2 = xi2.unsqueeze(-1).expand(grid_points, grid_points).unsqueeze(-1)
         d = torch.cat([d1, d2], dim=-1)
-        eig_heatmap = semi_analytic_eig(d, torch.tensor(0.), torch.tensor(0.25))
+        eig_heatmap = semi_analytic_eig(d, prior_mean, prior_sd)
         extent = [b0low, b0up, b1low, b1up]
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
