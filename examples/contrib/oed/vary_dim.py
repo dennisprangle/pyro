@@ -129,12 +129,12 @@ def double_reparam_ace_loss(N, M, D=4, alpha=0.5, sigma=1.0):
     y_loss = y_loss.mean(0)
 
     log_wl = lp_theta_l_detach_y + lp_y_theta_l_detach_y - lq_theta_l_y_detach_y
-    log_wsum = torch.cat([lexpand(lp_theta_0 + lp_y_theta_0 - lq_theta0_y_detach_y, 1),
-                          log_wl], dim=0).logsumexp(0)
-    phi_loss = lq_theta0_y_detach_y - (log_wl - log_wsum).exp().pow(2).detach() * log_wl
+    log_w0 = lp_theta_0 + lp_y_theta_0 - lq_theta0_y_detach_y
+    log_wsum = torch.cat([lexpand(log_w0, 1), log_wl], dim=0).logsumexp(0)
+    phi_loss = (log_w0 - log_wsum).exp().detach() * lq_theta0_y_detach_y - (log_wl - log_wsum).exp().pow(2).detach() * log_wl
 
     surrogate_loss = (y_loss + phi_loss).mean(0).sum()
-    eig_estimate = y_loss.mean(0)
+    eig_estimate = y_loss
 
     return surrogate_loss, eig_estimate
 
