@@ -46,8 +46,9 @@ def main(name, sampling_interval):
     if eig_history is not None:
         plt.plot(eig_history.detach().numpy()[::sampling_interval])
         print("Final true EIG", eig_history[-1].item())
-        print("Max EIG over surface", eig_heatmap.max().item())
-        print("Discrepancy", (eig_heatmap.max() - eig_history[-1]).item())
+        if eig_heatmap is not None:
+            print("Max EIG over surface", eig_heatmap.max().item())
+            print("Discrepancy", (eig_heatmap.max() - eig_history[-1]).item())
         plt.legend(["Approximate EIG", "True EIG"])
     plt.show()
 

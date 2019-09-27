@@ -5,9 +5,9 @@ import math
 import subprocess
 import pickle
 from functools import lru_cache
+import time
 
 import torch
-from torch import nn
 from torch.distributions import constraints
 
 import pyro
@@ -15,8 +15,7 @@ import pyro.distributions as dist
 import pyro.optim as optim
 import pyro.poutine as poutine
 from pyro.contrib.oed.eig import _eig_from_ape
-from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss
-from pyro.contrib.util import rmv, iter_plates_to_shape, lexpand, rvv, rexpand
+from pyro.contrib.util import iter_plates_to_shape, lexpand
 
 
 def get_git_revision_hash():
@@ -188,6 +187,8 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
     est_loss_history = []
     xi_history = []
     baseline = 0.
+    t = time.time()
+    wall_times = []
     for step in range(num_steps):
         if params is not None:
             pyro.infer.util.zero_grads(params)
@@ -199,6 +200,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
         agg_loss.backward(retain_graph=True)
         est_loss_history.append(loss)
+        wall_times.append(time.time() - t)
         xi_history.append(pyro.param('xi').detach().clone())
         optim(params)
         optim.step()
@@ -208,8 +210,9 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
 
     est_loss_history = torch.stack(est_loss_history)
     xi_history = torch.stack(xi_history)
+    wall_times = torch.tensor(wall_times)
 
-    return xi_history, est_loss_history
+    return xi_history, est_loss_history, wall_times
 
 
 def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
@@ -250,15 +253,18 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 
         design_prototype = torch.zeros(1)  # this is annoying, code needs refactor
 
-        xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=50,
-                                                              num_steps=num_steps, optim=scheduler)
+        xi_history, est_loss_history, wall_times = opt_eig_loss_w_history(
+            design_prototype, loss, num_samples=50, num_steps=num_steps, optim=scheduler)
 
         if estimator == 'posterior':
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, ["b"], est_loss_history, True, {})
         else:
             est_eig_history = -est_loss_history
-        eig_history = semi_analytic_eig(xi_history, prior_mean, prior_sd, n_samples=200)
-        eig_history[-1] = semi_analytic_eig(xi_history[-1, ...], prior_mean, prior_sd, n_samples=20000)
+
+        eig_history = []
+        for i in range(xi_history.shape[0]):
+            eig_history.append(semi_analytic_eig(xi_history[i, ...], prior_mean, prior_sd, n_samples=20000))
+        eig_history = torch.tensor(eig_history)
 
         # Build heatmap
         grid_points = 100
@@ -276,7 +282,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
                    'xi_history': xi_history, 'est_eig_history': est_eig_history, 'eig_history': eig_history,
-                   'eig_heatmap': eig_heatmap, 'extent': extent}
+                   'eig_heatmap': eig_heatmap, 'extent': extent, 'wall_times': wall_times}
 
         with open(results_file, 'wb') as f:
             pickle.dump(results, f)
