@@ -22,14 +22,17 @@ def main(name, sampling_interval):
     eig_lower = results.get('lower_history')
     eig_upper = results.get('upper_history')
 
-    print(xi_history[-1, ...])
-
     if xi_history.shape[-1] <= 2:
         if eig_heatmap is not None:
             plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
         x, y = xi_history[::sampling_interval, 0].detach(), xi_history[::sampling_interval, 1].detach()
         plt.scatter(x, y, c=torch.arange(x.shape[0]), marker='x', cmap='summer')
         plt.show()
+    elif xi_history.shape[-1] > 50:
+        plt.hist(xi_history[-1].numpy(), bins=30)
+        plt.show()
+    else:
+        print(xi_history[-1, ...])
 
     if eig_upper is not None and eig_lower is not None:
         plt.plot(torch.cat(eig_lower).clamp(min=0, max=2).numpy())
@@ -39,9 +42,9 @@ def main(name, sampling_interval):
         plt.legend(["Lower bound", "Upper bound"])
         plt.show()
 
-    plt.plot(est_eig_history.detach().clamp(min=0).numpy())
+    plt.plot(est_eig_history.detach().clamp(min=0).numpy()[::sampling_interval])
     if eig_history is not None:
-        plt.plot(eig_history.detach().numpy())
+        plt.plot(eig_history.detach().numpy()[::sampling_interval])
         print("Final true EIG", eig_history[-1].item())
         print("Max EIG over surface", eig_heatmap.max().item())
         print("Discrepancy", (eig_heatmap.max() - eig_history[-1]).item())

@@ -165,7 +165,7 @@ class LinearPosteriorGuide(nn.Module):
         final = param[..., 0, :] + param[..., 1, :] * s + param[..., 2, :] * (1e-6 + s).abs().log() + \
                 param[..., 3, :] * (s > 0.).float()
         
-        rho_concentration =  1e-6 + self.relu(self.prior_rho_concentration + final[..., 0:2])
+        rho_concentration = 1e-6 + self.relu(self.prior_rho_concentration + final[..., 0:2])
         alpha_concentration = 1e-6 + self.relu(self.prior_alpha_concentration + final[..., 2:5])
         slope_mu = self.prior_slope_mu + 3 * 2 * (-1 + 2 * torch.sigmoid(final[..., 5]))
         slope_sigma = self.prior_slope_sigma * (1e-6 + 2 * torch.sigmoid(final[..., 6]))

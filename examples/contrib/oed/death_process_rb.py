@@ -250,7 +250,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 
         design_prototype = torch.zeros(1)  # this is annoying, code needs refactor
 
-        xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=10,
+        xi_history, est_loss_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=50,
                                                               num_steps=num_steps, optim=scheduler)
 
         if estimator == 'posterior':
@@ -289,6 +289,6 @@ if __name__ == "__main__":
     parser.add_argument("--estimator", default="posterior", type=str)
     parser.add_argument("--seed", default=-1, type=int)
     parser.add_argument("--start-lr", default=0.01, type=float)
-    parser.add_argument("--end-lr", default=0.0005, type=float)
+    parser.add_argument("--end-lr", default=0.0001, type=float)
     args = parser.parse_args()
     main(args.num_steps, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)

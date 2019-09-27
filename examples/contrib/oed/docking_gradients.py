@@ -1,22 +1,20 @@
 import torch
 from torch.distributions import constraints
-import torch.nn.functional as F
 from torch import nn
 import argparse
 import math
 import subprocess
 import datetime
 import pickle
-import logging
+import time
 from contextlib import ExitStack
 
 import pyro
 import pyro.optim as optim
 import pyro.distributions as dist
-from pyro.contrib.util import iter_plates_to_shape, lexpand, rmv
+from pyro.contrib.util import iter_plates_to_shape
 from pyro.contrib.oed.differentiable_eig import (
         _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss,
-        differentiable_nce_proposal_eig, _saddle_marginal_loss
         )
 from pyro import poutine
 from pyro.contrib.oed.eig import _eig_from_ape, nce_eig, _ace_eig_loss, nmc_eig, vnmc_eig
@@ -162,6 +160,8 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, lower
     upper_history = []
     xi_history = []
     baseline = 0.
+    t = time.time()
+    wall_times = []
     for step in range(num_steps):
         if params is not None:
             pyro.infer.util.zero_grads(params)
@@ -188,6 +188,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, lower
                 up = up[1]
             lower_history.append(low.detach())
             upper_history.append(up.detach())
+            wall_times.append(time.time() - t)
 
     xi_history.append(pyro.param('xi').detach().clone())
 
@@ -195,8 +196,9 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, lower
     xi_history = torch.stack(xi_history)
     lower_history = torch.stack(lower_history)
     upper_history = torch.stack(upper_history)
+    wall_times = torch.tensor(wall_times)
 
-    return xi_history, est_loss_history, lower_history, upper_history
+    return xi_history, est_loss_history, lower_history, upper_history, wall_times
 
 
 def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, seed, start_lr, end_lr):
@@ -272,7 +274,7 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
 
         design_prototype = torch.zeros(1, D)  # this is annoying, code needs refactor
 
-        xi_history, est_loss_history, lower_history, upper_history = opt_eig_loss_w_history(
+        xi_history, est_loss_history, lower_history, upper_history, wall_times = opt_eig_loss_w_history(
             design_prototype, loss, num_samples=num_samples, num_steps=num_steps, optim=scheduler, lower=high_acc,
             upper=upper_loss, n_high_acc=m_final**2, h_freq=high_acc_freq)
 
@@ -287,7 +289,7 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
                    'xi_history': xi_history, 'est_eig_history': est_eig_history,
-                   'lower_history': lower_history, 'upper_history': upper_history}
+                   'lower_history': lower_history, 'upper_history': upper_history, 'wall_times': wall_times}
 
         with open(results_file, 'wb') as f:
             pickle.dump(results, f)
