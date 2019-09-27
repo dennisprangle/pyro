@@ -225,17 +225,18 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
             slope_prior_sd, xi_init=xi_init)
 
         contrastive_samples = num_samples
-        m_final = 200
 
         # Fix correct loss
         targets = ["top", "bottom", "ee50", "slope"]
         if estimator == 'posterior':
+            m_final = 200
             guide = PosteriorGuide(D)
             loss = _differentiable_posterior_loss(model_learn_xi, guide, ["y"], targets)
             high_acc = loss
             upper_loss = lambda d, N, **kwargs: vnmc_eig(model_learn_xi, d, "y", targets, (N, int(math.sqrt(N))), 0, guide, None)
 
         elif estimator == 'nce':
+            m_final = 400
             eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
                 N=N, M=contrastive_samples, **kwargs)
@@ -248,6 +249,7 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
                 N=N, M=int(math.sqrt(N)), **kwargs)
 
         elif estimator == 'ace':
+            m_final = 200
             guide = PosteriorGuide(D)
             eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"],
                                                     ["top", "bottom", "ee50", "slope"])
@@ -304,7 +306,7 @@ if __name__ == "__main__":
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--estimator", default="posterior", type=str)
     parser.add_argument("--seed", default=-1, type=int)
-    parser.add_argument("--start-lr", default=0.001, type=float)
-    parser.add_argument("--end-lr", default=0.0001, type=float)
+    parser.add_argument("--start-lr", default=0.0001, type=float)
+    parser.add_argument("--end-lr", default=0.00001, type=float)
     args = parser.parse_args()
     main(args.num_steps, args.high_acc_freq, args.num_samples, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)

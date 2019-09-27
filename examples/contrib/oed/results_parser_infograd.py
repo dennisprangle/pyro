@@ -23,32 +23,23 @@ def main(name, sampling_interval):
     xi_history = results['xi_history']
     est_eig_history = results['est_eig_history']
     eig_history = results.get('eig_history')
-    eig_heatmap = results.get('eig_heatmap')
-    heatmap_extent = results.get('extent')
-    print(ma(est_eig_history.detach().numpy(), 1000)[::1000])
-    print(results.get('final_upper'), results.get('final_lower'))
+    eig_lower = results.get('lower_history')
+    eig_upper = results.get('upper_history')
 
-    if eig_heatmap is not None:
-        plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
-    x, y = xi_history[::sampling_interval, 0].detach(), xi_history[::sampling_interval, 1].detach()
-    plt.scatter(x, y, c=torch.arange(x.shape[0]), marker='x', cmap='summer')
-    plt.show()
-    print(xi_history[-1,...])
 
-    plt.plot(est_eig_history.detach().clamp(min=0).numpy())
-    if eig_history is not None:
-        plt.plot(eig_history.detach().numpy())
-        print("Final true EIG", eig_history[-1].item())
-        print("Max EIG over surface", eig_heatmap.max().item())
-        print("Discrepancy", (eig_heatmap.max() - eig_history[-1]).item())
-    plt.legend(["Approximate EIG", "True EIG"])
+    plt.plot(est_eig_history[::1000].clamp(min=0, max=2).numpy())
+    plt.plot(torch.cat(eig_lower).clamp(min=0, max=2).numpy())
+    plt.plot(torch.cat(eig_upper).clamp(min=0, max=2).numpy())
+    print("last upper", eig_upper[-1], "last lower", eig_lower[-1])
+
+    plt.legend(["Loss", "Lower bound", "Upper bound"])
     plt.show()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Result parser for design optimization (one shot) with a linear model")
     parser.add_argument("--name", default="", type=str)
-    parser.add_argument("--sampling-interval", default=20, type=int)
+    parser.add_argument("--sampling-interval", default=1000, type=int)
     args = parser.parse_args()
 
     main(args.name, args.sampling_interval)
