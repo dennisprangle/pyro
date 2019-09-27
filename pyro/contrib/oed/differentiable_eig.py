@@ -63,7 +63,7 @@ def differentiable_nce_eig(model, design, observation_labels, target_labels=None
     marginal_lp = marginal_log_probs.logsumexp(0) - math.log(M+1)
 
     terms = conditional_lp - marginal_lp
-    nce_part =  _safe_mean_terms(terms)[1]
+    nce_part = _safe_mean_terms(terms)[1]
 
     # Calculate the score parts
     trace.compute_score_parts()

@@ -272,6 +272,6 @@ if __name__ == "__main__":
     parser.add_argument("--estimator", default="posterior", type=str)
     parser.add_argument("--seed", default=-1, type=int)
     parser.add_argument("--start-lr", default=0.001, type=float)
-    parser.add_argument("--end-lr", default=0.0005, type=float)
+    parser.add_argument("--end-lr", default=0.0001, type=float)
     args = parser.parse_args()
     main(args.num_steps, args.num_samples, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)
