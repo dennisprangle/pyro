@@ -228,15 +228,12 @@ def main(num_trials, estimator, seed, verbose, hyper):
     lengthscale, jitter = torch.tensor(0.2), 1.0e-6
 
     Ds = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
-    Ds = [10]
 
     if estimator=='ace':
-        num_steps = 5000  # gradient steps
-        #num_steps = 10000  # gradient steps
+        num_steps = 10000  # gradient steps
         end_lr = 0.0001
     elif estimator=='ace.dreg':
-        num_steps = 5000  # gradient steps
-        #num_steps = 10000  # gradient steps
+        num_steps = 9000  # gradient steps
         end_lr = 0.0001
     elif estimator=='nce':
         num_steps = 20000  # gradient steps
@@ -374,8 +371,8 @@ def main(num_trials, estimator, seed, verbose, hyper):
               np.median(results['eig_errors'][D]), np.median(results['design_errors'][D]),
               np.mean(results['elapsed_times'][D]), np.std(results['elapsed_times'][D])))
 
-    #with open(estimator + '.pkl', 'wb') as f:
-    #    pickle.dump(results, f)
+    with open(estimator + '.pkl', 'wb') as f:
+        pickle.dump(results, f, protocol=2)
 
     print(results)
     #print('hyper', hyper)
