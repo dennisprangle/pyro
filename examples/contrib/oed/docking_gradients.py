@@ -267,14 +267,14 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
         targets = ["top", "bottom", "ee50", "slope"]
         print("Prior entropy", mean_field_entropy(model_learn_xi, [torch.zeros(num_parallel, D)], whitelist=targets))
         if estimator == 'posterior':
-            m_final = 200
+            m_final = 50
             guide = PosteriorGuide(D, (num_parallel,))
             loss = _differentiable_posterior_loss(model_learn_xi, guide, ["y"], targets)
             high_acc = loss
             upper_loss = lambda d, N, **kwargs: vnmc_eig(model_learn_xi, d, "y", targets, (N, int(math.sqrt(N))), 0, guide, None)
 
         elif estimator == 'nce':
-            m_final = 400
+            m_final = 100
             eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
                 N=N, M=contrastive_samples, **kwargs)
@@ -287,7 +287,7 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
                 N=N, M=int(math.sqrt(N)), **kwargs)
 
         elif estimator == 'ace':
-            m_final = 200
+            m_final = 50
             guide = PosteriorGuide(D, (num_parallel,))
             eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"],
                                                     ["top", "bottom", "ee50", "slope"])
