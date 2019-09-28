@@ -231,7 +231,8 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, lower
     return xi_history, est_loss_history, lower_history, upper_history, wall_times
 
 
-def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, seed, num_parallel, start_lr, end_lr):
+def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, seed, num_parallel, start_lr, end_lr,
+         device):
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
         experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
@@ -249,13 +250,13 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
             pyro.set_rng_seed(seed)
 
         D = 100
-        xi_init = lexpand(torch.linspace(-70., -30, D), num_parallel)
+        xi_init = lexpand(torch.linspace(-70., -30, D, device=device), num_parallel)
         # Change the prior distribution here
         # prior params
-        top_prior_concentration = torch.tensor([25., 75.])
-        bottom_prior_concentration = torch.tensor([4., 96.])
-        ee50_prior_mu, ee50_prior_sd = torch.tensor(-50.), torch.tensor(15.)
-        slope_prior_mu, slope_prior_sd = torch.tensor(-0.15), torch.tensor(0.1)
+        top_prior_concentration = torch.tensor([25., 75.], device=device)
+        bottom_prior_concentration = torch.tensor([4., 96.], device=device)
+        ee50_prior_mu, ee50_prior_sd = torch.tensor(-50., device=device), torch.tensor(15., device=device)
+        slope_prior_mu, slope_prior_sd = torch.tensor(-0.15, device=device), torch.tensor(0.1, device=device)
 
         model_learn_xi = make_docking_model(
             top_prior_concentration, bottom_prior_concentration, ee50_prior_mu, ee50_prior_sd, slope_prior_mu,
@@ -265,10 +266,11 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
 
         # Fix correct loss
         targets = ["top", "bottom", "ee50", "slope"]
-        print("Prior entropy", mean_field_entropy(model_learn_xi, [torch.zeros(num_parallel, D)], whitelist=targets))
+        print("Prior entropy", mean_field_entropy(model_learn_xi, [torch.zeros(num_parallel, D, device=device)],
+                                                  whitelist=targets))
         if estimator == 'posterior':
             m_final = 50
-            guide = PosteriorGuide(D, (num_parallel,))
+            guide = PosteriorGuide(D, (num_parallel,)).to(device)
             loss = _differentiable_posterior_loss(model_learn_xi, guide, ["y"], targets)
             high_acc = loss
             upper_loss = lambda d, N, **kwargs: vnmc_eig(model_learn_xi, d, "y", targets, (N, int(math.sqrt(N))), 0, guide, None)
@@ -288,7 +290,7 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
 
         elif estimator == 'ace':
             m_final = 50
-            guide = PosteriorGuide(D, (num_parallel,))
+            guide = PosteriorGuide(D, (num_parallel,)).to(device)
             eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"],
                                                     ["top", "bottom", "ee50", "slope"])
             loss = neg_loss(eig_loss)
@@ -302,7 +304,7 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
         scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                               'gamma': gamma})
 
-        design_prototype = torch.zeros(num_parallel, D)  # this is annoying, code needs refactor
+        design_prototype = torch.zeros(num_parallel, D, device=device)  # this is annoying, code needs refactor
 
         xi_history, est_loss_history, lower_history, upper_history, wall_times = opt_eig_loss_w_history(
             design_prototype, loss, num_samples=num_samples, num_steps=num_steps, optim=scheduler, lower=high_acc,
@@ -336,6 +338,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", default=-1, type=int)
     parser.add_argument("--start-lr", default=0.001, type=float)
     parser.add_argument("--end-lr", default=0.00001, type=float)
+    parser.add_argument("--device", default="cuda:0", type=str)
     args = parser.parse_args()
     main(args.num_steps, args.high_acc_freq, args.num_samples, args.name, args.estimator, args.seed, args.num_parallel,
-         args.start_lr, args.end_lr)
+         args.start_lr, args.end_lr, args.device)
