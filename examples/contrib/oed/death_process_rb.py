@@ -14,8 +14,7 @@ import pyro
 import pyro.distributions as dist
 import pyro.optim as optim
 import pyro.poutine as poutine
-from pyro.contrib.oed.eig import _eig_from_ape
-from pyro.contrib.util import iter_plates_to_shape, lexpand
+from pyro.contrib.util import iter_plates_to_shape
 
 
 def get_git_revision_hash():
@@ -23,9 +22,8 @@ def get_git_revision_hash():
 
 
 N = 10
-xi_init = 0.1*torch.ones(2)
 prior_mean = torch.tensor(0.)
-prior_sd = torch.tensor(1.0)
+prior_sd = torch.tensor(1.)
 
 
 @lru_cache(5)
@@ -38,11 +36,12 @@ def make_y_space(n):
 
 
 def semi_analytic_eig(design, prior_mean, prior_sd, n_samples=1000):
-    with pyro.plate("plate0", n_samples):
+    batch_shape = design.shape[:-1]
+    with pyro.plate_stack("plate_stack", (n_samples,) + batch_shape):
         samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
 
-    lp1m1 = -(samples * design[..., [0]]).unsqueeze(-1)
-    lp2m1 = -(samples * design[..., [1]]).unsqueeze(-1)
+    lp1m1 = -(samples * design[..., 0]).unsqueeze(-1)
+    lp2m1 = -(samples * design[..., 1]).unsqueeze(-1)
 
     def log_prob(lp1m1, lp2m1):
         lp1 = (1 - lp1m1.exp()).log()
@@ -55,19 +54,20 @@ def semi_analytic_eig(design, prior_mean, prior_sd, n_samples=1000):
         return log_prob_y
 
     likelihoods = log_prob(lp1m1, lp2m1)
-    marginal = likelihoods.logsumexp(-2, keepdim=True) - math.log(n_samples)
+    marginal = likelihoods.logsumexp(0, keepdim=True) - math.log(n_samples)
     kls = (likelihoods.exp() * (likelihoods - marginal)).sum(-1)
-    return kls.mean(-1)
+    return kls.mean(0)
 
 
-def summed_nce_loss(prior_mean, prior_sd):
+def summed_nce_loss(prior_mean, prior_sd, xi_init):
     def loss(design_placeholder, num_samples=1000, control_variate=0., **kwargs):
         design = pyro.param('xi', xi_init, constraint=constraints.positive)
-        with pyro.plate("plate0", num_samples):
+        batch_shape = design.shape[:-1]
+        with pyro.plate_stack("plate_stack", (num_samples,) + batch_shape):
             samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
 
-        lp1m1 = -(samples * design[..., [0]]).unsqueeze(-1)
-        lp2m1 = -(samples * design[..., [1]]).unsqueeze(-1)
+        lp1m1 = -(samples * design[..., 0]).unsqueeze(-1)
+        lp2m1 = -(samples * design[..., 1]).unsqueeze(-1)
 
         def log_prob(lp1m1, lp2m1):
             lp1 = (1 - lp1m1.exp()).log()
@@ -80,21 +80,22 @@ def summed_nce_loss(prior_mean, prior_sd):
             return log_prob_y
 
         likelihoods = log_prob(lp1m1, lp2m1)
-        marginal = likelihoods.logsumexp(-2, keepdim=True) - math.log(num_samples)
-        eig_estimate = (likelihoods.exp() * (likelihoods - marginal)).sum(-1).mean(-1)
-        surrogate_loss = (likelihoods.exp() * (likelihoods - marginal - control_variate)).sum(-1).mean(-1).sum()
+        marginal = likelihoods.logsumexp(0, keepdim=True) - math.log(num_samples)
+        eig_estimate = (likelihoods.exp() * (likelihoods - marginal)).sum(-1).mean(0)
+        surrogate_loss = eig_estimate.sum()
         return surrogate_loss, eig_estimate
     return loss
 
 
-def summed_posterior_loss(prior_mean, prior_sd):
+def summed_posterior_loss(prior_mean, prior_sd, xi_init):
     def loss(design_placeholder, num_samples=1000, control_variate=0., **kwargs):
         design = pyro.param('xi', xi_init, constraint=constraints.positive)
-        with pyro.plate("plate0", num_samples):
+        batch_shape = design.shape[:-1]
+        with pyro.plate_stack("plate_stack", (num_samples,) + batch_shape):
             samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
 
-        lp1m1 = -(samples * design[..., [0]]).unsqueeze(-1)
-        lp2m1 = -(samples * design[..., [1]]).unsqueeze(-1)
+        lp1m1 = -(samples * design[..., 0]).unsqueeze(-1)
+        lp2m1 = -(samples * design[..., 1]).unsqueeze(-1)
 
         def log_prob(lp1m1, lp2m1):
             lp1 = (1 - lp1m1.exp()).log()
@@ -107,27 +108,28 @@ def summed_posterior_loss(prior_mean, prior_sd):
             return log_prob_y
 
         likelihoods = log_prob(lp1m1, lp2m1)
-        posterior_mean = pyro.param("q_mean", prior_mean.clone().expand(66))
-        posterior_sd = pyro.param("q_sd", prior_sd.clone().expand(66), constraint=constraints.positive)
+        posterior_mean = pyro.param("q_mean", prior_mean.clone().expand(batch_shape + (66,)))
+        posterior_sd = pyro.param("q_sd", prior_sd.clone().expand(batch_shape + (66,)), constraint=constraints.positive)
         q_dist = dist.LogNormal(posterior_mean, posterior_sd)
-        qlp = q_dist.log_prob(samples.unsqueeze(-1).expand(num_samples, 66))
-        eig_estimate = -(likelihoods.exp() * qlp).sum(-1).mean(-1)
-        surrogate_loss = -(likelihoods.exp() * (qlp - control_variate)).sum(-1).mean(-1).sum()
+        qlp = q_dist.log_prob(samples.unsqueeze(-1).expand(num_samples, *batch_shape, 66))
+        eig_estimate = -(likelihoods.exp() * qlp).sum(-1).mean(0)
+        surrogate_loss = -(likelihoods.exp() * (qlp - control_variate)).sum(-1).mean(0).sum()
         return surrogate_loss, eig_estimate
     return loss
 
 
-def summed_ace_loss(prior_mean, prior_sd):
+def summed_ace_loss(prior_mean, prior_sd, xi_init):
     def loss(design_placeholder, num_samples=1000, control_variate=0., **kwargs):
         design = pyro.param('xi', xi_init, constraint=constraints.positive)
-        posterior_mean = pyro.param("q_mean", prior_mean.clone().expand(66))
-        posterior_sd = 1e-6 + pyro.param("q_sd", prior_sd.clone().expand(66), constraint=constraints.positive)
-        with pyro.plate("plate0", num_samples):
+        batch_shape = design.shape[:-1]
+        posterior_mean = pyro.param("q_mean", prior_mean.clone().expand(batch_shape + (66,)))
+        posterior_sd = 1e-6 + pyro.param("q_sd", prior_sd.clone().expand(batch_shape + (66,)), constraint=constraints.positive)
+        with pyro.plate_stack("plate_stack", (num_samples,) + batch_shape):
             samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
             contrastive_samples = pyro.sample("b_contrast", dist.LogNormal(posterior_mean, posterior_sd).to_event(1))
 
-        lp1m1 = -(samples * design[..., [0]]).unsqueeze(-1)
-        lp2m1 = -(samples * design[..., [1]]).unsqueeze(-1)
+        lp1m1 = -(samples * design[..., 0]).unsqueeze(-1)
+        lp2m1 = -(samples * design[..., 1]).unsqueeze(-1)
         clp1m1 = -(contrastive_samples * design[..., [0]])
         clp2m1 = -(contrastive_samples * design[..., [1]])
 
@@ -143,25 +145,22 @@ def summed_ace_loss(prior_mean, prior_sd):
 
         likelihoods = log_prob(lp1m1, lp2m1)
         contrastive_log_prob = log_prob(clp1m1, clp2m1)
-        # print(torch.isinf(likelihoods).any(), torch.isinf(contrastive_log_prob).any())
         p_samples = dist.LogNormal(prior_mean, prior_sd).log_prob(samples)
         q_samples = dist.LogNormal(posterior_mean, posterior_sd).log_prob(samples.unsqueeze(-1))
         p_contrastive = dist.LogNormal(prior_mean, prior_sd).log_prob(contrastive_samples)
         q_contrastive = dist.LogNormal(posterior_mean, posterior_sd).log_prob(contrastive_samples)
         sample_terms = likelihoods + p_samples.unsqueeze(-1) - q_samples
         contrastive_terms = contrastive_log_prob + p_contrastive - q_contrastive
-        # nmc_part = contrastive_terms.logsumexp(-2, keepdim=True)
-        marginals = torch.cat([sample_terms.unsqueeze(-2), lexpand(contrastive_terms, num_samples)], dim=-2).logsumexp(-2) - math.log(num_samples + 1)
-        eig_estimate = (likelihoods.exp() * (likelihoods - marginals)).sum(-1).mean(-1)
-        # surrogate_loss = (likelihoods.exp() * (likelihoods - marginals - control_variate).detach()).sum(-1).mean(-1).sum() \
-        #     + (likelihoods.exp().detach() * q_samples).sum(-1).mean(-1).sum()
+        vnmc = contrastive_terms.logsumexp(0, keepdim=True)
+        marginals = torch.log(vnmc.exp() + sample_terms.exp()) - math.log(num_samples + 1)
+        eig_estimate = (likelihoods.exp() * (likelihoods - marginals)).sum(-1).mean(0)
         surrogate_loss = eig_estimate.sum()
         return surrogate_loss, eig_estimate
     return loss
 
 
 def model_learn_xi(design_prototype):
-    xi = pyro.param('xi', xi_init, constraint=constraints.positive)
+    xi = pyro.param('xi')
     batch_shape = design_prototype.shape
     with ExitStack() as stack:
         for plate in iter_plates_to_shape(batch_shape):
@@ -186,27 +185,28 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
     params = None
     est_loss_history = []
     xi_history = []
-    baseline = 0.
     t = time.time()
     wall_times = []
     for step in range(num_steps):
         if params is not None:
             pyro.infer.util.zero_grads(params)
         with poutine.trace(param_only=True) as param_capture:
-            agg_loss, loss = loss_fn(design, num_samples, evaluation=True, control_variate=baseline)
+            agg_loss, loss = loss_fn(design, num_samples, evaluation=True)
         params = set(site["value"].unconstrained()
                      for site in param_capture.trace.nodes.values())
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
         agg_loss.backward(retain_graph=True)
-        est_loss_history.append(loss)
-        wall_times.append(time.time() - t)
-        xi_history.append(pyro.param('xi').detach().clone())
+        if step % 200 == 0:
+            est_loss_history.append(loss)
+            wall_times.append(time.time() - t)
+            xi_history.append(pyro.param('xi').detach().clone())
         optim(params)
         optim.step()
         print(pyro.param("xi"))
 
     xi_history.append(pyro.param('xi').detach().clone())
+    wall_times.append(time.time() - t)
 
     est_loss_history = torch.stack(est_loss_history)
     xi_history = torch.stack(xi_history)
@@ -215,7 +215,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
     return xi_history, est_loss_history, wall_times
 
 
-def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
+def main(num_steps, experiment_name, num_parallel, estimators, seed, start_lr, end_lr):
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
         experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
@@ -232,16 +232,18 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             seed = int(torch.rand(tuple()) * 2 ** 30)
             pyro.set_rng_seed(seed)
 
+        xi_init = .01 + 4.99 * torch.rand((num_parallel, 2))
+
         # Fix correct loss
         if estimator == 'posterior':
-            loss = summed_posterior_loss(prior_mean, prior_sd)
+            loss = summed_posterior_loss(prior_mean, prior_sd, xi_init)
 
         elif estimator == 'nce':
-            eig_loss = summed_nce_loss(prior_mean, prior_sd)
+            eig_loss = summed_nce_loss(prior_mean, prior_sd, xi_init)
             loss = neg_loss(eig_loss)
 
         elif estimator == 'ace':
-            eig_loss = summed_ace_loss(prior_mean, prior_sd)
+            eig_loss = summed_ace_loss(prior_mean, prior_sd, xi_init)
             loss = neg_loss(eig_loss)
 
         else:
@@ -251,38 +253,40 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
         scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                               'gamma': gamma})
 
-        design_prototype = torch.zeros(1)  # this is annoying, code needs refactor
+        design_prototype = torch.zeros(num_parallel)  # this is annoying, code needs refactor
 
         xi_history, est_loss_history, wall_times = opt_eig_loss_w_history(
-            design_prototype, loss, num_samples=50, num_steps=num_steps, optim=scheduler)
+            design_prototype, loss, num_samples=10, num_steps=num_steps, optim=scheduler)
 
         if estimator == 'posterior':
-            est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, ["b"], est_loss_history, True, {})
+            prior_entropy = dist.Normal(prior_mean, prior_sd).entropy()
+            est_eig_history = prior_entropy - est_loss_history
         else:
             est_eig_history = -est_loss_history
 
         eig_history = []
-        for i in range(xi_history.shape[0]):
+        for i in range(xi_history.shape[0] - 1):
             eig_history.append(semi_analytic_eig(xi_history[i, ...], prior_mean, prior_sd, n_samples=20000))
-        eig_history = torch.tensor(eig_history)
+        eig_history.append(semi_analytic_eig(xi_history[-1, ...], prior_mean, prior_sd, n_samples=200000))
+        eig_history = torch.stack(eig_history)
 
         # Build heatmap
-        grid_points = 100
-        b0low = min(0.05, xi_history[:, 0].min())
-        b0up = max(3, xi_history[:, 0].max()) + 0.1
-        b1low = min(0.05, xi_history[:, 1].min())
-        b1up = max(3, xi_history[:, 1].max()) + 0.1
-        xi1 = torch.linspace(b0low, b0up, grid_points)
-        xi2 = torch.linspace(b1low, b1up, grid_points)
-        d1 = xi1.expand(grid_points, grid_points).unsqueeze(-1)
-        d2 = xi2.unsqueeze(-1).expand(grid_points, grid_points).unsqueeze(-1)
-        d = torch.cat([d1, d2], dim=-1)
-        eig_heatmap = semi_analytic_eig(d, prior_mean, prior_sd, n_samples=200)
-        extent = [b0low, b0up, b1low, b1up]
+        # grid_points = 100
+        # b0low = min(0.05, xi_history[:, 0].min())
+        # b0up = max(3, xi_history[:, 0].max()) + 0.1
+        # b1low = min(0.05, xi_history[:, 1].min())
+        # b1up = max(3, xi_history[:, 1].max()) + 0.1
+        # xi1 = torch.linspace(b0low, b0up, grid_points)
+        # xi2 = torch.linspace(b1low, b1up, grid_points)
+        # d1 = xi1.expand(grid_points, grid_points).unsqueeze(-1)
+        # d2 = xi2.unsqueeze(-1).expand(grid_points, grid_points).unsqueeze(-1)
+        # d = torch.cat([d1, d2], dim=-1)
+        # eig_heatmap = semi_analytic_eig(d, prior_mean, prior_sd, n_samples=200)
+        # extent = [b0low, b0up, b1low, b1up]
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
                    'xi_history': xi_history, 'est_eig_history': est_eig_history, 'eig_history': eig_history,
-                   'eig_heatmap': eig_heatmap, 'extent': extent, 'wall_times': wall_times}
+                   'wall_times': wall_times}
 
         with open(results_file, 'wb') as f:
             pickle.dump(results, f)
@@ -291,10 +295,11 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gradient-based design optimization for Death Process")
     parser.add_argument("--num-steps", default=2000, type=int)
+    parser.add_argument("--num-parallel", default=10, type=int)
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--estimator", default="posterior", type=str)
     parser.add_argument("--seed", default=-1, type=int)
     parser.add_argument("--start-lr", default=0.01, type=float)
     parser.add_argument("--end-lr", default=0.0001, type=float)
     args = parser.parse_args()
-    main(args.num_steps, args.name, args.estimator, args.seed, args.start_lr, args.end_lr)
+    main(args.num_steps, args.name, args.num_parallel, args.estimator, args.seed, args.start_lr, args.end_lr)
