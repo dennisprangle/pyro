@@ -180,8 +180,10 @@ def neg_loss(loss):
     return new_loss
 
 
-def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
+def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, time_budget):
 
+    if time_budget is not None:
+        num_steps = 100000000000
     params = None
     est_loss_history = []
     xi_history = []
@@ -204,6 +206,8 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         optim(params)
         optim.step()
         print(pyro.param("xi"))
+        if time.time() - t > time_budget:
+            break
 
     xi_history.append(pyro.param('xi').detach().clone())
     wall_times.append(time.time() - t)
@@ -215,7 +219,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
     return xi_history, est_loss_history, wall_times
 
 
-def main(num_steps, experiment_name, num_parallel, estimators, seed, start_lr, end_lr):
+def main(num_steps, time_budget, experiment_name, num_parallel, estimators, seed, start_lr, end_lr):
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
         experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
@@ -249,14 +253,15 @@ def main(num_steps, experiment_name, num_parallel, estimators, seed, start_lr, e
         else:
             raise ValueError("Unexpected estimator")
 
-        gamma = (end_lr/start_lr)**(1/num_steps)
+        gamma = 1
+        raise ValueError("gamma is 1")
         scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                               'gamma': gamma})
 
         design_prototype = torch.zeros(num_parallel)  # this is annoying, code needs refactor
 
         xi_history, est_loss_history, wall_times = opt_eig_loss_w_history(
-            design_prototype, loss, num_samples=10, num_steps=num_steps, optim=scheduler)
+            design_prototype, loss, num_samples=10, num_steps=num_steps, optim=scheduler, time_budget=time_budget)
 
         if estimator == 'posterior':
             prior_entropy = dist.Normal(prior_mean, prior_sd).entropy()
@@ -295,6 +300,7 @@ def main(num_steps, experiment_name, num_parallel, estimators, seed, start_lr, e
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gradient-based design optimization for Death Process")
     parser.add_argument("--num-steps", default=2000, type=int)
+    parser.add_argument("--time-budget", default=None, type=float)
     parser.add_argument("--num-parallel", default=10, type=int)
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--estimator", default="posterior", type=str)
@@ -302,4 +308,4 @@ if __name__ == "__main__":
     parser.add_argument("--start-lr", default=0.01, type=float)
     parser.add_argument("--end-lr", default=0.0001, type=float)
     args = parser.parse_args()
-    main(args.num_steps, args.name, args.num_parallel, args.estimator, args.seed, args.start_lr, args.end_lr)
+    main(args.num_steps, args.time_budget, args.name, args.num_parallel, args.estimator, args.seed, args.start_lr, args.end_lr)

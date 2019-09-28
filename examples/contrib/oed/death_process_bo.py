@@ -15,6 +15,8 @@ import pyro.distributions as dist
 import pyro.contrib.gp as gp
 from pyro.contrib.util import rmv
 
+from death_process_rb import semi_analytic_eig
+
 
 def get_git_revision_hash():
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
@@ -33,30 +35,6 @@ def make_y_space(n):
         for j in range(n-i+1):
             space.append([i, j])
     return torch.tensor(space, dtype=torch.float)
-
-
-def semi_analytic_eig(design, prior_mean, prior_sd, n_samples=1000):
-    batch_shape = design.shape[:-1]
-    with pyro.plate_stack("plate_stack", (n_samples,) + batch_shape):
-        samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
-
-    lp1m1 = -(samples * design[..., 0]).unsqueeze(-1)
-    lp2m1 = -(samples * design[..., 1]).unsqueeze(-1)
-
-    def log_prob(lp1m1, lp2m1):
-        lp1 = (1 - lp1m1.exp()).log()
-        lp2 = (1 - lp2m1.exp()).log()
-
-        y = make_y_space(N)
-        log_prob_y = torch.lgamma(torch.tensor(N + 1, dtype=torch.float)) - torch.lgamma(y[:, 0] + 1) - torch.lgamma(y[:, 1] + 1) \
-                     - torch.lgamma(N - y.sum(-1) + 1) + y[:, 0] * lp1 + y[:, 1] * lp2 + (N - y[:, 0]) * lp1m1 \
-                     + (N - y[:, 0] - y[:, 1]) * lp2m1
-        return log_prob_y
-
-    likelihoods = log_prob(lp1m1, lp2m1)
-    marginal = likelihoods.logsumexp(0, keepdim=True) - math.log(n_samples)
-    kls = (likelihoods.exp() * (likelihoods - marginal)).sum(-1)
-    return kls.mean(0)
 
 
 def gp_opt_w_history(loss_fn, num_steps, num_parallel, num_acquisition, lengthscale):
