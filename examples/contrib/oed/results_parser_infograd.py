@@ -35,8 +35,8 @@ def main(name, sampling_interval):
         print(xi_history[-1, ...])
 
     if eig_upper is not None and eig_lower is not None:
-        plt.plot(torch.cat(eig_lower).clamp(min=0, max=2).numpy())
-        plt.plot(torch.cat(eig_upper).clamp(min=0, max=2).numpy())
+        plt.plot(eig_lower.clamp(min=0, max=2).numpy())
+        plt.plot(eig_upper.clamp(min=0, max=2).numpy())
         print("last upper", eig_upper[-1], "last lower", eig_lower[-1])
 
         plt.legend(["Lower bound", "Upper bound"])

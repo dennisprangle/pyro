@@ -19,6 +19,7 @@ from pyro.contrib.oed.differentiable_eig import (
 from pyro import poutine
 from pyro.contrib.oed.eig import _eig_from_ape, nce_eig, _ace_eig_loss, nmc_eig, vnmc_eig
 from pyro.util import is_bad
+from pyro.contrib.autoguide import mean_field_entropy
 
 
 # TODO read from torch float spec
@@ -236,6 +237,7 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
 
         # Fix correct loss
         targets = ["top", "bottom", "ee50", "slope"]
+        print("Prior entropy", mean_field_entropy(model_learn_xi, [torch.zeros(1, D)], whitelist=targets))
         if estimator == 'posterior':
             m_final = 200
             guide = PosteriorGuide(D)
