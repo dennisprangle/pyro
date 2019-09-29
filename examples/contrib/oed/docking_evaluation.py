@@ -61,13 +61,16 @@ def main(name, num_inner_samples, device):
     lower_loss = _ace_eig_loss(model, guide, num_inner_samples, "y", targets)  # isn't that an annoying API difference?
     upper_loss = _vnmc_eig_loss(model, guide, "y", targets)
     lower, upper = 0., 0.
-    for i in range(num_inner_samples):
-        lower += lower_loss(design, num_inner_samples, evaluation=True)[1]
-        upper += upper_loss(design, (num_inner_samples, num_inner_samples), evaluation=True)[1]
-        print(lower, upper)
+    max_samples = 10000
+    n_per_batch = max_samples // num_inner_samples
+    n_batches = num_inner_samples ** 3 // max_samples
+    for i in range(n_batches):
+        print(i)
+        lower += lower_loss(design, n_per_batch, evaluation=True)[1].detach().cpu()
+        upper += upper_loss(design, (n_per_batch, num_inner_samples), evaluation=True)[1].detach().cpu()
 
-    results['final_upper_bound'] = upper.cpu() / num_inner_samples
-    results['final_lower_bound'] = lower.cpu() / num_inner_samples
+    results['final_upper_bound'] = upper.cpu() / n_batches
+    results['final_lower_bound'] = lower.cpu() / n_batches
 
     print(results['final_lower_bound'], results['final_upper_bound'])
 
