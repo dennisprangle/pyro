@@ -1,6 +1,7 @@
 import argparse
 import pickle
 import math
+import numpy as np
 
 import torch
 import matplotlib.pyplot as plt
@@ -22,8 +23,7 @@ def main(names, sampling_interval):
         wall_time = combined[name]['wall_times'].detach().numpy()[::sampling_interval]
         est_hist = combined[name]['est_eig_history'].detach().numpy()[::sampling_interval]
         hist = combined[name]['eig_history'].detach().numpy()[::sampling_interval]
-        mean, se = hist.mean(1), hist.std(1)/math.sqrt(hist.shape[1])
-        #plt.plot(wall_time, est_hist)
+        mean, se = np.nanmean(hist, 1), np.nanstd(hist, 1)/math.sqrt(hist.shape[1])
         plt.plot(wall_time, mean)
         plt.fill_between(wall_time, mean - se, mean + se, alpha=0.1)
         legend.extend([combined[name]['estimator'] + ' exact'])
