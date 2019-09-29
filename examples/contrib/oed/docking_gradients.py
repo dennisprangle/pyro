@@ -320,8 +320,9 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
             est_eig_history = est_loss_history
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
-                   'xi_history': xi_history, 'est_eig_history': est_eig_history,
-                   'lower_history': lower_history, 'upper_history': upper_history, 'wall_times': wall_times}
+                   'xi_history': xi_history.cpu(), 'est_eig_history': est_eig_history.cpu(),
+                   'lower_history': lower_history.cpu(), 'upper_history': upper_history.cpu(),
+                   'wall_times': wall_times.cpu()}
 
         with open(results_file, 'wb') as f:
             pickle.dump(results, f)
