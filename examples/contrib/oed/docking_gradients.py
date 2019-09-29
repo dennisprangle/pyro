@@ -195,7 +195,6 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, lower
         if params is not None:
             pyro.infer.util.zero_grads(params)
         with poutine.trace(param_only=True) as param_capture:
-            print("tracing", design.shape)
             agg_loss, loss = loss_fn(design, num_samples, evaluation=True, control_variate=baseline)
         baseline = -loss.detach()
         params = set(site["value"].unconstrained()
