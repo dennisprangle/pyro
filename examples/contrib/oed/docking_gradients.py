@@ -331,7 +331,7 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a linear model")
     parser.add_argument("--num-steps", default=500000, type=int)
-    parser.add_argument("--high-acc-freq", default=10000, type=int)
+    parser.add_argument("--high-acc-freq", default=50000, type=int)
     parser.add_argument("--num-samples", default=10, type=int)
     parser.add_argument("--num-parallel", default=10, type=int)
     parser.add_argument("--name", default="", type=str)
