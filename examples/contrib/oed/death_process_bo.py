@@ -217,12 +217,13 @@ def main(experiment_name, seed, estimator, num_parallel, num_steps, time_budget,
         seed = int(torch.rand(tuple()) * 2 ** 30)
         pyro.set_rng_seed(seed)
 
+    prior_entropy = dist.Normal(prior_mean, prior_sd).entropy()
+
     # Fix correct loss
     if estimator == 'nce':
         loss = lambda X: semi_analytic_eig(X, prior_mean, prior_sd, n_samples=num_samples)
 
     elif estimator == 'posterior':
-        prior_entropy = dist.Normal(prior_mean, prior_sd).entropy()
 
         def loss(design):
             pyro.clear_param_store()
@@ -239,6 +240,28 @@ def main(experiment_name, seed, estimator, num_parallel, num_steps, time_budget,
                 l.sum().backward()
                 optim(params)
             return prior_entropy - l.detach()
+
+    elif estimator == 'ace':
+
+        def loss(design):
+            pyro.clear_param_store()
+            optim = pyro.optim.Adam({"lr": 0.0025})
+            loss_to_opt = summed_ace_loss(prior_mean, prior_sd, num_samples)
+            params = None
+            for i in range(49):
+                if params is not None:
+                    pyro.infer.util.zero_grads(params)
+                with pyro.poutine.trace(param_only=True) as param_capture:
+                    l = loss_to_opt(design)
+                params = set(site["value"].unconstrained()
+                             for site in param_capture.trace.nodes.values())
+                (-l.sum()).backward()
+                optim(params)
+            loss_to_opt = summed_ace_loss(prior_mean, prior_sd, num_samples * 10)
+            l = loss_to_opt(design)
+            print(l)
+            l[is_bad(l)] = 0.
+            return l.detach()
 
     xi_history, est_loss_history, wall_times = gp_opt_w_history(
         loss, num_steps, time_budget, num_parallel, num_acquisition, .25)
