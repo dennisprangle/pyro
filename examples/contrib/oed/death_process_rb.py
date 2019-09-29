@@ -6,6 +6,7 @@ import subprocess
 import pickle
 from functools import lru_cache
 import time
+import warnings
 
 import torch
 from torch.distributions import constraints
@@ -253,8 +254,9 @@ def main(num_steps, time_budget, experiment_name, num_parallel, estimators, seed
         else:
             raise ValueError("Unexpected estimator")
 
-        gamma = 1
-        raise ValueError("gamma is 1")
+        gamma = (end_lr / start_lr) ** (1 / num_steps)
+        if time_budget is not None and gamma < 1:
+            warnings.warn("With time_budget set, we may not end on the correct learning rate")
         scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                               'gamma': gamma})
 
@@ -305,7 +307,7 @@ if __name__ == "__main__":
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--estimator", default="posterior", type=str)
     parser.add_argument("--seed", default=-1, type=int)
-    parser.add_argument("--start-lr", default=0.01, type=float)
-    parser.add_argument("--end-lr", default=0.0001, type=float)
+    parser.add_argument("--start-lr", default=0.001, type=float)
+    parser.add_argument("--end-lr", default=0.001, type=float)
     args = parser.parse_args()
     main(args.num_steps, args.time_budget, args.name, args.num_parallel, args.estimator, args.seed, args.start_lr, args.end_lr)

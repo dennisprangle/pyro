@@ -53,15 +53,18 @@ def main(name, num_inner_samples, device):
     optimizer = pyro.optim.Adam({"lr": 0.001})
 
     # Train guide
-    opt_eig_ape_loss(design, loss, num_samples=10, num_steps=50000, optim=optimizer)
+    print("Training")
+    opt_eig_ape_loss(design, loss, num_samples=10, num_steps=25000, optim=optimizer)
 
     # Evaluate
+    print("Evaluation")
     lower_loss = _ace_eig_loss(model, guide, num_inner_samples, "y", targets)  # isn't that an annoying API difference?
     upper_loss = _vnmc_eig_loss(model, guide, "y", targets)
     lower, upper = 0., 0.
     for i in range(num_inner_samples):
-        lower += lower_loss(design, num_inner_samples, evaluation=True)
-        upper += upper_loss(design, (num_inner_samples, num_inner_samples), evaluation=True)
+        lower += lower_loss(design, num_inner_samples, evaluation=True)[1]
+        upper += upper_loss(design, (num_inner_samples, num_inner_samples), evaluation=True)[1]
+        print(lower, upper)
 
     results['final_upper_bound'] = upper.cpu() / num_inner_samples
     results['final_lower_bound'] = lower.cpu() / num_inner_samples
