@@ -13,10 +13,11 @@ from matplotlib.ticker import MaxNLocator
 output_dir = "./run_outputs/ces/"
 # COLOURS = [[31/255, 120/255, 180/255], [227/255, 26/255, 28/255], [51/255, 160/255, 44/255], [177/255, 89/255, 40/255],
 #            [106 / 255, 61 / 255, 154 / 255], [255/255, 127/255, 0], [.22, .22, .22]]
-COLOURS = {'ace-grad': [31/255, 120/255, 180/255],
-           'nce-grad': [227/255, 26/255, 28/255],
-           'posterior-grad': [51/255, 160/255, 44/255],
-           'marginal': [177/255, 89/255, 40/255]}
+cmap = plt.get_cmap("Paired")
+COLOURS = {'ace-grad': cmap(1),
+           'nce-grad': cmap(3),
+           'posterior-grad': cmap(5),
+           'marginal': cmap(7)}
 VALUE_LABELS = {"Entropy": "Posterior entropy",
                 "L2 distance": "Expected L2 distance from posterior to truth",
                 "Optimized EIG": "Maximized EIG",
@@ -25,15 +26,15 @@ VALUE_LABELS = {"Entropy": "Posterior entropy",
                 "alpha_rmse": "RMSE in $\\mathbf{\\alpha}$ estimate",
                 "slope_rmse": 'RMSE in $u$ estimate',
                 "total_rmse": 'Total RMSE',
-                "Imax": "max I"}
-LABELS = {'marginal': 'Marginal BO (baseline)', 'rand': 'Random design (baseline)', 'nmc': 'BOED NMC (baseline)',
-          'posterior-grad': "Posterior gradient", 'nce-grad': "NCE gradient", "ace-grad": "ACE gradient"}
+                "Imax": "EIG"}
+LABELS = {'marginal': 'BO + marginal (baseline)', 'rand': 'Random design (baseline)', 'nmc': 'BOED NMC (baseline)',
+          'posterior-grad': "BA gradient", 'nce-grad': "NCE gradient", "ace-grad": "ACE gradient"}
 
 # MARKERS = ['o', 'D', '^', '*']
-MARKERS = {'ace-grad': 'o',
-           'nce-grad': 'D',
-           'posterior-grad': 'x',
-           'marginal': '*'}
+MARKERS = {'ace-grad': 'x',
+           'nce-grad': '|',
+           'posterior-grad': '1',
+           'marginal': '.'}
 
 S = 3
 
@@ -122,21 +123,21 @@ def main(fnames, findices, plot, percentile):
 
     if plot:
         for statistic in ["Entropy", "rho_rmse", "alpha_rmse", "slope_rmse", "Imax"]:
-            plt.figure(figsize=(5, 5))
+            plt.figure(figsize=(5, 2))
             for i, k in enumerate(reformed[statistic]):
                 e = reformed[statistic][k].squeeze()[1:]
                 lower, centre, upper = upper_lower(e, percentile=percentile)
                 x = np.arange(2, e.shape[0]+2)
                 plt.plot(x, centre, linestyle='-', markersize=8, color=COLOURS[k], marker=MARKERS[k], linewidth=1.5)
-                plt.fill_between(x, upper, lower, color=COLOURS[k] + [.1])
-            plt.xlabel("Step", fontsize=22)
-            plt.xticks(fontsize=16)
+                plt.fill_between(x, upper, lower, color=COLOURS[k], alpha=0.15)
+            plt.xlabel("Step", fontsize=16)
+            plt.xticks(fontsize=12)
             plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
             # plt.legend([LABELS[k] for k in reformed[statistic].keys()], fontsize=16, frameon=False, loc=1, ncol=4)
             # frame = legend.get_frame()
             # frame.set_linewidth(S/)
-            plt.yticks(fontsize=16)
-            plt.ylabel(VALUE_LABELS[statistic], fontsize=22)
+            plt.yticks(fontsize=12)
+            plt.ylabel(VALUE_LABELS[statistic], fontsize=16)
             # [i.set_linewidth(S/2) for i in plt.gca().spines.values()]
             # plt.gca().tick_params(width=S/2)
             if statistic not in ["Entropy", "Imax"]:

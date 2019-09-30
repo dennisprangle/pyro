@@ -9,6 +9,12 @@ import matplotlib.pyplot as plt
 output_dir = "./run_outputs/gradinfo/"
 
 
+COLOURS = {"ace": 1, "ace-nrb":0, "nce": 3, "nce-nrb":2, "posterior": 5, "posterior-nrb":4, "bo-nce": 7}
+MARKERS = {"ace": "x", "nce": "|", "posterior": "1", "bo-nce": ".", "ace-nrb": "x", "nce-nrb": "|", "posterior-nrb": "1"}
+LEGENDS = {"ace": "ACE", "nce": "NCE", "posterior": "BA", "bo-nce": "BO+NCE(2000)",
+           "ace-nrb": "ACE without RB", "nce-nrb": "NCE without RB", "posterior-nrb": "BA without RB"}
+
+
 def main(names, sampling_interval):
 
     combined = {}
@@ -19,15 +25,26 @@ def main(names, sampling_interval):
         combined[name] = results
 
     legend = []
+    plt.figure(figsize=(5, 4))
     for name in names.split(","):
         wall_time = combined[name]['wall_times'].detach().numpy()[::sampling_interval]
         est_hist = combined[name]['est_eig_history'].detach().numpy()[::sampling_interval]
         hist = combined[name]['eig_history'].detach().numpy()[::sampling_interval]
         mean, se = np.nanmean(hist, 1), np.nanstd(hist, 1)/math.sqrt(hist.shape[1])
-        plt.plot(wall_time, mean)
-        plt.fill_between(wall_time, mean - se, mean + se, alpha=0.1)
-        legend.extend([combined[name]['estimator'] + ' exact'])
-    plt.legend(legend)
+        e = combined[name]["estimator"] + ('-nrb' if 'nrb' in name else '')
+        cmap = plt.get_cmap("Paired")
+        col = cmap(COLOURS[e])
+        marker = MARKERS[e]
+        text = LEGENDS[e]
+        plt.plot(wall_time, mean, color=col, marker=marker, markersize=7)
+        plt.fill_between(wall_time, mean - se, mean + se, alpha=0.15, color=col)
+
+        legend.extend([text])
+    plt.xlabel("Time (s)", fontsize=18)
+    plt.ylabel("EIG", fontsize=18)
+    plt.legend(legend, fontsize=14)
+    plt.xticks(fontsize=16)
+    plt.yticks(fontsize=16)
     plt.show()
 
     for name in names.split(","):

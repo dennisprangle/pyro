@@ -123,7 +123,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
     y = y.detach().clone()
     kernel = gp.kernels.Matern52(input_dim=1, lengthscale=torch.tensor(lengthscale),
                                  variance=torch.tensor(1.))
-    constraint = torch.distributions.constraints.interval(1e-6, 5.)
+    constraint = torch.distributions.constraints.interval(1e-2, 5.)
     noise = torch.tensor(0.5).pow(2)
 
     def gp_conditional(Lff, Xnew, X, y):
@@ -181,7 +181,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         if time.time() - t > time_budget:
             break
 
-        if i % 1 == 0:  # Record the current gp max, for display later
+        if i % 10 == 0:  # Record the current gp max, for display later
             X_star, y_star = find_gp_max(X, y)
             print(X_star)
 
