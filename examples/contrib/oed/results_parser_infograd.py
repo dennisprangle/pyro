@@ -25,11 +25,14 @@ def main(name, sampling_interval):
     if xi_history.shape[-1] <= 2:
         if eig_heatmap is not None:
             plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
-        x, y = xi_history[::sampling_interval, 0].detach(), xi_history[::sampling_interval, 1].detach()
+        x, y = xi_history[::sampling_interval, 0, 0].detach(), xi_history[::sampling_interval, 0, 1].detach()
         plt.scatter(x, y, c=torch.arange(x.shape[0]), marker='x', cmap='summer')
         plt.show()
     elif xi_history.shape[-1] > 50:
-        plt.hist(xi_history[-1].numpy(), bins=30)
+        #y, binEdges = np.histogram(xi_history[-1].numpy(), bins=10)
+        #print(y, binEdges)
+        #raise
+        plt.hist(xi_history[-1, ...].view(-1).numpy(), bins=25)
         plt.show()
     else:
         print(xi_history[-1, ...])

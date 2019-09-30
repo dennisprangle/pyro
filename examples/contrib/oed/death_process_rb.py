@@ -277,23 +277,25 @@ def main(num_steps, time_budget, experiment_name, num_parallel, estimators, seed
         eig_history.append(semi_analytic_eig(xi_history[-1, ...], prior_mean, prior_sd, n_samples=200000))
         eig_history = torch.stack(eig_history)
 
-        # Build heatmap
-        # grid_points = 100
-        # b0low = min(0.05, xi_history[:, 0].min())
-        # b0up = max(3, xi_history[:, 0].max()) + 0.1
-        # b1low = min(0.05, xi_history[:, 1].min())
-        # b1up = max(3, xi_history[:, 1].max()) + 0.1
-        # xi1 = torch.linspace(b0low, b0up, grid_points)
-        # xi2 = torch.linspace(b1low, b1up, grid_points)
-        # d1 = xi1.expand(grid_points, grid_points).unsqueeze(-1)
-        # d2 = xi2.unsqueeze(-1).expand(grid_points, grid_points).unsqueeze(-1)
-        # d = torch.cat([d1, d2], dim=-1)
-        # eig_heatmap = semi_analytic_eig(d, prior_mean, prior_sd, n_samples=200)
-        # extent = [b0low, b0up, b1low, b1up]
-
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
                    'xi_history': xi_history, 'est_eig_history': est_eig_history, 'eig_history': eig_history,
                    'wall_times': wall_times}
+
+        # Build heatmap
+        grid_points = 100
+        b0low = min(0.05, xi_history[:, 0].min())
+        b0up = max(3, xi_history[:, 0].max()) + 0.1
+        b1low = min(0.05, xi_history[:, 1].min())
+        b1up = max(3, xi_history[:, 1].max()) + 0.1
+        xi1 = torch.linspace(b0low, b0up, grid_points)
+        xi2 = torch.linspace(b1low, b1up, grid_points)
+        d1 = xi1.expand(grid_points, grid_points).unsqueeze(-1)
+        d2 = xi2.unsqueeze(-1).expand(grid_points, grid_points).unsqueeze(-1)
+        d = torch.cat([d1, d2], dim=-1)
+        eig_heatmap = semi_analytic_eig(d, prior_mean, prior_sd, n_samples=20000)
+        extent = [b0low, b0up, b1low, b1up]
+        results['eig_heatmap'] = eig_heatmap
+        results['extent'] = extent
 
         with open(results_file, 'wb') as f:
             pickle.dump(results, f)
