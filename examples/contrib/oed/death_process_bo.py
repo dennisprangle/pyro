@@ -190,9 +190,10 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         if i % 10 == 0:
             s = num_acquisition * i
             X_star, y_star = find_gp_max(X[:, :s, :], y[:, :s])
+            print(X_star)
             est_loss_history.append(y_star)
             xi_history.append(X_star.detach().clone())
-            wall_times.append(run_times[i])
+            wall_times.append(run_times[i-1])
 
     # Record the final GP max
     X_star, y_star = find_gp_max(X, y)
