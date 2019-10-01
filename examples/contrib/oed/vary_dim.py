@@ -227,7 +227,7 @@ def main(num_trials, estimator, seed, verbose, hyper):
     num_acquisition, num_parallel = 5, 3
     lengthscale, jitter = torch.tensor(0.2), 1.0e-6
 
-    Ds = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+    Ds = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
 
     if estimator=='ace':
         num_steps = 10000  # gradient steps
