@@ -181,12 +181,13 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         if time.time() - t > time_budget:
             break
 
-        if i % 10 == 0:  # Record the current gp max, for display later
-            X_star, y_star = find_gp_max(X, y)
-            print(X_star)
+        if i % 10 == 0:
+            # X_star, y_star = acquire(X, y, 0, 1)
+            # X_star, y_star = X_star.squeeze(-2), y_star.squeeze(-1)
+            # print(X_star[0, ...])
 
-            est_loss_history.append(y_star)
-            xi_history.append(X_star)
+            est_loss_history.append(y_acquire)
+            xi_history.append(X_acquire)
             wall_times.append(time.time() - t)
 
     # Record the final GP max
