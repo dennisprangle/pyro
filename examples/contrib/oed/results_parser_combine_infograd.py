@@ -42,7 +42,7 @@ def main(names, sampling_interval):
         legend.extend([text])
     plt.xlabel("Time (s)", fontsize=18)
     plt.ylabel("EIG", fontsize=18)
-    plt.legend(legend, fontsize=14)
+    plt.legend(legend, fontsize=14, frameon=False)
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
     plt.show()

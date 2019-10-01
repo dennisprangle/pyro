@@ -26,7 +26,7 @@ VALUE_LABELS = {"Entropy": "Posterior entropy",
                 "alpha_rmse": "RMSE in $\\mathbf{\\alpha}$ estimate",
                 "slope_rmse": 'RMSE in $u$ estimate',
                 "total_rmse": 'Total RMSE',
-                "Imax": "EIG"}
+                "Imax": "EIG lower bound"}
 LABELS = {'marginal': 'BO + marginal (baseline)', 'rand': 'Random design (baseline)', 'nmc': 'BOED NMC (baseline)',
           'posterior-grad': "BA gradient", 'nce-grad': "NCE gradient", "ace-grad": "ACE gradient"}
 
@@ -123,7 +123,7 @@ def main(fnames, findices, plot, percentile):
 
     if plot:
         for statistic in ["Entropy", "rho_rmse", "alpha_rmse", "slope_rmse", "Imax"]:
-            plt.figure(figsize=(5, 2))
+            plt.figure(figsize=(5, 3.5))
             for i, k in enumerate(reformed[statistic]):
                 e = reformed[statistic][k].squeeze()[1:]
                 lower, centre, upper = upper_lower(e, percentile=percentile)
@@ -133,7 +133,7 @@ def main(fnames, findices, plot, percentile):
             plt.xlabel("Step", fontsize=16)
             plt.xticks(fontsize=12)
             plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
-            # plt.legend([LABELS[k] for k in reformed[statistic].keys()], fontsize=16, frameon=False, loc=1, ncol=4)
+            plt.legend([LABELS[k] for k in reformed[statistic].keys()], fontsize=16, frameon=False, loc=1, ncol=1)
             # frame = legend.get_frame()
             # frame.set_linewidth(S/)
             plt.yticks(fontsize=12)
