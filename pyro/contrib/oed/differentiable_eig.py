@@ -172,7 +172,7 @@ def _differentiable_ace_eig_loss(model, guide, M, observation_labels, target_lab
 
         xi_grad_terms = (terms - control_variate).detach() * prescore_function + terms
         phi_grad_terms = (logw0 - logsumw_detached).detach().exp() * q_theta0_terms - \
-                         (logwm - logsumw_detached).detach().exp().pow(2) * logwm
+                         ((logwm - logsumw_detached).detach().exp().pow(2) * logwm).sum(0)
         surrogate_loss = _safe_mean_terms(xi_grad_terms + phi_grad_terms)[0]
 
         return surrogate_loss, eig_estimate
