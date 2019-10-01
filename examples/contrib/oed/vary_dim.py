@@ -6,6 +6,7 @@ import pickle
 import numpy as np
 import pyro.contrib.gp as gp
 import time
+from functools import lru_cache
 
 import torch
 from torch.distributions import constraints
@@ -63,6 +64,7 @@ def optimal_eig(alpha, D, sigmasq, S=100 * 1000):
 
 
 # get the prior precision matrix
+@lru_cache(20)
 def get_prior_precision(alpha, D):
     u = torch.ones(D).unsqueeze(-1)
     u[0:int(D/2), 0] = alpha
@@ -71,6 +73,7 @@ def get_prior_precision(alpha, D):
 
 
 # get the cholesky matrix of the prior precision matrix
+@lru_cache(20)
 def get_prior_scale_tril(alpha, D):
     precision = get_prior_precision(alpha, D)
     return precision.inverse().cholesky()
@@ -148,12 +151,12 @@ def double_reparam_ace_loss(N, M, D=4, alpha=0.5, sigma=1.0):
     with pyro.plate("plate", N):
         theta0 = pyro.sample("x", dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision))
         y = pyro.sample("y", dist.Normal(theta0 * B, sigma * B.sqrt()).to_event(1))
-    # Compute log prob, detaching B
+    # Compute log prob
     lp_theta_0 = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(theta0)
     lp_y_theta_0 = dist.Normal(theta0 * B, sigma * B.sqrt()).to_event(1).log_prob(y)
     # Compute q_phi(theta_0 | y), detaching phi and y separately
-    A = pyro.param("A", lambda: torch.zeros(1, D))
-    scale_tril = pyro.param("scale_tril", lambda: lexpand(get_prior_scale_tril(alpha, D), N),
+    A = pyro.param("A", lambda: torch.zeros(1, 1, D))
+    scale_tril = pyro.param("scale_tril", lambda: lexpand(get_prior_scale_tril(alpha, D), 1),
                             constraint=torch.distributions.constraints.lower_cholesky)
     lq_theta0_y_detach_phi = dist.MultivariateNormal(A.detach() * y, scale_tril=scale_tril.detach()).log_prob(theta0)
     lq_theta0_y_detach_y = dist.MultivariateNormal(A * y.detach(), scale_tril=scale_tril).log_prob(theta0)
@@ -161,8 +164,11 @@ def double_reparam_ace_loss(N, M, D=4, alpha=0.5, sigma=1.0):
     # Sample contrastive samples
     with pyro.plate("plate1", N):
         with pyro.plate("plate2", M):
-            thetal_detach_phi = pyro.sample("xldphi", dist.MultivariateNormal(A.detach() * y, scale_tril=scale_tril.detach()))
-            thetal_detach_y = pyro.sample("xldy", dist.MultivariateNormal(A * y.detach(), scale_tril=scale_tril))
+            eps = pyro.sample("eps", dist.Normal(torch.zeros(M, N, D), torch.tensor(1.)).to_event(1))
+            thetal_detach_phi = A.detach() * y + rmv(scale_tril.detach(), eps)
+            thetal_detach_y = A * y.detach() + rmv(scale_tril, eps)
+            # thetal_detach_phi = pyro.sample("xldphi", dist.MultivariateNormal(A.detach() * y, scale_tril=scale_tril.detach()))
+            # thetal_detach_y = pyro.sample("xldy", dist.MultivariateNormal(A * y.detach(), scale_tril=scale_tril))
 
     lp_theta_l_detach_phi = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(thetal_detach_phi)
     lp_theta_l_detach_y = dist.MultivariateNormal(torch.zeros(D), precision_matrix=prior_precision).log_prob(thetal_detach_y)
@@ -173,7 +179,7 @@ def double_reparam_ace_loss(N, M, D=4, alpha=0.5, sigma=1.0):
     lq_theta_l_y_detach_phi = dist.MultivariateNormal(A.detach() * y, scale_tril=scale_tril.detach()).log_prob(thetal_detach_phi)
     lq_theta_l_y_detach_y = dist.MultivariateNormal(A * y.detach(), scale_tril=scale_tril).log_prob(thetal_detach_y)
 
-    y_loss = -torch.cat([lexpand(lp_theta_0 + lp_y_theta_0 - lq_theta0_y_detach_phi, 1),
+    y_loss = -torch.cat([lp_theta_0 + lp_y_theta_0 - lq_theta0_y_detach_phi,
                          lp_theta_l_detach_phi + lp_y_theta_l_detach_phi - lq_theta_l_y_detach_phi], dim=0).logsumexp(0) \
              + math.log(M+1) \
              + lp_y_theta_0
@@ -181,7 +187,7 @@ def double_reparam_ace_loss(N, M, D=4, alpha=0.5, sigma=1.0):
 
     log_wl = lp_theta_l_detach_y + lp_y_theta_l_detach_y - lq_theta_l_y_detach_y
     log_w0 = lp_theta_0 + lp_y_theta_0 - lq_theta0_y_detach_y
-    log_wsum = torch.cat([lexpand(log_w0, 1), log_wl], dim=0).logsumexp(0)
+    log_wsum = torch.cat([log_w0, log_wl], dim=0).logsumexp(0)
     phi_loss = (log_w0 - log_wsum).exp().detach() * lq_theta0_y_detach_y - (log_wl - log_wsum).exp().pow(2).detach() * log_wl
 
     surrogate_loss = (y_loss + phi_loss).mean(0).sum()
@@ -191,7 +197,7 @@ def double_reparam_ace_loss(N, M, D=4, alpha=0.5, sigma=1.0):
 
 
 # helper function for doing gradient-based minimization of a loss function
-def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
+def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, verbose=0):
     params = None
     xi_history = []
 
@@ -208,6 +214,8 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         xi_history.append(pyro.param('budget').detach().clone())
         optim(params)
         optim.step()
+        if verbose > 1:
+            print(pyro.param("budget"))
 
     xi_history.append(pyro.param('budget').detach().clone())
 
@@ -233,7 +241,7 @@ def main(num_trials, estimator, seed, verbose, hyper):
         num_steps = 10000  # gradient steps
         end_lr = 0.0001
     elif estimator=='ace.dreg':
-        num_steps = 9000  # gradient steps
+        num_steps = 10000  # gradient steps
         end_lr = 0.0001
     elif estimator=='nce':
         num_steps = 20000  # gradient steps
@@ -333,7 +341,7 @@ def main(num_trials, estimator, seed, verbose, hyper):
                 design_prototype = torch.zeros(1, 1, D)
                 num_samples = 100 if estimator=='posterior' else 10
                 design_history = opt_eig_loss_w_history(design_prototype, loss, num_samples=num_samples,
-                                                        num_steps=num_steps, optim=scheduler)
+                                                        num_steps=num_steps, optim=scheduler, verbose=verbose)
                 final_design = total_budget(D) * design_history[-1]
 
             tf = time.time()
