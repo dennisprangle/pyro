@@ -292,7 +292,7 @@ def main(num_steps, time_budget, experiment_name, num_parallel, estimators, seed
         d1 = xi1.expand(grid_points, grid_points).unsqueeze(-1)
         d2 = xi2.unsqueeze(-1).expand(grid_points, grid_points).unsqueeze(-1)
         d = torch.cat([d1, d2], dim=-1)
-        eig_heatmap = semi_analytic_eig(d, prior_mean, prior_sd, n_samples=20000)
+        eig_heatmap = semi_analytic_eig(d, prior_mean, prior_sd, n_samples=10000)
         extent = [b0low, b0up, b1low, b1up]
         results['eig_heatmap'] = eig_heatmap
         results['extent'] = extent
