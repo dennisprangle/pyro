@@ -226,7 +226,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-steps", default=2000, type=int)
     parser.add_argument("--time-budget", default=None, type=float)
     parser.add_argument("--num-parallel", default=10, type=int)
-    parser.add_argument("--num-samples", default=10, type=str)
+    parser.add_argument("--num-samples", default=10, type=int)
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--estimator", default="posterior", type=str)
     parser.add_argument("--seed", default=-1, type=int)
