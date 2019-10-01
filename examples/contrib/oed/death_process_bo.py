@@ -136,26 +136,29 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         return mean, var
 
     def acquire(X, y, sigma, nacq):
-        Kff = kernel(X)
-        Kff += noise * torch.eye(Kff.shape[-1])
-        Lff = Kff.cholesky(upper=False)
-        Xinit = .01 + 4.99 * torch.rand((num_parallel, nacq, design_dim))
-        unconstrained_Xnew = transform_to(constraint).inv(Xinit).detach().clone().requires_grad_(True)
-        minimizer = torch.optim.LBFGS([unconstrained_Xnew], max_eval=20)
+        X_acquire = torch.empty((num_parallel, nacq, design_dim))
+        for k, (Xu, yu) in enumerate(zip(torch.unbind(X, 0), torch.unbind(y, 0))):
+            Kff = kernel(Xu)
+            Kff += noise * torch.eye(Kff.shape[-1])
+            Lff = Kff.cholesky(upper=False)
+            Xinit = .01 + 4.99 * torch.rand((1, nacq, design_dim))
+            unconstrained_Xnew = transform_to(constraint).inv(Xinit).detach().clone().requires_grad_(True)
+            minimizer = torch.optim.LBFGS([unconstrained_Xnew], max_eval=20)
 
-        def gp_ucb1():
-            minimizer.zero_grad()
-            Xnew = transform_to(constraint)(unconstrained_Xnew)
-            mean, var = gp_conditional(Lff, Xnew, X, y)
-            ucb = -(mean + sigma * var.clamp(min=0.).sqrt())
-            ucb[is_bad(ucb)] = 0.
-            loss = ucb.sum()
-            torch.autograd.backward(unconstrained_Xnew,
-                                    torch.autograd.grad(loss, unconstrained_Xnew, retain_graph=True))
-            return loss
+            def gp_ucb1():
+                minimizer.zero_grad()
+                Xnew = transform_to(constraint)(unconstrained_Xnew)
+                mean, var = gp_conditional(Lff, Xnew, Xu, yu)
+                ucb = -(mean + sigma * var.clamp(min=0.).sqrt())
+                ucb[is_bad(ucb)] = 0.
+                loss = ucb.sum()
+                torch.autograd.backward(unconstrained_Xnew,
+                                        torch.autograd.grad(loss, unconstrained_Xnew, retain_graph=True))
+                return loss
 
-        minimizer.step(gp_ucb1)
-        X_acquire = transform_to(constraint)(unconstrained_Xnew).detach().clone()
+            minimizer.step(gp_ucb1)
+            X_acquire[k, ...] = transform_to(constraint)(unconstrained_Xnew).detach().clone()
+
         y_expected, _ = gp_conditional(Lff, X_acquire, X, y)
 
         return X_acquire, y_expected
@@ -186,8 +189,8 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
             # X_star, y_star = X_star.squeeze(-2), y_star.squeeze(-1)
             # print(X_star[0, ...])
 
-            est_loss_history.append(y_acquire)
-            xi_history.append(X_acquire)
+            est_loss_history.append(y_acquire[..., 0])
+            xi_history.append(X_acquire[..., 0, :])
             wall_times.append(time.time() - t)
 
     # Record the final GP max
