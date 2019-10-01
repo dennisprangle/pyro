@@ -15,6 +15,7 @@ import pyro.distributions as dist
 import pyro.contrib.gp as gp
 from pyro.contrib.util import rmv
 from pyro.util import is_bad
+from joblib import delayed, Parallel
 
 from death_process_rb import semi_analytic_eig
 
@@ -136,12 +137,11 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         return mean, var
 
     def acquire(X, y, sigma, nacq):
-        X_acquire = torch.empty((num_parallel, nacq, design_dim))
-        for k, (Xu, yu) in enumerate(zip(torch.unbind(X, 0), torch.unbind(y, 0))):
+        def _acquire(Xu, yu):
             Kff = kernel(Xu)
             Kff += noise * torch.eye(Kff.shape[-1])
             Lff = Kff.cholesky(upper=False)
-            Xinit = .01 + 4.99 * torch.rand((1, nacq, design_dim))
+            Xinit = .01 + 4.99 * torch.rand((nacq, design_dim))
             unconstrained_Xnew = transform_to(constraint).inv(Xinit).detach().clone().requires_grad_(True)
             minimizer = torch.optim.LBFGS([unconstrained_Xnew], max_eval=20)
 
@@ -157,10 +157,12 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
                 return loss
 
             minimizer.step(gp_ucb1)
-            X_acquire[k, ...] = transform_to(constraint)(unconstrained_Xnew).detach().clone()
+            X_acquire = transform_to(constraint)(unconstrained_Xnew).detach().clone()
+            y_expected, _ = gp_conditional(Lff, X_acquire, Xu, yu)
+            return X_acquire, y_expected
 
-        y_expected, _ = gp_conditional(Lff, X_acquire, X, y)
-
+        l = Parallel()(delayed(_acquire)(Xu, yu) for Xu, yu in zip(torch.unbind(X, 0), torch.unbind(y, 0)))
+        X_acquire, y_expected = (torch.stack(a, dim=0) for a in zip(*l))
         return X_acquire, y_expected
 
     def find_gp_max(X, y, n_tries=20):
