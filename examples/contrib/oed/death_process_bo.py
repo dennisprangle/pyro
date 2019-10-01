@@ -15,7 +15,6 @@ import pyro.distributions as dist
 import pyro.contrib.gp as gp
 from pyro.contrib.util import rmv
 from pyro.util import is_bad
-from joblib import delayed, Parallel
 
 from death_process_rb import semi_analytic_eig
 
@@ -116,6 +115,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
     xi_history = []
     t = time.time()
     wall_times = []
+    run_times = []
     X = .01 + 4.99 * torch.rand((num_parallel, num_acquisition, design_dim))
 
     y = loss_fn(X)
@@ -137,35 +137,31 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         return mean, var
 
     def acquire(X, y, sigma, nacq):
-        def _acquire(Xu, yu):
-            Kff = kernel(Xu)
-            Kff += noise * torch.eye(Kff.shape[-1])
-            Lff = Kff.cholesky(upper=False)
-            Xinit = .01 + 4.99 * torch.rand((nacq, design_dim))
-            unconstrained_Xnew = transform_to(constraint).inv(Xinit).detach().clone().requires_grad_(True)
-            minimizer = torch.optim.LBFGS([unconstrained_Xnew], max_eval=20)
+        Kff = kernel(X)
+        Kff += noise * torch.eye(Kff.shape[-1])
+        Lff = Kff.cholesky(upper=False)
+        Xinit = .01 + 4.99 * torch.rand((num_parallel, nacq, design_dim))
+        unconstrained_Xnew = transform_to(constraint).inv(Xinit).detach().clone().requires_grad_(True)
+        minimizer = torch.optim.LBFGS([unconstrained_Xnew], max_eval=20)
 
-            def gp_ucb1():
-                minimizer.zero_grad()
-                Xnew = transform_to(constraint)(unconstrained_Xnew)
-                mean, var = gp_conditional(Lff, Xnew, Xu, yu)
-                ucb = -(mean + sigma * var.clamp(min=0.).sqrt())
-                ucb[is_bad(ucb)] = 0.
-                loss = ucb.sum()
-                torch.autograd.backward(unconstrained_Xnew,
-                                        torch.autograd.grad(loss, unconstrained_Xnew, retain_graph=True))
-                return loss
+        def gp_ucb1():
+            minimizer.zero_grad()
+            Xnew = transform_to(constraint)(unconstrained_Xnew)
+            mean, var = gp_conditional(Lff, Xnew, X, y)
+            ucb = -(mean + sigma * var.clamp(min=0.).sqrt())
+            ucb[is_bad(ucb)] = 0.
+            loss = ucb.sum()
+            torch.autograd.backward(unconstrained_Xnew,
+                                    torch.autograd.grad(loss, unconstrained_Xnew, retain_graph=True))
+            return loss
 
-            minimizer.step(gp_ucb1)
-            X_acquire = transform_to(constraint)(unconstrained_Xnew).detach().clone()
-            y_expected, _ = gp_conditional(Lff, X_acquire, Xu, yu)
-            return X_acquire, y_expected
+        minimizer.step(gp_ucb1)
+        X_acquire = transform_to(constraint)(unconstrained_Xnew).detach().clone()
+        y_expected, _ = gp_conditional(Lff, X_acquire, X, y)
 
-        l = Parallel()(delayed(_acquire)(Xu, yu) for Xu, yu in zip(torch.unbind(X, 0), torch.unbind(y, 0)))
-        X_acquire, y_expected = (torch.stack(a, dim=0) for a in zip(*l))
         return X_acquire, y_expected
 
-    def find_gp_max(X, y, n_tries=20):
+    def find_gp_max(X, y, n_tries=100):
         X_star = torch.zeros(num_parallel, 1, design_dim)
         y_star = torch.zeros(num_parallel, 1)
         for j in range(n_tries):  # Cannot parallelize this because sometimes LBFGS goes bad across a whole batch
@@ -182,24 +178,27 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         y_acquire = loss_fn(X_acquire).detach().clone()
         X = torch.cat([X, X_acquire], dim=-2)
         y = torch.cat([y, y_acquire], dim=-1)
+        run_times.append(time.time() - t)
 
         if time.time() - t > time_budget:
             break
 
-        if i % 10 == 0:
-            # X_star, y_star = acquire(X, y, 0, 1)
-            # X_star, y_star = X_star.squeeze(-2), y_star.squeeze(-1)
-            # print(X_star[0, ...])
+    final_time = time.time() - t
 
-            est_loss_history.append(y_acquire[..., 0])
-            xi_history.append(X_acquire[..., 0, :])
-            wall_times.append(time.time() - t)
+    for i in range(1, len(run_times)+1):
+
+        if i % 10 == 0:
+            s = num_acquisition * i
+            X_star, y_star = find_gp_max(X[:, :s, :], y[:, :s])
+            print(X_star)
+            est_loss_history.append(y_star)
+            xi_history.append(X_star.detach().clone())
+            wall_times.append(run_times[i-1])
 
     # Record the final GP max
     X_star, y_star = find_gp_max(X, y)
-
     xi_history.append(X_star.detach().clone())
-    wall_times.append(time.time() - t)
+    wall_times.append(final_time)
 
     est_loss_history = torch.stack(est_loss_history)
     xi_history = torch.stack(xi_history)
