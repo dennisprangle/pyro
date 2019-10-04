@@ -41,7 +41,7 @@ def make_regression_model(w_loc, w_scale, sigma_scale, xi_init, observation_labe
             # `w` is shape p, the prior on each component is independent
             w = pyro.sample("w", dist.Laplace(w_loc, w_scale).to_event(1))
             # `sigma` is scalar
-            sigma = pyro.sample("sigma", dist.HalfCauchy(sigma_scale))
+            sigma = pyro.sample("sigma", dist.HalfCauchy(sigma_scale)).unsqueeze(-1)
             mean = rmv(design, w)
             sd = sigma * (1 + design.norm(dim=-1))
             y = pyro.sample(observation_label, dist.Normal(mean, sd).to_event(1))
