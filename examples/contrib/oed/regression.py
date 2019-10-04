@@ -79,6 +79,7 @@ class PosteriorGuide(nn.Module):
         self.linear1 = TensorLinear(*batching, y_dim, n_hidden)
         self.linear2 = TensorLinear(*batching, n_hidden, n_hidden)
         self.output_layer = TensorLinear(*batching, n_hidden, w_dim + 2)
+        self.covariance_shape = batching + (w_dim, w_dim)
         self.softplus = nn.Softplus()
         self.relu = nn.ReLU()
 
@@ -94,10 +95,10 @@ class PosteriorGuide(nn.Module):
 
         pyro.module("posterior_guide", self)
 
-        covariance_shape = posterior_mean.shape[-2:] + (posterior_mean.shape[-1],)
-        posterior_scale_tril = pyro.param("posterior_scale_tril",
-                                          torch.eye(posterior_mean.shape[-1], device=posterior_mean.device).expand(covariance_shape),
-                                          constraint=constraints.lower_cholesky)
+        posterior_scale_tril = pyro.param(
+            "posterior_scale_tril", torch.eye(posterior_mean.shape[-1], device=posterior_mean.device).expand(self.covariance_shape),
+            constraint=constraints.lower_cholesky
+        )
 
         batch_shape = design_prototype.shape[:-2]
         with pyro.plate_stack("guide_plate_stack", batch_shape):
