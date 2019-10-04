@@ -50,6 +50,7 @@ class SafeGamma(dist.Gamma):
     def log_prob(self, value, *args, **kwargs):
         lp = super(SafeGamma, self).log_prob(value, *args, **kwargs)
         lp[value <= 0.] = -100.
+        lp[value == float('inf')] = -100.
         return lp
 
 
