@@ -94,15 +94,15 @@ class PosteriorGuide(nn.Module):
 
         pyro.module("posterior_guide", self)
 
-        covariance_shape = posterior_mean.shape + (posterior_mean.shape[-1],)
+        covariance_shape = posterior_mean.shape[-2:] + (posterior_mean.shape[-1],)
         posterior_scale_tril = pyro.param("posterior_scale_tril",
                                           torch.eye(posterior_mean.shape[-1], device=posterior_mean.device).expand(covariance_shape),
                                           constraint=constraints.lower_cholesky)
 
         batch_shape = design_prototype.shape[:-2]
         with pyro.plate_stack("guide_plate_stack", batch_shape):
-            pyro.sample("w", dist.MultivariateNormal(posterior_mean, scale_tril=posterior_scale_tril))
             sigma = pyro.sample("sigma", dist.Gamma(gamma_concentration, gamma_scale))
+            pyro.sample("w", dist.MultivariateNormal(posterior_mean, scale_tril=(posterior_scale_tril * sigma)))
             print('sigma', sigma.min(), sigma.max())
 
 
