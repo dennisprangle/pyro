@@ -7,18 +7,13 @@ import subprocess
 import datetime
 import pickle
 import time
-from contextlib import ExitStack
 
 import pyro
 import pyro.optim as optim
 import pyro.distributions as dist
-from pyro.contrib.util import iter_plates_to_shape
-from pyro.contrib.oed.differentiable_eig import (
-        _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss,
-        )
 from pyro import poutine
 from pyro.contrib.util import lexpand, rmv
-from pyro.contrib.oed.eig import _eig_from_ape, nce_eig, _ace_eig_loss, nmc_eig, vnmc_eig
+from pyro.contrib.oed.eig import _eig_from_ape, nce_eig, _ace_eig_loss, nmc_eig, vnmc_eig, _posterior_loss
 from pyro.util import is_bad
 from pyro.contrib.autoguide import mean_field_entropy
 
@@ -101,7 +96,7 @@ class PosteriorGuide(nn.Module):
 
         covariance_shape = posterior_mean.shape + (posterior_mean.shape[-1],)
         posterior_scale_tril = pyro.param("posterior_scale_tril",
-                                          torch.eye(posterior_mean.shape[-1]).expand(covariance_shape),
+                                          torch.eye(posterior_mean.shape[-1], device=posterior_mean.device).expand(covariance_shape),
                                           constraint=constraints.lower_cholesky)
 
         batch_shape = design_prototype.shape[:-2]
@@ -202,13 +197,13 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, num_parallel
         if estimator == 'posterior':
             # m_final = 20
             guide = PosteriorGuide(n, p, (num_parallel,)).to(device)
-            loss = _differentiable_posterior_loss(model_learn_xi, guide, ["y"], targets)
+            loss = _posterior_loss(model_learn_xi, guide, ["y"], targets)
             # high_acc = loss
             # upper_loss = lambda d, N, **kwargs: vnmc_eig(model_learn_xi, d, "y", targets, (N, int(math.sqrt(N))), 0, guide, None)
 
         elif estimator == 'nce':
             # m_final = 40
-            eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
+            eig_loss = lambda d, N, **kwargs: nce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
                 N=N, M=contrastive_samples, **kwargs)
             loss = neg_loss(eig_loss)
@@ -222,8 +217,7 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, num_parallel
         elif estimator == 'ace':
             # m_final = 20
             guide = PosteriorGuide(n, p, (num_parallel,)).to(device)
-            eig_loss = _differentiable_ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"],
-                                                    ["top", "bottom", "ee50", "slope"])
+            eig_loss = _ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"], targets)
             loss = neg_loss(eig_loss)
             # high_acc = _ace_eig_loss(model_learn_xi, guide, m_final, "y", targets)
             # upper_loss = lambda d, N, **kwargs: vnmc_eig(model_learn_xi, d, "y", targets, (N, int(math.sqrt(N))), 0, guide, None)
