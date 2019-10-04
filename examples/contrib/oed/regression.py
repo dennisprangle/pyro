@@ -99,7 +99,7 @@ class PosteriorGuide(nn.Module):
         final = self.output_layer(x)
 
         posterior_mean = final[..., :-2]
-        gamma_concentration = 1. + self.softplus(final[..., -2])
+        gamma_concentration = .1 + self.softplus(final[..., -2])
         gamma_scale = 1e-6 + self.softplus(final[..., -1])
 
         pyro.module("posterior_guide", self)
