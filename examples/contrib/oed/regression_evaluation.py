@@ -50,7 +50,7 @@ def main(name, num_inner_samples, device):
         w_prior_loc, w_prior_scale, sigma_prior_scale)
 
     guide = PosteriorGuide(n, p, (num_parallel,)).to(device)
-    targets = ["w", "sigmad"]
+    targets = ["w", "sigma"]
     eig_loss = _ace_eig_loss(model, guide, 10, ["y"], targets)
     loss = neg_loss(eig_loss)
     optimizer = pyro.optim.Adam({"lr": 0.001})
