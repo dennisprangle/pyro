@@ -103,7 +103,8 @@ class PosteriorGuide(nn.Module):
         batch_shape = design_prototype.shape[:-2]
         with pyro.plate_stack("guide_plate_stack", batch_shape):
             sigma = pyro.sample("sigma", dist.Gamma(gamma_concentration, gamma_scale))
-            pyro.sample("w", dist.MultivariateNormal(posterior_mean, scale_tril=(posterior_scale_tril * sigma)))
+            scale_tril = posterior_scale_tril * sigma.unsqueeze(-1).unsqueeze(-1)
+            pyro.sample("w", dist.MultivariateNormal(posterior_mean, scale_tril=scale_tril))
             print('sigma', sigma.min(), sigma.max())
 
 
