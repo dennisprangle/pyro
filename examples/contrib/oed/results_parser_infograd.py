@@ -1,6 +1,7 @@
 import argparse
 import pickle
 import numpy as np
+import math
 
 import torch
 import matplotlib.pyplot as plt
@@ -14,6 +15,10 @@ def main(name, sampling_interval):
     with open(fname, 'rb') as f:
         results = pickle.load(f)
 
+    print(results['final_lower_bound'].mean(), results['final_lower_bound'].std()/math.sqrt(10))
+    print(results['final_upper_bound'].mean(), results['final_upper_bound'].std()/math.sqrt(10))
+    print(results['wall_times'][-1])
+    raise
     xi_history = results['xi_history']
     est_eig_history = results['est_eig_history']
     eig_history = results.get('eig_history')

@@ -89,8 +89,8 @@ class PosteriorGuide(nn.Module):
         final = self.output_layer(x)
 
         posterior_mean = final[..., :-2]
-        gamma_concentration = self.softplus(final[..., -2])
-        gamma_scale = self.softplus(final[..., -1])
+        gamma_concentration = 1. + self.softplus(final[..., -2])
+        gamma_scale = 1e-6 + self.softplus(final[..., -1])
 
         pyro.module("posterior_guide", self)
 
@@ -102,7 +102,8 @@ class PosteriorGuide(nn.Module):
         batch_shape = design_prototype.shape[:-2]
         with pyro.plate_stack("guide_plate_stack", batch_shape):
             pyro.sample("w", dist.MultivariateNormal(posterior_mean, scale_tril=posterior_scale_tril))
-            pyro.sample("sigma", dist.Gamma(gamma_concentration, gamma_scale))
+            sigma = pyro.sample("sigma", dist.Gamma(gamma_concentration, gamma_scale))
+            print('sigma', sigma.min(), sigma.max())
 
 
 def neg_loss(loss):
@@ -136,7 +137,8 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         wall_times.append(time.time() - t)
         optim(params)
         optim.step()
-        print(pyro.param("xi").squeeze())
+        print(pyro.param("xi")[0, 0, ...])
+        print(step)
         print('eig', baseline.squeeze())
 
         # if step % h_freq == 0:
