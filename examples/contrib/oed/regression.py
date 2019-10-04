@@ -111,9 +111,8 @@ class PosteriorGuide(nn.Module):
 
         batch_shape = design_prototype.shape[:-2]
         with pyro.plate_stack("guide_plate_stack", batch_shape):
-            sigma = pyro.sample("sigma", SafeGamma(gamma_concentration, gamma_scale))
+            pyro.sample("sigma", SafeGamma(gamma_concentration, gamma_scale))
             pyro.sample("w", dist.MultivariateNormal(posterior_mean, scale_tril=posterior_scale_tril))
-            print('sigma', sigma.min(), sigma.max())
 
 
 def neg_loss(loss):
