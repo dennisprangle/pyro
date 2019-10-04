@@ -865,7 +865,7 @@ def _ace_eig_loss(model, guide, M, observation_labels, target_labels):
         # Sample M times from q(theta | y, d) for each y
         reexpanded_design = lexpand(expanded_design, M)
         guide_trace = poutine.trace(guide).get_trace(
-            y_dict_exp, reexpanded_design, observation_labels, target_labels
+            y_dict, reexpanded_design, observation_labels, target_labels
         )
         theta_y_dict = {l: guide_trace.nodes[l]["value"] for l in target_labels}
         theta_y_dict.update(y_dict_exp)
@@ -900,13 +900,14 @@ def _vnmc_eig_loss(model, guide, observation_labels, target_labels):
 
         # Sample from p(y, theta | d)
         trace = poutine.trace(model).get_trace(expanded_design)
+        y_dict_unexp = {l: trace.nodes[l]["value"] for l in observation_labels}
         y_dict = {l: lexpand(trace.nodes[l]["value"], M) for l in observation_labels}
 
         # Sample M times from q(theta | y, d) for each y
         reexpanded_design = lexpand(expanded_design, M)
         # conditional_guide = pyro.condition(guide, data=y_dict)
         guide_trace = poutine.trace(guide).get_trace(
-            y_dict, reexpanded_design, observation_labels, target_labels)
+            y_dict_unexp, reexpanded_design, observation_labels, target_labels)
         theta_y_dict = {l: guide_trace.nodes[l]["value"] for l in target_labels}
         theta_y_dict.update(y_dict)
         guide_trace.compute_log_prob()
