@@ -45,6 +45,14 @@ def make_regression_model(w_loc, w_scale, sigma_scale, xi_init, observation_labe
     return regression_model
 
 
+class SafeGamma(dist.Gamma):
+
+    def log_prob(self, value, *args, **kwargs):
+        lp = super(SafeGamma, self).log_prob(value, *args, **kwargs)
+        lp[value <= 0.] = -100.
+        return lp
+
+
 class TensorLinear(nn.Module):
 
     __constants__ = ['bias']
@@ -102,7 +110,7 @@ class PosteriorGuide(nn.Module):
 
         batch_shape = design_prototype.shape[:-2]
         with pyro.plate_stack("guide_plate_stack", batch_shape):
-            sigma = pyro.sample("sigma", dist.Gamma(gamma_concentration, gamma_scale))
+            sigma = pyro.sample("sigma", SafeGamma(gamma_concentration, gamma_scale))
             pyro.sample("w", dist.MultivariateNormal(posterior_mean, scale_tril=posterior_scale_tril))
             print('sigma', sigma.min(), sigma.max())
 
