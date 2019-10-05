@@ -45,15 +45,6 @@ def make_regression_model(w_loc, w_scale, sigma_scale, xi_init, observation_labe
     return regression_model
 
 
-class SafeGamma(dist.Gamma):
-
-    def log_prob(self, value, *args, **kwargs):
-        lp = super(SafeGamma, self).log_prob(value, *args, **kwargs)
-        lp[value <= 0.] = -100.
-        lp[value == float('inf')] = -100.
-        return lp
-
-
 class TensorLinear(nn.Module):
 
     __constants__ = ['bias']
@@ -99,8 +90,8 @@ class PosteriorGuide(nn.Module):
         final = self.output_layer(x)
 
         posterior_mean = final[..., :-2]
-        gamma_concentration = .1 + self.softplus(final[..., -2])
-        gamma_scale = 1e-6 + self.softplus(final[..., -1])
+        gamma_concentration = 1e-6 + self.softplus(final[..., -2])
+        gamma_rate = 1. + self.softplus(final[..., -1])
 
         pyro.module("posterior_guide", self)
 
@@ -111,8 +102,12 @@ class PosteriorGuide(nn.Module):
 
         batch_shape = design_prototype.shape[:-2]
         with pyro.plate_stack("guide_plate_stack", batch_shape):
-            pyro.sample("sigma", SafeGamma(gamma_concentration, gamma_scale))
+            print(gamma_concentration.max(), gamma_concentration.min())
+            print(gamma_rate.max(), gamma_rate.min())
+            print(posterior_scale_tril.max(), posterior_scale_tril.min())
+            s = pyro.sample("sigma", dist.Gamma(gamma_concentration, gamma_rate))
             pyro.sample("w", dist.MultivariateNormal(posterior_mean, scale_tril=posterior_scale_tril))
+            print('sigma', s.max(), s.min())
 
 
 def neg_loss(loss):
