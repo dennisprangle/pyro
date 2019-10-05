@@ -104,12 +104,8 @@ class PosteriorGuide(nn.Module):
 
         batch_shape = design_prototype.shape[:-2]
         with pyro.plate_stack("guide_plate_stack", batch_shape):
-            print(gamma_concentration.max(), gamma_concentration.min())
-            print(gamma_rate.max(), gamma_rate.min())
-            print(posterior_scale_tril.max(), posterior_scale_tril.min())
-            s = pyro.sample("sigma", dist.Gamma(gamma_concentration, gamma_rate))
+            pyro.sample("sigma", dist.Gamma(gamma_concentration, gamma_rate))
             pyro.sample("w", dist.MultivariateNormal(posterior_mean, scale_tril=posterior_scale_tril))
-            print('sigma', s.max(), s.min())
 
 
 def neg_loss(loss):
@@ -170,7 +166,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
 
 
 def main(num_steps, num_samples, experiment_name, estimators, seed, num_parallel, start_lr, end_lr,
-         device):
+         device, n, p, scale):
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
         experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
@@ -187,13 +183,12 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, num_parallel
             seed = int(torch.rand(tuple()) * 2 ** 30)
             pyro.set_rng_seed(seed)
 
-        n, p = 20, 30
         xi_init = torch.randn((num_parallel, n, p), device=device)
         # Change the prior distribution here
         # prior params
         w_prior_loc = torch.zeros(p, device=device)
-        w_prior_scale = torch.ones(p, device=device)
-        sigma_prior_scale = torch.tensor(1., device=device)
+        w_prior_scale = scale * torch.ones(p, device=device)
+        sigma_prior_scale = scale * torch.tensor(1., device=device)
 
         model_learn_xi = make_regression_model(
             w_prior_loc, w_prior_scale, sigma_prior_scale, xi_init)
@@ -272,6 +267,9 @@ if __name__ == "__main__":
     parser.add_argument("--start-lr", default=0.001, type=float)
     parser.add_argument("--end-lr", default=0.001, type=float)
     parser.add_argument("--device", default="cuda:0", type=str)
+    parser.add_argument("-n", default=20, type=int)
+    parser.add_argument("-p", default=30, type=int)
+    parser.add_argument("--scale", default=1., type=float)
     args = parser.parse_args()
     main(args.num_steps, args.num_samples, args.name, args.estimator, args.seed, args.num_parallel,
-         args.start_lr, args.end_lr, args.device)
+         args.start_lr, args.end_lr, args.device, args.n, args.p, args.scale)

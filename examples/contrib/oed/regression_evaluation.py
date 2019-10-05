@@ -31,7 +31,7 @@ def make_regression_model(w_loc, w_scale, sigma_scale, observation_label="y"):
     return regression_model
 
 
-def main(name, num_inner_samples, device):
+def main(name, num_inner_samples, device, n, p, scale):
 
     fname = output_dir + name + ".pickle"
     with open(fname, 'rb') as f:
@@ -42,9 +42,8 @@ def main(name, num_inner_samples, device):
     print(design.shape, design.max(), design.min())
     num_parallel = design.shape[0]
 
-    n, p = 20, 30
-    w_prior_loc = torch.zeros(p, device=device)
-    w_prior_scale = torch.ones(p, device=device)
+    w_prior_loc = scale * torch.zeros(p, device=device)
+    w_prior_scale = scale * torch.ones(p, device=device)
     sigma_prior_scale = torch.tensor(1., device=device)
 
     model = make_regression_model(
@@ -87,6 +86,9 @@ if __name__ == "__main__":
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--num-inner-samples", default=500, type=int)
     parser.add_argument("--device", default="cuda:0", type=str)
+    parser.add_argument("-n", default=20, type=int)
+    parser.add_argument("-p", default=30, type=int)
+    parser.add_argument("--scale", default=1., type=float)
     args = parser.parse_args()
 
-    main(args.name, args.num_inner_samples, args.device)
+    main(args.name, args.num_inner_samples, args.device, args.n, args.p, args.scale)
