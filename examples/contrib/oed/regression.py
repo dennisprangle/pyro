@@ -89,7 +89,7 @@ class PosteriorGuide(nn.Module):
         x = self.relu(self.linear2(x))
         final = self.output_layer(x)
 
-        posterior_mean = final[..., :-2]
+        posterior_mean = final[..., :-3]
         gamma_concentration = 1e-6 + self.softplus(final[..., -3])
         gamma_rate = 1. + self.softplus(final[..., -2])
         scale_tril_multiplier = 1e-6 + self.softplus(final[..., -1])
