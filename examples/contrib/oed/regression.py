@@ -100,7 +100,7 @@ class PosteriorGuide(nn.Module):
             "posterior_scale_tril", torch.eye(posterior_mean.shape[-1], device=posterior_mean.device).expand(self.covariance_shape),
             constraint=constraints.lower_cholesky
         )
-        posterior_scale_tril *= scale_tril_multiplier
+        posterior_scale_tril *= scale_tril_multiplier.unsqueeze(-1).unsqueeze(-1)
 
         batch_shape = design_prototype.shape[:-2]
         with pyro.plate_stack("guide_plate_stack", batch_shape):
