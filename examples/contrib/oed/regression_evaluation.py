@@ -22,7 +22,7 @@ def make_regression_model(w_loc, w_scale, sigma_scale, observation_label="y"):
             # `w` is shape p, the prior on each component is independent
             w = pyro.sample("w", dist.Laplace(w_loc, w_scale).to_event(1))
             # `sigma` is scalar
-            sigma = pyro.sample("sigma", dist.Exponential(sigma_scale)).unsqueeze(-1)
+            sigma = 1e-6 + pyro.sample("sigma", dist.Exponential(sigma_scale)).unsqueeze(-1)
             mean = rmv(design, w)
             sd = sigma * (1 + design.norm(dim=-1))
             y = pyro.sample(observation_label, dist.Normal(mean, sd).to_event(1))
@@ -39,6 +39,7 @@ def main(name, num_inner_samples, device):
 
     xi_history = results['xi_history']
     design = xi_history[-1].to(device)
+    print(design.shape, design.max(), design.min())
     num_parallel = design.shape[0]
 
     n, p = 20, 30
