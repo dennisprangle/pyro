@@ -39,7 +39,7 @@ def make_regression_model(w_loc, w_scale, sigma_scale, xi_init, observation_labe
             # `sigma` is scalar
             sigma = 1e-6 + pyro.sample("sigma", dist.Exponential(sigma_scale)).unsqueeze(-1)
             mean = rmv(design, w)
-            sd = sigma * (1 + design.norm(dim=-1))
+            sd = sigma 
             y = pyro.sample(observation_label, dist.Normal(mean, sd).to_event(1))
             return y
 
