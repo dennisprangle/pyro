@@ -1,0 +1,191 @@
+import torch
+from torch.distributions import constraints
+from torch import nn
+import argparse
+import math
+import subprocess
+import datetime
+import pickle
+import time
+from torch.distributions import transform_to
+
+import pyro
+import pyro.optim as optim
+import pyro.contrib.gp as gp
+from pyro.contrib.oed.eig import vnmc_eig
+from pyro.contrib.util import rmv
+from pyro.util import is_bad
+
+from regression import PosteriorGuide, neg_loss, get_git_revision_hash
+from regression_evaluation import make_regression_model
+
+
+
+
+def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisition, lengthscale, n, p):
+
+    if time_budget is not None:
+        num_steps = 100000000000
+
+    est_loss_history = []
+    xi_history = []
+    t = time.time()
+    wall_times = []
+    run_times = []
+    X = torch.randn((num_parallel, num_acquisition, n * p))
+
+    y = loss_fn(X.reshape(X.shape[:-1] + (n, p)))
+
+    # GPBO
+    y = y.detach().clone()
+    kernel = gp.kernels.Matern52(input_dim=1, lengthscale=torch.tensor(lengthscale),
+                                 variance=torch.tensor(25.))
+    # constraint = torch.distributions.constraints.interval(1e-2, 5.)
+    noise = torch.tensor(0.5).pow(2)
+
+    def gp_conditional(Lff, Xnew, X, y):
+        KXXnew = kernel(X, Xnew)
+        LiK = torch.triangular_solve(KXXnew, Lff, upper=False)[0]
+        Liy = torch.triangular_solve(y.unsqueeze(-1), Lff, upper=False)[0]
+        mean = rmv(LiK.transpose(-1, -2), Liy.squeeze(-1))
+        KXnewXnew = kernel(Xnew)
+        var = (KXnewXnew - LiK.transpose(-1, -2).matmul(LiK)).diagonal(dim1=-2, dim2=-1)
+        return mean, var
+
+    def acquire(X, y, sigma, nacq):
+        Kff = kernel(X)
+        Kff += noise * torch.eye(Kff.shape[-1])
+        Lff = Kff.cholesky(upper=False)
+        Xinit = torch.rand((num_parallel, nacq, n, p))
+        unconstrained_Xnew = Xinit.detach().clone().requires_grad_(True)
+        minimizer = torch.optim.LBFGS([unconstrained_Xnew], max_eval=20)
+
+        def gp_ucb1():
+            minimizer.zero_grad()
+            Xnew = unconstrained_Xnew
+            mean, var = gp_conditional(Lff, Xnew, X, y)
+            ucb = -(mean + sigma * var.clamp(min=0.).sqrt())
+            ucb[is_bad(ucb)] = 0.
+            loss = ucb.sum()
+            torch.autograd.backward(unconstrained_Xnew,
+                                    torch.autograd.grad(loss, unconstrained_Xnew, retain_graph=True))
+            return loss
+
+        minimizer.step(gp_ucb1)
+        X_acquire = unconstrained_Xnew.detach().clone()
+        y_expected, _ = gp_conditional(Lff, X_acquire, X, y)
+
+        return X_acquire, y_expected
+
+    def find_gp_max(X, y, n_tries=100):
+        X_star = torch.zeros(num_parallel, 1, n, p)
+        y_star = torch.zeros(num_parallel, 1)
+        for j in range(n_tries):  # Cannot parallelize this because sometimes LBFGS goes bad across a whole batch
+            X_star_new, y_star_new = acquire(X, y, 0, 1)
+            y_star_new[is_bad(y_star_new)] = 0.
+            mask = y_star_new > y_star
+            y_star[mask, ...] = y_star_new[mask, ...]
+            X_star[mask, ...] = X_star_new[mask, ...]
+
+        return X_star.squeeze(), y_star.squeeze()
+
+    for i in range(num_steps):
+        X_acquire, _ = acquire(X, y, 2, num_acquisition)
+        y_acquire = loss_fn(X_acquire.reshape(X_acquire.shape[:-1] + (n, p))).detach().clone()
+        X = torch.cat([X, X_acquire], dim=-3)
+        y = torch.cat([y, y_acquire], dim=-1)
+        run_times.append(time.time() - t)
+
+        if time.time() - t > time_budget:
+            break
+
+    final_time = time.time() - t
+
+    for i in range(1, len(run_times)+1):
+
+        if i % 10 == 0:
+            s = num_acquisition * i
+            X_star, y_star = find_gp_max(X[:, :s, :], y[:, :s])
+            print(X_star)
+            est_loss_history.append(y_star)
+            xi_history.append(X_star.detach().clone())
+            wall_times.append(run_times[i-1])
+
+    # Record the final GP max
+    X_star, y_star = find_gp_max(X, y)
+    xi_history.append(X_star.detach().clone())
+    wall_times.append(final_time)
+
+    est_loss_history = torch.stack(est_loss_history)
+    xi_history = torch.stack(xi_history)
+    wall_times = torch.tensor(wall_times)
+
+    return xi_history, est_loss_history, wall_times
+
+
+def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, end_lr,
+         device, n, p, scale):
+    output_dir = "./run_outputs/gradinfo/"
+    if not experiment_name:
+        experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
+    else:
+        experiment_name = output_dir + experiment_name
+    results_file = experiment_name + '.pickle'
+
+    pyro.clear_param_store()
+    if seed >= 0:
+        pyro.set_rng_seed(seed)
+    else:
+        seed = int(torch.rand(tuple()) * 2 ** 30)
+        pyro.set_rng_seed(seed)
+
+    xi_init = torch.randn((num_parallel, n, p), device=device)
+    # Change the prior distribution here
+    # prior params
+    w_prior_loc = torch.zeros(p, device=device)
+    w_prior_scale = scale * torch.ones(p, device=device)
+    sigma_prior_scale = scale * torch.tensor(1., device=device)
+
+    model = make_regression_model(
+        w_prior_loc, w_prior_scale, sigma_prior_scale, xi_init)
+    guide = PosteriorGuide(n, p, (num_parallel, )).to(device)
+
+    contrastive_samples = num_samples
+
+    # Fix correct loss
+    targets = ["w", "sigma"]
+    vnmc_eval = lambda design: vnmc_eig(model, design, "y", targets, (num_samples, contrastive_samples), num_steps, guide,
+                                        optim.Adam({"lr": start_lr}), final_num_samples=(400, 20))
+
+    xi_history, est_loss_history, wall_times = gp_opt_w_history(
+        neg_loss(vnmc_eval), None, 20000, 10, 1, 1., n, p)
+
+    est_eig_history = -est_loss_history
+
+    results = {'git-hash': get_git_revision_hash(), 'seed': seed,
+               'xi_history': xi_history.cpu(), 'est_eig_history': est_eig_history.cpu(),
+               # 'lower_history': lower_history.cpu(), 'upper_history': upper_history.cpu(),
+               'wall_times': wall_times.cpu()}
+
+    with open(results_file, 'wb') as f:
+        pickle.dump(results, f)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="BO-based design optimization (one shot) with a linear model")
+    parser.add_argument("--num-steps", default=500000, type=int)
+    # parser.add_argument("--high-acc-freq", default=50000, type=int)
+    parser.add_argument("--num-samples", default=10, type=int)
+    parser.add_argument("--num-parallel", default=1, type=int)
+    parser.add_argument("--name", default="", type=str)
+    # parser.add_argument("--estimator", default="posterior", type=str)
+    parser.add_argument("--seed", default=-1, type=int)
+    parser.add_argument("--start-lr", default=0.001, type=float)
+    parser.add_argument("--end-lr", default=0.001, type=float)
+    parser.add_argument("--device", default="cuda:0", type=str)
+    parser.add_argument("-n", default=20, type=int)
+    parser.add_argument("-p", default=30, type=int)
+    parser.add_argument("--scale", default=1., type=float)
+    args = parser.parse_args()
+    main(args.num_steps, args.num_samples, args.name, args.seed, args.num_parallel,
+         args.start_lr, args.end_lr, args.device, args.n, args.p, args.scale)
