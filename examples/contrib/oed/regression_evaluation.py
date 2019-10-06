@@ -15,7 +15,7 @@ output_dir = "./run_outputs/gradinfo/"
 
 def make_regression_model(w_loc, w_scale, sigma_scale, observation_label="y"):
     def regression_model(design):
-        design = (design / design.norm(dim=-2, p=1, keepdim=True)
+        design = design / design.norm(dim=-2, p=1, keepdim=True)
         if is_bad(design):
             raise ArithmeticError("bad design, contains nan or inf")
         batch_shape = design.shape[:-2]
