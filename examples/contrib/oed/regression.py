@@ -29,7 +29,7 @@ def get_git_revision_hash():
 def make_regression_model(w_loc, w_scale, sigma_scale, xi_init, observation_label="y"):
     def regression_model(design_prototype):
         design = pyro.param("xi", xi_init)
-        design = (design / design.norm(dim=-2, p=1, keepdim=True)).expand(design_prototype.shape)
+        design = (design / design.norm(dim=-1, p=1, keepdim=True)).expand(design_prototype.shape)
         if is_bad(design):
             raise ArithmeticError("bad design, contains nan or inf")
         batch_shape = design.shape[:-2]
