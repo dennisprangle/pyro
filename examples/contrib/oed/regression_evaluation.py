@@ -31,7 +31,7 @@ def make_regression_model(w_loc, w_scale, sigma_scale, observation_label="y"):
     return regression_model
 
 
-def main(name, num_inner_samples, device, n, p, scale):
+def main(name, num_inner_samples, num_outer_samples, device, n, p, scale):
 
     fname = output_dir + name + ".pickle"
     with open(fname, 'rb') as f:
@@ -66,7 +66,7 @@ def main(name, num_inner_samples, device, n, p, scale):
     lower, upper = 0., 0.
     max_samples = 10000
     n_per_batch = max_samples // num_inner_samples
-    n_batches = num_inner_samples ** 3 // max_samples
+    n_batches = num_inner_samples * num_outer_samples // max_samples
     for i in range(n_batches):
         print(i)
         lower += lower_loss(design, n_per_batch, evaluation=True)[1].detach().cpu()
@@ -84,11 +84,12 @@ def main(name, num_inner_samples, device, n, p, scale):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Use ACE/VNMC to evaluate docking designs")
     parser.add_argument("--name", default="", type=str)
-    parser.add_argument("--num-inner-samples", default=500, type=int)
+    parser.add_argument("--num-inner-samples", default=2500, type=int)
+    parser.add_argument("--num-outer-samples", default=100000, type=int)
     parser.add_argument("--device", default="cuda:0", type=str)
     parser.add_argument("-n", default=20, type=int)
     parser.add_argument("-p", default=30, type=int)
     parser.add_argument("--scale", default=1., type=float)
     args = parser.parse_args()
 
-    main(args.name, args.num_inner_samples, args.device, args.n, args.p, args.scale)
+    main(args.name, args.num_inner_samples, args.num_outer_samples, args.device, args.n, args.p, args.scale)
