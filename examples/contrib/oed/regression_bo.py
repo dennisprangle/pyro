@@ -32,16 +32,17 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
     t = time.time()
     wall_times = []
     run_times = []
-    X = torch.randn((num_parallel, num_acquisition, n * p)).to(device)
+    X = torch.randn((num_parallel, num_acquisition, n * p), device=device)
 
     y = loss_fn(X.reshape(X.shape[:-1] + (n, p)))
 
     # GPBO
     y = y.detach().clone()
-    kernel = gp.kernels.Matern52(input_dim=1, lengthscale=torch.tensor(lengthscale),
-                                 variance=torch.tensor(25.))
+    print('initial y', y)
+    kernel = gp.kernels.Matern52(input_dim=1, lengthscale=torch.tensor(lengthscale, device=device),
+                                 variance=torch.tensor(25., device=device))
     # constraint = torch.distributions.constraints.interval(1e-2, 5.)
-    noise = torch.tensor(0.5).pow(2)
+    noise = torch.tensor(0.5, device=device).pow(2)
 
     def gp_conditional(Lff, Xnew, X, y):
         KXXnew = kernel(X, Xnew)
@@ -54,9 +55,10 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
 
     def acquire(X, y, sigma, nacq):
         Kff = kernel(X)
-        Kff += noise * torch.eye(Kff.shape[-1])
+        print('Kff', Kff)
+        Kff += noise * torch.eye(Kff.shape[-1], device=device)
         Lff = Kff.cholesky(upper=False)
-        Xinit = torch.rand((num_parallel, nacq, n, p)).to(device)
+        Xinit = torch.rand((num_parallel, nacq, n * p), device=device)
         unconstrained_Xnew = Xinit.detach().clone().requires_grad_(True)
         minimizer = torch.optim.LBFGS([unconstrained_Xnew], max_eval=20)
 
@@ -92,7 +94,8 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
     for i in range(num_steps):
         X_acquire, _ = acquire(X, y, 2, num_acquisition)
         y_acquire = loss_fn(X_acquire.reshape(X_acquire.shape[:-1] + (n, p))).detach().clone()
-        X = torch.cat([X, X_acquire], dim=-3)
+        print('acquired', X_acquire, y_acquire)
+        X = torch.cat([X, X_acquire], dim=-2)
         y = torch.cat([y, y_acquire], dim=-1)
         run_times.append(time.time() - t)
 
@@ -147,18 +150,18 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
     sigma_prior_scale = scale * torch.tensor(1., device=device)
 
     model = make_regression_model(
-        w_prior_loc, w_prior_scale, sigma_prior_scale, xi_init)
+        w_prior_loc, w_prior_scale, sigma_prior_scale)
     guide = PosteriorGuide(n, p, (num_parallel, )).to(device)
 
     contrastive_samples = num_samples
 
     # Fix correct loss
     targets = ["w", "sigma"]
-    vnmc_eval = lambda design: vnmc_eig(model, design, "y", targets, (num_samples, contrastive_samples), num_steps, guide,
-                                        optim.Adam({"lr": start_lr}), final_num_samples=(400, 20))
+    vnmc_eval = lambda design: -vnmc_eig(model, design, "y", targets, (num_samples, contrastive_samples), num_steps, guide,
+                                         optim.Adam({"lr": start_lr}), final_num_samples=(400, 20))
 
     xi_history, est_loss_history, wall_times = gp_opt_w_history(
-        neg_loss(vnmc_eval), None, 20000, 10, 1, 1., n, p, device)
+        vnmc_eval, None, 20000, num_parallel, 10, 10., n, p, device)
 
     est_eig_history = -est_loss_history
 
@@ -173,7 +176,7 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="BO-based design optimization (one shot) with a linear model")
-    parser.add_argument("--num-steps", default=500000, type=int)
+    parser.add_argument("--num-steps", default=5000, type=int)
     # parser.add_argument("--high-acc-freq", default=50000, type=int)
     parser.add_argument("--num-samples", default=10, type=int)
     parser.add_argument("--num-parallel", default=1, type=int)
