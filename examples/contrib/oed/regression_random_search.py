@@ -36,7 +36,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
 
     for i in range(num_steps):
         pyro.clear_param_store()
-        X_acquire = torch.rand((num_parallel, num_acquisition, n , p), device=device)
+        X_acquire = torch.randn((num_parallel, num_acquisition, n , p), device=device)
         y_acquire = loss_fn(X_acquire).detach().clone()
         print('acquired', X_acquire, y_acquire)
         X = torch.cat([X, X_acquire], dim=-3)

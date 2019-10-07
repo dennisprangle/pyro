@@ -23,7 +23,6 @@ from regression_evaluation import make_regression_model
 
 
 def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisition, lengthscale, n, p, device):
-    print('n', n, 'p', p)
 
     if time_budget is not None:
         num_steps = 100000000000
@@ -33,7 +32,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
     t = time.time()
     wall_times = []
     run_times = []
-    X = torch.randn((num_parallel, num_acquisition, n * p), device=device)
+    X = -1 + 2 * torch.rand((num_parallel, num_acquisition, n * p), device=device)
 
     y = loss_fn(X.reshape(X.shape[:-1] + (n, p)))
 
@@ -59,7 +58,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         print('Kff', Kff)
         Kff += noise * torch.eye(Kff.shape[-1], device=device)
         Lff = Kff.cholesky(upper=False)
-        Xinit = torch.rand((num_parallel, nacq, n * p), device=device)
+        Xinit = -1 + 2*torch.rand((num_parallel, nacq, n * p), device=device)
         unconstrained_Xnew = transform_to(constraint).inv(Xinit).detach().clone().requires_grad_(True)
         minimizer = torch.optim.LBFGS([unconstrained_Xnew], max_eval=20)
 
