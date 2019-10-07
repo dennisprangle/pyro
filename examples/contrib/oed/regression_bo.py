@@ -22,7 +22,7 @@ from regression_evaluation import make_regression_model
 
 
 
-def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisition, lengthscale, n, p):
+def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisition, lengthscale, n, p, device):
 
     if time_budget is not None:
         num_steps = 100000000000
@@ -32,7 +32,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
     t = time.time()
     wall_times = []
     run_times = []
-    X = torch.randn((num_parallel, num_acquisition, n * p))
+    X = torch.randn((num_parallel, num_acquisition, n * p)).to(device)
 
     y = loss_fn(X.reshape(X.shape[:-1] + (n, p)))
 
@@ -56,7 +56,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         Kff = kernel(X)
         Kff += noise * torch.eye(Kff.shape[-1])
         Lff = Kff.cholesky(upper=False)
-        Xinit = torch.rand((num_parallel, nacq, n, p))
+        Xinit = torch.rand((num_parallel, nacq, n, p)).to(device)
         unconstrained_Xnew = Xinit.detach().clone().requires_grad_(True)
         minimizer = torch.optim.LBFGS([unconstrained_Xnew], max_eval=20)
 
@@ -158,7 +158,7 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
                                         optim.Adam({"lr": start_lr}), final_num_samples=(400, 20))
 
     xi_history, est_loss_history, wall_times = gp_opt_w_history(
-        neg_loss(vnmc_eval), None, 20000, 10, 1, 1., n, p)
+        neg_loss(vnmc_eval), None, 20000, 10, 1, 1., n, p, device)
 
     est_eig_history = -est_loss_history
 
