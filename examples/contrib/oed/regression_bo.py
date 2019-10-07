@@ -81,6 +81,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         return X_acquire, y_expected
 
     for i in range(num_steps):
+        pyro.clear_param_store()
         X_acquire, _ = acquire(X, y, 2, num_acquisition)
         y_acquire = loss_fn(X_acquire.reshape(X_acquire.shape[:-1] + (n, p))).detach().clone()
         print('acquired', X_acquire, y_acquire)
