@@ -171,7 +171,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-steps", default=5000, type=int)
     parser.add_argument("--time-budget", default=1200, type=int)
     parser.add_argument("--num-acquisition", default=10, type=int)
-    parser.add_argument("--lengthscale", default=10., type=float)
+    parser.add_argument("--lengthscale", default=1., type=float)
     # parser.add_argument("--high-acc-freq", default=50000, type=int)
     parser.add_argument("--num-samples", default=10, type=int)
     parser.add_argument("--num-parallel", default=1, type=int)
