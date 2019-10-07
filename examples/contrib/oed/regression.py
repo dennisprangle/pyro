@@ -115,7 +115,7 @@ def neg_loss(loss):
     return new_loss
 
 
-def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
+def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, time_budget):
 
     params = None
     est_loss_history = []
@@ -143,6 +143,8 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
         print(pyro.param("xi")[0, 0, ...])
         print(step)
         print('eig', baseline.squeeze())
+        if time.time() - t > time_budget:
+            break
 
         # if step % h_freq == 0:
         #     low = lower(design, n_high_acc, evaluation=True)
@@ -166,7 +168,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim):
     return xi_history, est_loss_history, wall_times  # , lower_history, upper_history, wall_times
 
 
-def main(num_steps, num_samples, experiment_name, estimators, seed, num_parallel, start_lr, end_lr,
+def main(num_steps, num_samples, time_budget, experiment_name, estimators, seed, num_parallel, start_lr, end_lr,
          device, n, p, scale):
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
@@ -236,7 +238,8 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, num_parallel
         design_prototype = torch.zeros(num_parallel, n, p, device=device)  # this is annoying, code needs refactor
 
         xi_history, est_loss_history, wall_times = opt_eig_loss_w_history(
-            design_prototype, loss, num_samples=num_samples, num_steps=num_steps, optim=scheduler)
+            design_prototype, loss, num_samples=num_samples, num_steps=num_steps, optim=scheduler,
+            time_budget=time_budget)
 
         if estimator == 'posterior':
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, targets, est_loss_history, True, {})
@@ -259,6 +262,7 @@ def main(num_steps, num_samples, experiment_name, estimators, seed, num_parallel
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a linear model")
     parser.add_argument("--num-steps", default=500000, type=int)
+    parser.add_argument("--time-budget", default=1200, type=int)
     # parser.add_argument("--high-acc-freq", default=50000, type=int)
     parser.add_argument("--num-samples", default=10, type=int)
     parser.add_argument("--num-parallel", default=10, type=int)
@@ -272,5 +276,5 @@ if __name__ == "__main__":
     parser.add_argument("-p", default=30, type=int)
     parser.add_argument("--scale", default=1., type=float)
     args = parser.parse_args()
-    main(args.num_steps, args.num_samples, args.name, args.estimator, args.seed, args.num_parallel,
+    main(args.num_steps, args.num_samples, args.time_budget, args.name, args.estimator, args.seed, args.num_parallel,
          args.start_lr, args.end_lr, args.device, args.n, args.p, args.scale)
