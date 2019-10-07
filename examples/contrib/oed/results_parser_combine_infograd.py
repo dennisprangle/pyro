@@ -11,8 +11,8 @@ output_dir = "./run_outputs/gradinfo/"
 
 COLOURS = {"ace": 1, "ace-nrb":0, "nce": 3, "nce-nrb":2, "posterior": 5, "posterior-nrb":4, "bo-nce": 7}
 MARKERS = {"ace": "x", "nce": "|", "posterior": "1", "bo-nce": ".", "ace-nrb": "x", "nce-nrb": "|", "posterior-nrb": "1"}
-LEGENDS = {"ace": "ACE", "nce": "NCE", "posterior": "BA", "bo-nce": "BO+NCE(2000)",
-           "ace-nrb": "ACE without RB", "nce-nrb": "NCE without RB", "posterior-nrb": "BA without RB"}
+LEGENDS = {"ace": "ACE", "nce": "PCE", "posterior": "BA", "bo-nce": "BO+NMC",
+           "ace-nrb": "ACE without RB", "nce-nrb": "PCE without RB", "posterior-nrb": "BA without RB"}
 
 
 def main(names, sampling_interval):
