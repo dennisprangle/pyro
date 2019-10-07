@@ -75,7 +75,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
             return loss
 
         minimizer.step(gp_ucb1)
-        X_acquire = unconstrained_Xnew.detach().clone()
+        X_acquire = transform_to(constraint)(unconstrained_Xnew).detach().clone()
         y_expected, _ = gp_conditional(Lff, X_acquire, X, y)
 
         return X_acquire, y_expected
