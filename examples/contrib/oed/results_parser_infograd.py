@@ -17,12 +17,11 @@ def main(name, sampling_interval):
 
     print(results['final_lower_bound'].mean(), results['final_lower_bound'].std()/math.sqrt(10))
     print(results['final_upper_bound'].mean(), results['final_upper_bound'].std()/math.sqrt(10))
-    print(results['wall_times'][-1])
+    #print(results['wall_times'][-1])
     xi_history = results['xi_history']
     design = xi_history[-1, 0, ...]
     design = design / design.norm(p=1, dim=-1, keepdim=True)
-    raise
-    est_eig_history = results['est_eig_history']
+    #est_eig_history = results['est_eig_history']
     eig_history = results.get('eig_history')
     eig_heatmap = results.get('eig_heatmap')
     heatmap_extent = results.get('extent')
@@ -41,11 +40,14 @@ def main(name, sampling_interval):
         plt.yticks(fontsize=16)
         plt.show()
     elif xi_history.shape[-1] > 50:
-        #y, binEdges = np.histogram(xi_history[-1].numpy(), bins=10)
-        #print(y, binEdges)
-        #raise
-        plt.hist(xi_history[-1, ...].view(-1).numpy(), bins=25)
+        plt.hist(xi_history[-1, 0, ...].view(-1).numpy(), bins=20)
+        plt.xlabel("Predicted binding affinity", fontsize=18)
+        plt.ylabel("Number of compounds to test", fontsize=18)
+        plt.xticks(fontsize=16)
+        plt.yticks(fontsize=16)
+        plt.text(-74., 14.5, "{:.5} < EIG < {:.5}".format(results['final_lower_bound'][0], results['final_upper_bound'][0]), ha='center', fontsize=16)
         plt.show()
+        return
     else:
         print(xi_history[-1, ...])
 
