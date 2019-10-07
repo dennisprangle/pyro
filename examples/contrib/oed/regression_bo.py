@@ -66,7 +66,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
             minimizer.zero_grad()
             Xnew = unconstrained_Xnew
             mean, var = gp_conditional(Lff, Xnew, X, y)
-            ucb = -(mean + sigma * var.clamp(min=0.).sqrt())
+            ucb = (mean - sigma * var.clamp(min=0.).sqrt())
             ucb[is_bad(ucb)] = 0.
             loss = ucb.sum()
             torch.autograd.backward(unconstrained_Xnew,
