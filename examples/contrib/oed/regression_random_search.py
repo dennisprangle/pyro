@@ -78,7 +78,6 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
         seed = int(torch.rand(tuple()) * 2 ** 30)
         pyro.set_rng_seed(seed)
 
-    xi_init = torch.randn((num_parallel, n, p), device=device)
     # Change the prior distribution here
     # prior params
     w_prior_loc = torch.zeros(p, device=device)

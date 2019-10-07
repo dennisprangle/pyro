@@ -41,8 +41,8 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
     y = y.detach().clone()
     print('initial y', y)
     kernel = gp.kernels.Matern52(input_dim=1, lengthscale=torch.tensor(lengthscale, device=device),
-                                 variance=torch.tensor(25., device=device))
-    # constraint = torch.distributions.constraints.interval(1e-2, 5.)
+                                 variance=torch.tensor(10., device=device))
+    constraint = torch.distributions.constraints.interval(-1., 1.)
     noise = torch.tensor(0.5, device=device).pow(2)
 
     def gp_conditional(Lff, Xnew, X, y):
@@ -60,12 +60,12 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         Kff += noise * torch.eye(Kff.shape[-1], device=device)
         Lff = Kff.cholesky(upper=False)
         Xinit = torch.rand((num_parallel, nacq, n * p), device=device)
-        unconstrained_Xnew = Xinit.detach().clone().requires_grad_(True)
+        unconstrained_Xnew = transform_to(constraint).inv(Xinit).detach().clone().requires_grad_(True)
         minimizer = torch.optim.LBFGS([unconstrained_Xnew], max_eval=20)
 
         def gp_ucb1():
             minimizer.zero_grad()
-            Xnew = unconstrained_Xnew
+            Xnew = transform_to(constraint)(unconstrained_Xnew)
             mean, var = gp_conditional(Lff, Xnew, X, y)
             ucb = (mean - sigma * var.clamp(min=0.).sqrt())
             ucb[is_bad(ucb)] = 0.
