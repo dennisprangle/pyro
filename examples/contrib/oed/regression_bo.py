@@ -116,7 +116,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
     #         wall_times.append(run_times[i-1])
 
     # Record the final GP max
-    y_star, idx = torch.max(y, dim=-1)
+    y_star, idx = torch.min(y, dim=-1)
     X_star = X[torch.arange(0, num_parallel, device=device), idx]
     # X_star, y_star = find_gp_max(X, y)
     xi_history.append(X_star.detach().clone())
