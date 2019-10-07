@@ -80,8 +80,8 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         return X_acquire, y_expected
 
     def find_gp_max(X, y, n_tries=100):
-        X_star = torch.zeros(num_parallel, 1, n, p)
-        y_star = torch.zeros(num_parallel, 1)
+        X_star = torch.zeros(num_parallel, 1, n, p, device=device)
+        y_star = torch.zeros(num_parallel, 1, device=device)
         for j in range(n_tries):  # Cannot parallelize this because sometimes LBFGS goes bad across a whole batch
             X_star_new, y_star_new = acquire(X, y, 0, 1)
             y_star_new[is_bad(y_star_new)] = 0.
@@ -98,32 +98,35 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         X = torch.cat([X, X_acquire], dim=-2)
         y = torch.cat([y, y_acquire], dim=-1)
         run_times.append(time.time() - t)
+        est_loss_history.append(y.max(-1)[0])
 
         if time.time() - t > time_budget:
             break
 
     final_time = time.time() - t
 
-    for i in range(1, len(run_times)+1):
-
-        if i % 10 == 0:
-            s = num_acquisition * i
-            X_star, y_star = find_gp_max(X[:, :s, :], y[:, :s])
-            print(X_star)
-            est_loss_history.append(y_star)
-            xi_history.append(X_star.detach().clone())
-            wall_times.append(run_times[i-1])
+    # for i in range(1, len(run_times)+1):
+    #
+    #     if i % 10 == 0:
+    #         s = num_acquisition * i
+    #         X_star, y_star = find_gp_max(X[:, :s, :], y[:, :s])
+    #         print(X_star)
+    #         est_loss_history.append(y_star)
+    #         xi_history.append(X_star.detach().clone())
+    #         wall_times.append(run_times[i-1])
 
     # Record the final GP max
-    X_star, y_star = find_gp_max(X, y)
+    y_star, idx = torch.max(y, dim=-1)
+    X_star = X[torch.arange(0, num_parallel, device=device), idx]
+    # X_star, y_star = find_gp_max(X, y)
     xi_history.append(X_star.detach().clone())
     wall_times.append(final_time)
 
     est_loss_history = torch.stack(est_loss_history)
     xi_history = torch.stack(xi_history)
-    wall_times = torch.tensor(wall_times)
+    run_times = torch.tensor(run_times)
 
-    return xi_history, est_loss_history, wall_times
+    return xi_history, est_loss_history, run_times
 
 
 def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, end_lr,
