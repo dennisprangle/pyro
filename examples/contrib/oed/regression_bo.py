@@ -79,18 +79,6 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
 
         return X_acquire, y_expected
 
-    def find_gp_max(X, y, n_tries=100):
-        X_star = torch.zeros(num_parallel, 1, n, p, device=device)
-        y_star = torch.zeros(num_parallel, 1, device=device)
-        for j in range(n_tries):  # Cannot parallelize this because sometimes LBFGS goes bad across a whole batch
-            X_star_new, y_star_new = acquire(X, y, 0, 1)
-            y_star_new[is_bad(y_star_new)] = 0.
-            mask = y_star_new > y_star
-            y_star[mask, ...] = y_star_new[mask, ...]
-            X_star[mask, ...] = X_star_new[mask, ...]
-
-        return X_star.squeeze(), y_star.squeeze()
-
     for i in range(num_steps):
         X_acquire, _ = acquire(X, y, 2, num_acquisition)
         y_acquire = loss_fn(X_acquire.reshape(X_acquire.shape[:-1] + (n, p))).detach().clone()
