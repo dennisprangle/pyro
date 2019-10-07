@@ -30,20 +30,20 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
     t = time.time()
     wall_times = []
     run_times = []
-    X = torch.randn((num_parallel, num_acquisition, n * p), device=device)
+    X = torch.randn((num_parallel, num_acquisition, n , p), device=device)
 
-    y = loss_fn(X.reshape(X.shape[:-1] + (n, p)))
+    y = loss_fn(X)
 
     for i in range(num_steps):
-        X_acquire = torch.rand((num_parallel, num_acquisition, n * p), device=device)
-        y_acquire = loss_fn(X_acquire.reshape(X_acquire.shape[:-1] + (n, p))).detach().clone()
+        X_acquire = torch.rand((num_parallel, num_acquisition, n , p), device=device)
+        y_acquire = loss_fn(X_acquire).detach().clone()
         print('acquired', X_acquire, y_acquire)
-        X = torch.cat([X, X_acquire], dim=-2)
+        X = torch.cat([X, X_acquire], dim=-3)
         y = torch.cat([y, y_acquire], dim=-1)
         run_times.append(time.time() - t)
-        est_loss_history.append(y.max(-1)[0])
+        est_loss_history.append(y.min(-1)[0])
 
-        if time.time() - t > time_budget:
+        if (time_budget is not None) and (time.time() - t > time_budget):
             break
 
     final_time = time.time() - t
@@ -90,6 +90,7 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
     guide = PosteriorGuide(n, p, (num_parallel, )).to(device)
 
     contrastive_samples = num_samples
+    num_outer_steps = 72
 
     # Fix correct loss
     targets = ["w", "sigma"]
@@ -97,7 +98,7 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
                                          optim.Adam({"lr": start_lr}), final_num_samples=(400, 20))
 
     xi_history, est_loss_history, wall_times = gp_opt_w_history(
-        vnmc_eval, None, time_budget, num_parallel, num_acquisition, n, p, device)
+        vnmc_eval, num_outer_steps, time_budget, num_parallel, num_acquisition, n, p, device)
 
     est_eig_history = -est_loss_history
 
@@ -112,8 +113,8 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="BO-based design optimization (one shot) with a linear model")
-    parser.add_argument("--num-steps", default=5000, type=int)
-    parser.add_argument("--time-budget", default=1200, type=int)
+    parser.add_argument("--num-steps", default=1000, type=int)
+    parser.add_argument("--time-budget", default=None, type=int)
     parser.add_argument("--num-acquisition", default=10, type=int)
     # parser.add_argument("--high-acc-freq", default=50000, type=int)
     parser.add_argument("--num-samples", default=10, type=int)

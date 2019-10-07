@@ -21,8 +21,6 @@ def main(name, sampling_interval):
     xi_history = results['xi_history']
     design = xi_history[-1, 0, ...]
     design = design / design.norm(p=1, dim=-1, keepdim=True)
-    print(design)
-    print(design.abs().sum(-2))
     raise
     est_eig_history = results['est_eig_history']
     eig_history = results.get('eig_history')

@@ -23,6 +23,7 @@ from regression_evaluation import make_regression_model
 
 
 def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisition, lengthscale, n, p, device):
+    print('n', n, 'p', p)
 
     if time_budget is not None:
         num_steps = 100000000000
