@@ -127,7 +127,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
 
 
 def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, end_lr,
-         device, n, p, scale):
+         device, n, p, scale, time_budget, num_acquisition, gp_lengthscale):
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
         experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
@@ -161,7 +161,7 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
                                          optim.Adam({"lr": start_lr}), final_num_samples=(400, 20))
 
     xi_history, est_loss_history, wall_times = gp_opt_w_history(
-        vnmc_eval, None, 20000, num_parallel, 10, 10., n, p, device)
+        vnmc_eval, None, time_budget, num_parallel, num_acquisition, gp_lengthscale, n, p, device)
 
     est_eig_history = -est_loss_history
 
@@ -177,6 +177,9 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="BO-based design optimization (one shot) with a linear model")
     parser.add_argument("--num-steps", default=5000, type=int)
+    parser.add_argument("--time-budget", default=1200, type=int)
+    parser.add_argument("--num-acquisition", default=10, type=int)
+    parser.add_argument("--lengthscale", default=10., type=float)
     # parser.add_argument("--high-acc-freq", default=50000, type=int)
     parser.add_argument("--num-samples", default=10, type=int)
     parser.add_argument("--num-parallel", default=1, type=int)
@@ -191,4 +194,5 @@ if __name__ == "__main__":
     parser.add_argument("--scale", default=1., type=float)
     args = parser.parse_args()
     main(args.num_steps, args.num_samples, args.name, args.seed, args.num_parallel,
-         args.start_lr, args.end_lr, args.device, args.n, args.p, args.scale)
+         args.start_lr, args.end_lr, args.device, args.n, args.p, args.scale,
+         args.time_budget, args.num_acquisition, args.lengthscale)
