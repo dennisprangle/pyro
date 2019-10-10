@@ -15,8 +15,8 @@ def main(name, sampling_interval):
     with open(fname, 'rb') as f:
         results = pickle.load(f)
 
-    print(results['final_lower_bound'].mean(), results['final_lower_bound'].std()/math.sqrt(10))
-    print(results['final_upper_bound'].mean(), results['final_upper_bound'].std()/math.sqrt(10))
+    # print(results['final_lower_bound'].mean(), results['final_lower_bound'].std()/math.sqrt(10))
+    # print(results['final_upper_bound'].mean(), results['final_upper_bound'].std()/math.sqrt(10))
     #print(results['wall_times'][-1])
     xi_history = results['xi_history']
     design = xi_history[-1, 0, ...]
@@ -29,11 +29,11 @@ def main(name, sampling_interval):
     eig_upper = results.get('upper_history')
 
     if xi_history.shape[-1] <= 2:
-        plt.figure(figsize=(5, 5))
+        plt.figure(figsize=(5, 3.5))
         if eig_heatmap is not None:
             plt.imshow(eig_heatmap, cmap="gray", extent=heatmap_extent, origin='lower')
         x, y = xi_history[::sampling_interval, 1, 0].detach(), xi_history[::sampling_interval, 1, 1].detach()
-        plt.scatter(x, y, c=torch.arange(x.shape[0]), marker='x', cmap='summer', s=50)
+        plt.scatter(x, y, c=torch.arange(x.shape[0]), marker='x', cmap='cool', s=70)
         plt.xlabel("$\\xi_1$", fontsize=18)
         plt.ylabel("$\\xi_2$", fontsize=18)
         plt.xticks(fontsize=16)

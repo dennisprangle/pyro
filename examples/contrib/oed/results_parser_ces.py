@@ -128,16 +128,16 @@ def main(fnames, findices, plot, percentile):
                 e = reformed[statistic][k].squeeze()[1:]
                 lower, centre, upper = upper_lower(e, percentile=percentile)
                 x = np.arange(2, e.shape[0]+2)
-                plt.plot(x, centre, linestyle='-', markersize=8, color=COLOURS[k], marker=MARKERS[k], linewidth=1.5)
+                plt.plot(x, centre, linestyle='-', markersize=12, color=COLOURS[k], marker=MARKERS[k], linewidth=1.5)
                 plt.fill_between(x, upper, lower, color=COLOURS[k], alpha=0.15)
-            plt.xlabel("Step", fontsize=16)
-            plt.xticks(fontsize=12)
-            plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
-            plt.legend([LABELS[k] for k in reformed[statistic].keys()], fontsize=16, frameon=False, loc=1, ncol=4)
+            plt.xlabel("Step", fontsize=23)
+            plt.xticks([5, 10, 15, 20], fontsize=23)
+            #plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+            #plt.legend([LABELS[k] for k in reformed[statistic].keys()], fontsize=16, frameon=False, loc=1, ncol=4)
             # frame = legend.get_frame()
             # frame.set_linewidth(S/)
-            plt.yticks(fontsize=12)
-            plt.ylabel(VALUE_LABELS[statistic], fontsize=16)
+            plt.yticks(fontsize=23)
+            plt.ylabel(VALUE_LABELS[statistic], fontsize=23)
             # [i.set_linewidth(S/2) for i in plt.gca().spines.values()]
             # plt.gca().tick_params(width=S/2)
             if statistic not in ["Entropy", "Imax"]:
