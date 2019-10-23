@@ -584,7 +584,7 @@ CASES = [
         (turk_model, {}),
         turk_designs,
         "y",
-        "fixed_effects",
+        ["fixed_effects"],
         [
             (posterior_mc,
              {"num_samples": 10, "num_steps": 3000, "final_num_samples": 10000,
@@ -605,7 +605,7 @@ CASES = [
               "optim": (optim.Adam, {"optim_args": {"lr": 0.025}})}),
             # Problem with independent_priors
             (Estimator("Ground truth", ["truth"], nmc_eig),
-             {"N": 100, "M": 10000, "M_prime": 10000, "independent_priors": True, "N_seq": 1000}),
+             {"N": 1000, "M": 316, "M_prime": 316, "independent_priors": True, "N_seq": 100}),
         ],
         ["turk", "mixed_effects_regression"]
     )

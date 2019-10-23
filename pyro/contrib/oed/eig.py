@@ -186,7 +186,7 @@ def _vi_ape(model, design, observation_labels, target_labels, vi_parameters, is_
 
 
 def nmc_eig(model, design, observation_labels, target_labels=None,
-            N=100, M=10, M_prime=None, independent_priors=False):
+            N=100, M=10, M_prime=None, independent_priors=False, N_seq=1):
     """
    Nested Monte Carlo estimate of the expected information
     gain (EIG). The estimate is, when there are not any random effects,
@@ -224,6 +224,13 @@ def nmc_eig(model, design, observation_labels, target_labels=None,
     :return: EIG estimate
     :rtype: `torch.Tensor`
     """
+
+    if N_seq > 1:
+        s = 0.
+        for i in range(N_seq):
+            s += nmc_eig(model, design, observation_labels, target_labels, N=N, M=M, M_prime=M_prime,
+                         independent_priors=independent_priors, N_seq=1)
+        return s / N_seq
 
     if isinstance(observation_labels, str):  # list of strings instead of strings
         observation_labels = [observation_labels]
