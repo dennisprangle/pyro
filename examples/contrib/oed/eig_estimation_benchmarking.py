@@ -554,7 +554,7 @@ CASES = [
                                   "target_design": torch.tensor([1., -1/2.]).unsqueeze(0)}),
         extrap_design,
         "y",
-        "target",
+        ["target"],
         [
             (posterior_extrap,
              {"num_samples": 10, "num_steps": 5000, "final_num_samples": 1000,
