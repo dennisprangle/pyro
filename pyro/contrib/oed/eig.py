@@ -79,6 +79,8 @@ def _laplace_vi_ape(model, design, observation_labels, target_labels, guide, los
     def posterior_entropy(y_dist, design):
         # Important that y_dist is sampled *within* the function
         y = pyro.sample("conditioning_y", y_dist)
+        if len(observation_labels) == 1:
+            y = y.unsqueeze(0)
         y_dict = {label: y[i, ...] for i, label in enumerate(observation_labels)}
         conditioned_model = pyro.condition(model, data=y_dict)
         # Here just using SVI to run the MAP optimization
@@ -582,6 +584,17 @@ def vnmc_eig(model, design, observation_labels, target_labels,
                             final_design, final_num_samples)
 
 
+def elbo_learn(model, design, observation_labels, target_labels,
+               num_samples, num_steps, guide, data, optim):
+
+    if isinstance(observation_labels, str):
+        observation_labels = [observation_labels]
+    if isinstance(target_labels, str):
+        target_labels = [target_labels]
+    loss = elbo(model, guide, data, observation_labels, target_labels)
+    return opt_eig_ape_loss(design, loss, num_samples, num_steps, optim)
+
+
 def opt_eig_ape_loss(design, loss_fn, num_samples, num_steps, optim, return_history=False,
                      final_design=None, final_num_samples=None):
 
@@ -832,6 +845,34 @@ def _vnmc_eig_loss(model, guide, observation_labels, target_labels):
         if evaluation:
             trace.compute_log_prob()
             terms += sum(trace.nodes[l]["log_prob"] for l in observation_labels)
+
+        return _safe_mean_terms(terms)
+
+    return loss_fn
+
+
+def elbo(model, guide, data, observation_labels, target_labels):
+
+    def loss_fn(design, num_particles, **kwargs):
+
+        y_dict = {l: lexpand(y, num_particles) for l, y in data.items()}
+
+        expanded_design = lexpand(design, num_particles)
+
+        # Sample from q(theta)
+        trace = poutine.trace(guide).get_trace(expanded_design)
+        theta_y_dict = {l: trace.nodes[l]["value"] for l in target_labels}
+        theta_y_dict.update(y_dict)
+        trace.compute_log_prob()
+
+        # Run through p(theta)
+        modelp = pyro.condition(model, data=theta_y_dict)
+        model_trace = poutine.trace(modelp).get_trace(expanded_design)
+        model_trace.compute_log_prob()
+
+        terms = sum(trace.nodes[l]["log_prob"] for l in target_labels)
+        terms -= sum(model_trace.nodes[l]["log_prob"] for l in target_labels)
+        terms -= sum(model_trace.nodes[l]["log_prob"] for l in observation_labels)
 
         return _safe_mean_terms(terms)
 

@@ -110,14 +110,12 @@ Estimator = namedtuple("EIGEstimator", [
 truth_lm = Estimator("Ground truth", ["truth", "lm", "explicit"], linear_model_ground_truth)
 truth_nigam = Estimator("Ground truth", ["truth", "nigam", "explicit"], normal_inverse_gamma_ground_truth)
 nmc = Estimator("Nested Monte Carlo", ["nmc", "explicit"], nmc_eig)
-nnmc = Estimator("Non-nested Monte Carlo", ["nnmc", "accelerated_nmc", "explicit"], accelerated_nmc_eig)
 posterior_lm = Estimator("Posterior", ["posterior", "gibbs", "lm", "explicit", "implicit"], posterior_eig_lm)
 posterior_mc = Estimator("Posterior", ["posterior", "gibbs", "explicit", "implicit"], posterior_eig_mc)
 posterior_extrap = Estimator("Posterior", ["posterior", "gibbs", "explicit", "implicit"], posterior_eig_extrap)
 marginal = Estimator("Marginal", ["marginal", "gibbs", "explicit"], marginal_eig)
 marginal_re = Estimator("Marginal + likelihood", ["marginal_re", "marginal_likelihood", "gibbs", "implicit"],
                         marginal_likelihood_eig)
-alfire = Estimator("Amortized LFIRE", ["alfire"], amortized_lfire_eig)
 lfire = Estimator("LFIRE", ["lfire", "implicit"], lfire_eig)
 vnmc = Estimator("VNMC", ["vnmc", "explicit"], vnmc_eig)
 laplace = Estimator("Laplace", ["laplace", "diag_laplace", "explicit"], laplace_vi_eig_mc)
@@ -333,7 +331,7 @@ CASES = [
                                   "observation_sd": torch.tensor(.25)}),
         loc_20d_1n_1p,
         "y",
-        "loc",
+        ["loc"],
         [
             (nmc, {"N": 75*75, "M": 75}),
             (posterior_mc,
@@ -386,7 +384,7 @@ CASES = [
         "y",
         "w",
         [
-            (nnmc, {"N": 2000, "yspace": {"y": torch.tensor([0., 1.])}}),
+            #(nnmc, {"N": 2000, "yspace": {"y": torch.tensor([0., 1.])}}),
             # xfail- always hits a nan.
             (posterior_mc,
              {"num_samples": 10, "num_steps": 800, "final_num_samples": 500,
@@ -417,7 +415,7 @@ CASES = [
         "y",
         "loc",
         [
-            (nnmc, {"N": 200, "M_prime": 200, "yspace": {"y": torch.tensor([0., 1.])}}),
+            #(nnmc, {"N": 200, "M_prime": 200, "yspace": {"y": torch.tensor([0., 1.])}}),
             (posterior_mc,
              {"num_samples": 10, "num_steps": 800, "final_num_samples": 500,
               "guide": (LogisticPosteriorGuide, {"mu_init": 10.,

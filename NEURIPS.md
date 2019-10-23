@@ -1,7 +1,7 @@
 # Code for 'Variational Bayesian Optimal Experimental Design'
 
 ### Installation
-First, install Python 3 and `pytorch>=1.0`. For full instructions on installing Pytorch on your system,
+First, install Python 3 and `pytorch==1.1.0`. For full instructions on installing Pytorch on your system,
  see https://pytorch.org/.
 Second, install this fork of pyro. This can most easily be accomplished by first changing into the directory 
 containing this file, and then running
