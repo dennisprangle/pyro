@@ -5,7 +5,7 @@ import pyro
 import pyro.poutine as poutine
 from pyro.contrib.util import get_indices, lexpand, rexpand
 from pyro.contrib.glmm import analytic_posterior_cov
-from pyro.contrib.oed.eig import posterior_ape, vi_ape, laplace_vi_ape, xexpx
+from pyro.contrib.oed.eig import _posterior_ape, _laplace_vi_ape, xexpx
 from pyro.contrib.autoguide import mean_field_entropy
 
 
@@ -101,21 +101,21 @@ def extrap_H_prior(model, design, observation_labels, target_labels, num_samples
     return -xexpx(log_p_hat) - xexpx(log_1mp)
 
 
-def vi_eig_lm(model, design, observation_labels, target_labels, *args, **kwargs):
-    # **Only** applies to linear models - analytic prior entropy
-    ape = vi_ape(model, design, observation_labels, target_labels, *args, **kwargs)
-    prior_entropy = lm_H_prior(model, design, observation_labels, target_labels)
-    return prior_entropy - ape
-
-
-def vi_eig_mc(model, design, observation_labels, target_labels, *args, **kwargs):
-    # Compute the prior entropy by Monte Carlo, then uses vi_ape
-    if "num_hprior_samples" in kwargs:
-        hprior = mc_H_prior(model, design, observation_labels, target_labels, kwargs["num_hprior_samples"])
-    else:
-        hprior = mc_H_prior(model, design, observation_labels, target_labels)
-    ape = vi_ape(model, design, observation_labels, target_labels, *args, **kwargs)
-    return hprior - ape
+# def vi_eig_lm(model, design, observation_labels, target_labels, *args, **kwargs):
+#     # **Only** applies to linear models - analytic prior entropy
+#     ape = vi_ape(model, design, observation_labels, target_labels, *args, **kwargs)
+#     prior_entropy = lm_H_prior(model, design, observation_labels, target_labels)
+#     return prior_entropy - ape
+#
+#
+# def vi_eig_mc(model, design, observation_labels, target_labels, *args, **kwargs):
+#     # Compute the prior entropy by Monte Carlo, then uses vi_ape
+#     if "num_hprior_samples" in kwargs:
+#         hprior = mc_H_prior(model, design, observation_labels, target_labels, kwargs["num_hprior_samples"])
+#     else:
+#         hprior = mc_H_prior(model, design, observation_labels, target_labels)
+#     ape = vi_ape(model, design, observation_labels, target_labels, *args, **kwargs)
+#     return hprior - ape
 
 
 def laplace_vi_eig_mc(model, design, observation_labels, target_labels, *args, **kwargs):
@@ -124,13 +124,13 @@ def laplace_vi_eig_mc(model, design, observation_labels, target_labels, *args, *
         hprior = mc_H_prior(model, design, observation_labels, target_labels, kwargs["num_hprior_samples"])
     else:
         hprior = mc_H_prior(model, design, observation_labels, target_labels)
-    ape = laplace_vi_ape(model, design, observation_labels, target_labels, *args, **kwargs)
+    ape = _laplace_vi_ape(model, design, observation_labels, target_labels, *args, **kwargs)
     return hprior - ape
 
 
 def posterior_eig_lm(model, design, observation_labels, target_labels, *args, **kwargs):
     # **Only** applies to linear models - analytic prior entropy
-    ape = posterior_ape(model, design, observation_labels, target_labels, *args, **kwargs)
+    ape = _posterior_ape(model, design, observation_labels, target_labels, *args, **kwargs)
     prior_entropy = lm_H_prior(model, design, observation_labels, target_labels)
     if isinstance(ape, tuple):
         return tuple(prior_entropy - a for a in ape)
@@ -139,18 +139,18 @@ def posterior_eig_lm(model, design, observation_labels, target_labels, *args, **
 
 
 def posterior_eig_mc(model, design, observation_labels, target_labels, *args, **kwargs):
-    # Compute the prior entropy my Monte Carlo, then uses posterior_ape
+    # Compute the prior entropy my Monte Carlo, then uses _posterior_ape
     if "num_hprior_samples" in kwargs:
         hprior = mc_H_prior(model, design, observation_labels, target_labels, kwargs["num_hprior_samples"])
     else:
         hprior = mc_H_prior(model, design, observation_labels, target_labels)
-    return hprior - posterior_ape(model, design, observation_labels, target_labels, *args, **kwargs)
+    return hprior - _posterior_ape(model, design, observation_labels, target_labels, *args, **kwargs)
 
 
 def posterior_eig_extrap(model, design, observation_labels, target_labels, *args, **kwargs):
-    # Compute the prior entropy my Monte Carlo, then uses posterior_ape. For extrapolation
+    # Compute the prior entropy my Monte Carlo, then uses _posterior_ape. For extrapolation
     if "num_hprior_samples" in kwargs:
         hprior = extrap_H_prior(model, design, observation_labels, target_labels, kwargs["num_hprior_samples"])
     else:
         hprior = extrap_H_prior(model, design, observation_labels, target_labels)
-    return hprior - posterior_ape(model, design, observation_labels, target_labels, *args, **kwargs)
+    return hprior - _posterior_ape(model, design, observation_labels, target_labels, *args, **kwargs)

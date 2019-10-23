@@ -12,8 +12,8 @@ import pyro
 from pyro import optim
 from pyro.infer import TraceEnum_ELBO
 from pyro.contrib.oed.eig import (
-    nmc_eig, accelerated_nmc_eig, donsker_varadhan_eig, marginal_eig,
-    marginal_likelihood_eig, amortized_lfire_eig, lfire_eig, vnmc_eig
+    nmc_eig, donsker_varadhan_eig, marginal_eig,
+    marginal_likelihood_eig, lfire_eig, vnmc_eig
 )
 from pyro.contrib.util import lexpand
 from pyro.contrib.oed.util import (

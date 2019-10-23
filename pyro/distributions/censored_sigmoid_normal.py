@@ -2,7 +2,8 @@ import torch
 from torch.distributions import constraints
 from torch.distributions.transforms import SigmoidTransform
 
-from pyro.distributions import TorchDistribution, Normal, TransformedDistribution
+from pyro.distributions.torch import Normal, TransformedDistribution
+from pyro.distributions.torch_distribution import TorchDistribution
 from pyro.util import is_bad
 
 
