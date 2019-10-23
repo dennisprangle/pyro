@@ -31,19 +31,19 @@ are: `ab_test`, `preference`, `mixed_effects_regression`, `extrapolation` with s
 ### Convergence rates
 Use the following commands to reproduce plots from the paper.
 
-    > python3 examples/contrib/oed/convergence_n.py --seed=972219904 --fname=<your filename wihtout extension>
+    > python3 examples/contrib/oed/convergence_n.py --seed=972219904 --fname=<your filename without extension>
     > python3 examples/contrib/oed/results_parser_convergence_n.py --fnames=<same filename>
     
-    > python3 examples/contrib/oed/convergence_k.py --seed=960926848 --fname=<your filename wihtout extension>
+    > python3 examples/contrib/oed/convergence_k.py --seed=960926848 --fname=<your filename without extension>
     > python3 examples/contrib/oed/results_parser_convergence_k.py --fnames=<same filename>
     
-    > python3 examples/contrib/oed/convergence_proportion.py --seed=921163584 --fname=<your filename wihtout extension>
+    > python3 examples/contrib/oed/convergence_proportion.py --seed=921163584 --fname=<your filename without extension>
     > python3 examples/contrib/oed/results_parser_convergence_proportion.py --fnames=<same filename>
     
-    > python3 examples/contrib/oed/convergence_tradeoff.py --seed=1002875328 --fname=<your filename wihtout extension>
+    > python3 examples/contrib/oed/convergence_tradeoff.py --seed=1002875328 --fname=<your filename without extension>
     > python3 examples/contrib/oed/results_parser_convergence_tradeoff.py --fnames=<same filename>
     
-    > python3 examples/contrib/oed/convergence_vnmc.py --seed=782823872 --fname=<your filename wihtout extension>
+    > python3 examples/contrib/oed/convergence_vnmc.py --seed=782823872 --fname=<your filename without extension>
     > python3 examples/contrib/oed/results_parser_convergence_vnmc.py --fnames=<same filename>
     
     
@@ -54,6 +54,4 @@ To reproduce the CES experiment use the following commands
     > python3 examples/contrib/oed/ces.py --num-steps=20 --seed=466574528 --typs=rand --name=<rand file name>
     > python3 examples/contrib/oed/ces.py --num-steps=20 --seed=668716672 --typs=nmc --lengthscale=20 --name=<nmc file name>
     > python3 examples/contrib/oed/results_parser_ces.py --fnames=<marginal,rand,nmc>
-
-
 
