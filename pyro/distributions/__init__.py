@@ -2,6 +2,8 @@ import pyro.distributions.torch_patch  # noqa F403
 from pyro.distributions.avf_mvn import AVFMultivariateNormal
 from pyro.distributions.conditional import (ConditionalDistribution, ConditionalTransform,
                                             ConditionalTransformedDistribution, ConditionalTransformModule)
+from pyro.distributions.censored import CensoredDistribution
+from pyro.distributions.censored_sigmoid_normal import CensoredSigmoidNormal
 from pyro.distributions.conjugate import BetaBinomial, DirichletMultinomial, GammaPoisson
 from pyro.distributions.delta import Delta
 from pyro.distributions.diag_normal_mixture import MixtureOfDiagNormals
@@ -30,6 +32,7 @@ from pyro.distributions.zero_inflated_poisson import ZeroInflatedPoisson
 
 from . import constraints, kl, transforms
 
+
 __all__ = [
     "AVFMultivariateNormal",
     "BetaBinomial",
@@ -37,6 +40,8 @@ __all__ = [
     "ConditionalTransform",
     "ConditionalTransformModule",
     "ConditionalTransformedDistribution",
+    "CensoredDistribution",
+    "CensoredSigmoidNormal",
     "Delta",
     "DirichletMultinomial",
     "DiscreteHMM",

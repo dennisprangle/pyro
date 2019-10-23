@@ -6,11 +6,11 @@ from contextlib import ExitStack
 import torch
 from torch.nn.functional import softplus
 from torch.distributions import constraints
-from torch.distributions.transforms import AffineTransform, SigmoidTransform
 
 import pyro
 import pyro.distributions as dist
-from pyro.contrib.util import rmv, iter_plates_to_shape
+from pyro.contrib.util import rmv, rvv, iter_plates_to_shape
+
 
 # TODO read from torch float spec
 epsilon = torch.tensor(2**-24)
@@ -74,27 +74,59 @@ def zero_mean_unit_obs_sd_lm(coef_sd, coef_label="w"):
     return model, guide
 
 
-def normal_inverse_gamma_linear_model(coef_mean, coef_sqrtlambda, alpha,
-                                      beta, coef_label="w",
-                                      observation_label="y"):
-    return partial(bayesian_linear_model,
-                   w_means={coef_label: coef_mean},
-                   w_sqrtlambdas={coef_label: coef_sqrtlambda},
-                   alpha_0=alpha, beta_0=beta,
-                   response_label=observation_label)
+def normal_inverse_gamma_linear_model(coef_means, coef_sqrtlambdas, alpha,
+                                      beta, coef_labels="w", observation_label="y"):
+
+    if not isinstance(coef_means, list):
+        coef_means = [coef_means]
+    if not isinstance(coef_sqrtlambdas, list):
+        coef_sqrtlambdas = [coef_sqrtlambdas]
+    if not isinstance(coef_labels, list):
+        coef_labels = [coef_labels]
+
+    model = partial(bayesian_linear_model,
+                    w_means=OrderedDict([(label, mean) for label, mean in zip(coef_labels, coef_means)]),
+                    w_sqrtlambdas=OrderedDict([
+                        (label, sqrtlambda) for label, sqrtlambda in zip(coef_labels, coef_sqrtlambdas)]),
+                    alpha_0=alpha, beta_0=beta,
+                    response_label=observation_label)
+    # For computing the true EIG
+    model.obs_sd = torch.tensor(1.)
+    model.w_sds = OrderedDict([(label, 1./sqrtlambda) for label, sqrtlambda in zip(coef_labels, coef_sqrtlambdas)])
+    model.w_sizes = OrderedDict([(label, sqrtlambda.shape[-1])
+                                 for label, sqrtlambda in zip(coef_labels, coef_sqrtlambdas)])
+    model.alpha = alpha
+    model.beta = beta
+    model.observation_label = observation_label
+    model.coef_labels = coef_labels
+    return model
 
 
 def normal_inverse_gamma_guide(coef_shape, coef_label="w", **kwargs):
     return partial(normal_inv_gamma_family_guide, obs_sd=None, w_sizes={coef_label: coef_shape}, **kwargs)
 
 
-def logistic_regression_model(coef_mean, coef_sd, coef_label="w", observation_label="y"):
-    return partial(bayesian_linear_model,
-                   w_means={coef_label: coef_mean},
-                   w_sqrtlambdas={coef_label: 1./coef_sd},
-                   obs_sd=torch.tensor(1.),
-                   response="bernoulli",
-                   response_label=observation_label)
+def logistic_regression_model(coef_means, coef_sds, coef_labels="w", observation_label="y"):
+
+    if not isinstance(coef_means, list):
+        coef_means = [coef_means]
+    if not isinstance(coef_sds, list):
+        coef_sds = [coef_sds]
+    if not isinstance(coef_labels, list):
+        coef_labels = [coef_labels]
+
+    model = partial(bayesian_linear_model,
+                    w_means=OrderedDict([(label, mean) for label, mean in zip(coef_labels, coef_means)]),
+                    w_sqrtlambdas=OrderedDict([(label, 1./sd) for label, sd in zip(coef_labels, coef_sds)]),
+                    obs_sd=torch.tensor(1.),
+                    response="bernoulli",
+                    response_label=observation_label)
+
+    model.w_sds = OrderedDict([(label, sd) for label, sd in zip(coef_labels, coef_sds)])
+    model.w_sizes = OrderedDict([(label, sd.shape[-1]) for label, sd in zip(coef_labels, coef_sds)])
+    model.observation_label = observation_label
+    model.coef_labels = coef_labels
+    return model
 
 
 def lmer_model(fixed_effects_sd, n_groups, random_effects_alpha, random_effects_beta,
@@ -111,10 +143,34 @@ def lmer_model(fixed_effects_sd, n_groups, random_effects_alpha, random_effects_
                    response_label=observation_label)
 
 
-def sigmoid_model(coef1_mean, coef1_sd, coef2_mean, coef2_sd, observation_sd,
-                  sigmoid_alpha, sigmoid_beta, sigmoid_design,
-                  coef1_label="w1", coef2_label="w2", observation_label="y",
-                  sigmoid_label="k"):
+def sigmoid_location_model(loc_mean, loc_sd, multiplier, observation_sd, loc_label="loc", observation_label="y",
+                           nonuniform_noise=True):
+    def model(design):
+        batch_shape = design.shape[:-2]
+        with ExitStack() as stack:
+            for plate in iter_plates_to_shape(batch_shape):
+                stack.enter_context(plate)
+            loc_shape = batch_shape + (design.shape[-1],)
+            loc = pyro.sample(loc_label, dist.Normal(loc_mean.expand(loc_shape),
+                                                     loc_sd.expand(loc_shape)).to_event(1))
+            mean = rvv(design, multiplier) - loc
+            if nonuniform_noise:
+                sd = observation_sd * torch.sqrt(1. + torch.abs(rvv(design, multiplier)))
+            else:
+                sd = observation_sd
+            emission_dist = dist.CensoredSigmoidNormal(mean, sd, 1 - epsilon, epsilon).to_event(1)
+            y = pyro.sample(observation_label, emission_dist)
+            return y
+
+    model.w_sizes = {loc_label: 1}
+    model.observation_label = observation_label
+    return model
+
+
+def sigmoid_model_gamma(coef1_mean, coef1_sd, coef2_mean, coef2_sd, observation_sd,
+                        sigmoid_alpha, sigmoid_beta, sigmoid_design,
+                        coef1_label="w1", coef2_label="w2", observation_label="y",
+                        sigmoid_label="k"):
 
     def model(design):
         batch_shape = design.shape[:-2]
@@ -134,6 +190,75 @@ def sigmoid_model(coef1_mean, coef1_sd, coef2_mean, coef2_sd, observation_sd,
             k=k_assigned
             )
 
+    return model
+
+
+def logistic_extrapolation(coef_means, coef_sds, target_design, coef_labels="w", observation_label="y",
+                           target_label="target"):
+    if not isinstance(coef_means, list):
+        coef_means = [coef_means]
+    if not isinstance(coef_sds, list):
+        coef_sds = [coef_sds]
+    if not isinstance(coef_labels, list):
+        coef_labels = [coef_labels]
+
+    def model(design):
+        batch_shape = design.shape[:-2]
+        with ExitStack() as stack:
+            for plate in iter_plates_to_shape(batch_shape):
+                stack.enter_context(plate)
+
+            # Build the regression coefficient
+            w = []
+            # Allow different names for different coefficient groups
+            # Process fixed effects
+            for name, coef_mean, coef_sd in zip(coef_labels, coef_means, coef_sds):
+                shape = batch_shape + (coef_mean.shape[-1],)
+                # Place a normal prior on the regression coefficient
+                w_prior = dist.Normal(coef_mean.expand(shape), coef_sd.expand(shape)).to_event(1)
+                w.append(pyro.sample(name, w_prior))
+
+            # Regression coefficient `w` is batch x p
+            w = broadcast_cat(w)
+            # Sample the target
+            td_shape = batch_shape + target_design.shape[-2:]
+            pyro.sample(target_label, dist.Bernoulli(logits=rmv(target_design.expand(td_shape), w)).to_event(1))
+            # Sample the observation
+            return pyro.sample(observation_label, dist.Bernoulli(logits=rmv(design, w)).to_event(1))
+
+    model.w_sds = OrderedDict([(label, sd) for label, sd in zip(coef_labels, coef_sds)])
+    model.w_sizes = OrderedDict([(label, sd.shape[-1]) for label, sd in zip(coef_labels, coef_sds)])
+    model.observation_label = observation_label
+    model.coef_labels = coef_labels
+    return model
+
+
+def sigmoid_model_fixed(coef_means, coef_sds, observation_sd, coef_labels="w", observation_label="y"):
+
+    if not isinstance(coef_means, list):
+        coef_means = [coef_means]
+    if not isinstance(coef_sds, list):
+        coef_sds = [coef_sds]
+    if not isinstance(coef_labels, list):
+        coef_labels = [coef_labels]
+
+    def model(design):
+
+        return bayesian_linear_model(
+            design,
+            w_means=OrderedDict([(label, mean) for label, mean in zip(coef_labels, coef_means)]),
+            w_sqrtlambdas=OrderedDict([(label, 1./(observation_sd*sd)) for label, sd in zip(coef_labels, coef_sds)]),
+            obs_sd=observation_sd,
+            response="sigmoid",
+            response_label=observation_label,
+            k=torch.tensor(1.)
+            )
+
+    model.obs_sd = observation_sd
+    model.w_sds = OrderedDict([(label, sd) for label, sd in zip(coef_labels, coef_sds)])
+    model.w_sizes = OrderedDict([(label, sd.shape[-1]) for label, sd in zip(coef_labels, coef_sds)])
+    model.observation_label = observation_label
+    model.coef_labels = coef_labels
     return model
 
 
@@ -244,11 +369,11 @@ def bayesian_linear_model(design, w_means={}, w_sqrtlambdas={}, re_group_sizes={
         elif response == "bernoulli":
             return pyro.sample(response_label, dist.Bernoulli(logits=prediction_mean).to_event(1))
         elif response == "sigmoid":
-            base_dist = dist.Normal(prediction_mean, obs_sd).to_event(1)
             # You can add loc via the linear model itself
             k = k.expand(prediction_mean.shape)
-            transforms = [AffineTransform(loc=torch.tensor(0.), scale=k), SigmoidTransform()]
-            response_dist = dist.TransformedDistribution(base_dist, transforms)
+            response_dist = dist.CensoredSigmoidNormal(
+                loc=k * prediction_mean, scale=k * obs_sd, upper_lim=1. - epsilon, lower_lim=epsilon
+            ).to_event(1)
             return pyro.sample(response_label, response_dist)
         else:
             raise ValueError("Unknown response distribution: '{}'".format(response))

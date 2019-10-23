@@ -57,6 +57,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+Pipfile*
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -136,3 +137,5 @@ ENV/
 *.swo
 *.swp
 *~
+/.metadata/
+*TempFiles*

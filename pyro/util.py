@@ -46,6 +46,10 @@ def set_rng_state(state):
         np.random.set_state(state['numpy'])
 
 
+def is_bad(a):
+    return torch_isnan(a) or torch_isinf(a)
+
+
 def torch_isnan(x):
     """
     A convenient function to check if a Tensor contains any nan; also works with numbers

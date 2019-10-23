@@ -7,7 +7,7 @@ import pyro.distributions as dist
 import pyro.poutine as poutine
 from pyro.contrib.glmm import (
     known_covariance_linear_model, group_linear_model, zero_mean_unit_obs_sd_lm,
-    normal_inverse_gamma_linear_model, logistic_regression_model, sigmoid_model
+    normal_inverse_gamma_linear_model, logistic_regression_model
 )
 from tests.common import assert_equal
 
@@ -99,24 +99,16 @@ def sigmoid_example(design):
         torch.tensor([[-1., 0.5], [2.5, -2.]])
     ),
     (
-        normal_inverse_gamma_linear_model(torch.tensor([1., -1.]), torch.tensor(.1),
+        normal_inverse_gamma_linear_model(torch.tensor([1., -1.]), torch.tensor([.1, .1]),
                                           torch.tensor(2.), torch.tensor(2.)),
         normal_inv_gamma_2_2_10_10,
         torch.tensor([[1., -0.5], [1.5, 2.]])
     ),
     (
-        logistic_regression_model(torch.tensor([1., -1.]), torch.tensor(10.)),
+        logistic_regression_model(torch.tensor([1., -1.]), torch.tensor([10., 10.])),
         lr_10_10,
         torch.tensor([[6., -1.5], [.5, 0.]])
     ),
-    (
-        sigmoid_model(torch.tensor([1., -1.]), torch.tensor([10., 10.]),
-                      torch.tensor(0.), torch.tensor([1., 1.]),
-                      torch.tensor(1.),
-                      torch.tensor(2.), torch.tensor(2.), torch.eye(2)),
-        sigmoid_example,
-        torch.cat([torch.tensor([[1., 1.], [.5, -2.5]]), torch.eye(2)], dim=-1)
-    )
 ])
 def test_log_prob_matches(model1, model2, design):
     trace = poutine.trace(model1).get_trace(design)
