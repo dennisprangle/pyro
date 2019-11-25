@@ -89,7 +89,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-outer-samples", default=100000, type=int)
     parser.add_argument("--device", default="cuda:0", type=str)
     parser.add_argument("-n", default=20, type=int)
-    parser.add_argument("-p", default=30, type=int)
+    parser.add_argument("-p", default=20, type=int)
     parser.add_argument("--scale", default=1., type=float)
     args = parser.parse_args()
 
