@@ -273,7 +273,7 @@ if __name__ == "__main__":
     parser.add_argument("--end-lr", default=0.001, type=float)
     parser.add_argument("--device", default="cuda:0", type=str)
     parser.add_argument("-n", default=20, type=int)
-    parser.add_argument("-p", default=30, type=int)
+    parser.add_argument("-p", default=20, type=int)
     parser.add_argument("--scale", default=1., type=float)
     args = parser.parse_args()
     main(args.num_steps, args.num_samples, args.time_budget, args.name, args.estimator, args.seed, args.num_parallel,
