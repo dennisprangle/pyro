@@ -63,7 +63,7 @@ def main(name, num_inner_samples, device):
     lower, upper = 0., 0.
     max_samples = 10000
     n_per_batch = max_samples // num_inner_samples
-    n_batches = num_inner_samples ** 3 // max_samples
+    n_batches = num_inner_samples ** 3 // (1 * max_samples)
     for i in range(n_batches):
         print(i)
         lower += lower_loss(design, n_per_batch, evaluation=True)[1].detach().cpu()

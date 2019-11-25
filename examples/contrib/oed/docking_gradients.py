@@ -47,7 +47,7 @@ def sigmoid(x, top, bottom, ee50, slope):
 def make_docking_model(top_c, bottom_c, ee50_mu, ee50_sigma, slope_mu, slope_sigma, observation_label="y",
                        xi_init=torch.ones(6)):
     def docking_model(design_prototype):
-        design = pyro.param("xi", xi_init, constraint=constraints.interval(-100, -1e-6)).expand(design_prototype.shape)
+        design = pyro.param("xi", xi_init, constraint=constraints.interval(-75, -1e-6)).expand(design_prototype.shape)
         if is_bad(design):
             raise ArithmeticError("bad design, contains nan or inf")
         batch_shape = design.shape[:-1]
@@ -249,7 +249,7 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
             pyro.set_rng_seed(seed)
 
         D = 100
-        xi_init = lexpand(torch.linspace(-70., -30, D, device=device), num_parallel)
+        xi_init = lexpand(torch.linspace(-70., -10, D, device=device), num_parallel)
         # Change the prior distribution here
         # prior params
         top_prior_concentration = torch.tensor([25., 75.], device=device)
