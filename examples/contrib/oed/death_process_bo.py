@@ -152,7 +152,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
             ucb[is_bad(ucb)] = 0.
             loss = ucb.sum()
             torch.autograd.backward(unconstrained_Xnew,
-                                    torch.autograd.grad(loss, unconstrained_Xnew, retain_graph=True))
+                                    torch.autograd.grad(loss, unconstrained_Xnew))
             return loss
 
         minimizer.step(gp_ucb1)
