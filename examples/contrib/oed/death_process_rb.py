@@ -1,12 +1,12 @@
 import argparse
 import datetime
-from contextlib import ExitStack
 import math
-import subprocess
 import pickle
-from functools import lru_cache
+import subprocess
 import time
 import warnings
+from contextlib import ExitStack
+from functools import lru_cache
 
 import torch
 from torch.distributions import constraints
@@ -30,13 +30,29 @@ prior_sd = torch.tensor(1.)
 @lru_cache(5)
 def make_y_space(n):
     space = []
-    for i in range(n+1):
-        for j in range(n-i+1):
+    for i in range(n + 1):
+        for j in range(n - i + 1):
             space.append([i, j])
     return torch.tensor(space, dtype=torch.float)
 
 
-def semi_analytic_eig(design, prior_mean, prior_sd, n_samples=1000):
+def death_process_log_likelihood(lp1m1, lp2m1):
+    lp1 = (1 - lp1m1.exp()).log()
+    lp2 = (1 - lp2m1.exp()).log()
+
+    y = make_y_space(N)
+    log_prob_y = torch.lgamma(torch.tensor(N + 1, dtype=torch.float)) \
+        - torch.lgamma(y[:, 0] + 1) \
+        - torch.lgamma(y[:, 1] + 1) \
+        - torch.lgamma(N - y.sum(-1) + 1) \
+        + y[:, 0] * lp1 \
+        + y[:, 1] * lp2 \
+        + (N - y[:, 0]) * lp1m1 \
+        + (N - y[:, 0] - y[:, 1]) * lp2m1
+    return log_prob_y
+
+
+def nmc_eig(design, prior_mean, prior_sd, n_samples=1000):
     batch_shape = design.shape[:-1]
     with pyro.plate_stack("plate_stack", (n_samples,) + batch_shape):
         samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
@@ -44,23 +60,13 @@ def semi_analytic_eig(design, prior_mean, prior_sd, n_samples=1000):
     lp1m1 = -(samples * design[..., 0]).unsqueeze(-1)
     lp2m1 = -(samples * design[..., 1]).unsqueeze(-1)
 
-    def log_prob(lp1m1, lp2m1):
-        lp1 = (1 - lp1m1.exp()).log()
-        lp2 = (1 - lp2m1.exp()).log()
-
-        y = make_y_space(N)
-        log_prob_y = torch.lgamma(torch.tensor(N + 1, dtype=torch.float)) - torch.lgamma(y[:, 0] + 1) - torch.lgamma(y[:, 1] + 1) \
-                     - torch.lgamma(N - y.sum(-1) + 1) + y[:, 0] * lp1 + y[:, 1] * lp2 + (N - y[:, 0]) * lp1m1 \
-                     + (N - y[:, 0] - y[:, 1]) * lp2m1
-        return log_prob_y
-
-    likelihoods = log_prob(lp1m1, lp2m1)
+    likelihoods = death_process_log_likelihood(lp1m1, lp2m1)
     marginal = likelihoods.logsumexp(0, keepdim=True) - math.log(n_samples)
     kls = (likelihoods.exp() * (likelihoods - marginal)).sum(-1)
     return kls.mean(0)
 
 
-def summed_nce_loss(prior_mean, prior_sd, xi_init):
+def summed_pce_loss(prior_mean, prior_sd, xi_init):
     def loss(design_placeholder, num_samples=1000, control_variate=0., **kwargs):
         design = pyro.param('xi', xi_init, constraint=constraints.positive)
         batch_shape = design.shape[:-1]
@@ -70,21 +76,12 @@ def summed_nce_loss(prior_mean, prior_sd, xi_init):
         lp1m1 = -(samples * design[..., 0]).unsqueeze(-1)
         lp2m1 = -(samples * design[..., 1]).unsqueeze(-1)
 
-        def log_prob(lp1m1, lp2m1):
-            lp1 = (1 - lp1m1.exp()).log()
-            lp2 = (1 - lp2m1.exp()).log()
-
-            y = make_y_space(N)
-            log_prob_y = torch.lgamma(torch.tensor(N + 1, dtype=torch.float)) - torch.lgamma(y[:, 0] + 1) - torch.lgamma(y[:, 1] + 1) \
-                         - torch.lgamma(N - y.sum(-1) + 1) + y[:, 0] * lp1 + y[:, 1] * lp2 + (N - y[:, 0]) * lp1m1 \
-                         + (N - y[:, 0] - y[:, 1]) * lp2m1
-            return log_prob_y
-
-        likelihoods = log_prob(lp1m1, lp2m1)
+        likelihoods = death_process_log_likelihood(lp1m1, lp2m1)
         marginal = likelihoods.logsumexp(0, keepdim=True) - math.log(num_samples)
         eig_estimate = (likelihoods.exp() * (likelihoods - marginal)).sum(-1).mean(0)
         surrogate_loss = eig_estimate.sum()
         return surrogate_loss, eig_estimate
+
     return loss
 
 
@@ -98,17 +95,7 @@ def summed_posterior_loss(prior_mean, prior_sd, xi_init):
         lp1m1 = -(samples * design[..., 0]).unsqueeze(-1)
         lp2m1 = -(samples * design[..., 1]).unsqueeze(-1)
 
-        def log_prob(lp1m1, lp2m1):
-            lp1 = (1 - lp1m1.exp()).log()
-            lp2 = (1 - lp2m1.exp()).log()
-
-            y = make_y_space(N)
-            log_prob_y = torch.lgamma(torch.tensor(N + 1, dtype=torch.float)) - torch.lgamma(y[:, 0] + 1) - torch.lgamma(y[:, 1] + 1) \
-                         - torch.lgamma(N - y.sum(-1) + 1) + y[:, 0] * lp1 + y[:, 1] * lp2 + (N - y[:, 0]) * lp1m1 \
-                         + (N - y[:, 0] - y[:, 1]) * lp2m1
-            return log_prob_y
-
-        likelihoods = log_prob(lp1m1, lp2m1)
+        likelihoods = death_process_log_likelihood(lp1m1, lp2m1)
         posterior_mean = pyro.param("q_mean", prior_mean.clone().expand(batch_shape + (66,)))
         posterior_sd = pyro.param("q_sd", prior_sd.clone().expand(batch_shape + (66,)), constraint=constraints.positive)
         q_dist = dist.LogNormal(posterior_mean, posterior_sd)
@@ -116,6 +103,7 @@ def summed_posterior_loss(prior_mean, prior_sd, xi_init):
         eig_estimate = -(likelihoods.exp() * qlp).sum(-1).mean(0)
         surrogate_loss = -(likelihoods.exp() * (qlp - control_variate)).sum(-1).mean(0).sum()
         return surrogate_loss, eig_estimate
+
     return loss
 
 
@@ -124,7 +112,8 @@ def summed_ace_loss(prior_mean, prior_sd, xi_init):
         design = pyro.param('xi', xi_init, constraint=constraints.positive)
         batch_shape = design.shape[:-1]
         posterior_mean = pyro.param("q_mean", prior_mean.clone().expand(batch_shape + (66,)))
-        posterior_sd = 1e-6 + pyro.param("q_sd", prior_sd.clone().expand(batch_shape + (66,)), constraint=constraints.positive)
+        posterior_sd = 1e-6 + pyro.param("q_sd", prior_sd.clone().expand(batch_shape + (66,)),
+                                         constraint=constraints.positive)
         with pyro.plate_stack("plate_stack", (num_samples,) + batch_shape):
             samples = pyro.sample("b", dist.LogNormal(prior_mean, prior_sd))
             contrastive_samples = pyro.sample("b_contrast", dist.LogNormal(posterior_mean, posterior_sd).to_event(1))
@@ -134,18 +123,8 @@ def summed_ace_loss(prior_mean, prior_sd, xi_init):
         clp1m1 = -(contrastive_samples * design[..., [0]])
         clp2m1 = -(contrastive_samples * design[..., [1]])
 
-        def log_prob(lp1m1, lp2m1):
-            lp1 = (1 - lp1m1.exp()).log()
-            lp2 = (1 - lp2m1.exp()).log()
-
-            y = make_y_space(N)
-            log_prob_y = torch.lgamma(torch.tensor(N + 1, dtype=torch.float)) - torch.lgamma(y[:, 0] + 1) - torch.lgamma(y[:, 1] + 1) \
-                         - torch.lgamma(N - y.sum(-1) + 1) + y[:, 0] * lp1 + y[:, 1] * lp2 + (N - y[:, 0]) * lp1m1 \
-                         + (N - y[:, 0] - y[:, 1]) * lp2m1
-            return log_prob_y
-
-        likelihoods = log_prob(lp1m1, lp2m1)
-        contrastive_log_prob = log_prob(clp1m1, clp2m1)
+        likelihoods = death_process_log_likelihood(lp1m1, lp2m1)
+        contrastive_log_prob = death_process_log_likelihood(clp1m1, clp2m1)
         p_samples = dist.LogNormal(prior_mean, prior_sd).log_prob(samples)
         q_samples = dist.LogNormal(posterior_mean, posterior_sd).log_prob(samples.unsqueeze(-1))
         p_contrastive = dist.LogNormal(prior_mean, prior_sd).log_prob(contrastive_samples)
@@ -157,6 +136,7 @@ def summed_ace_loss(prior_mean, prior_sd, xi_init):
         eig_estimate = (likelihoods.exp() * (likelihoods - marginals)).sum(-1).mean(0)
         surrogate_loss = eig_estimate.sum()
         return surrogate_loss, eig_estimate
+
     return loss
 
 
@@ -178,11 +158,11 @@ def model_learn_xi(design_prototype):
 def neg_loss(loss):
     def new_loss(*args, **kwargs):
         return (-a for a in loss(*args, **kwargs))
+
     return new_loss
 
 
 def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, time_budget):
-
     if time_budget is not None:
         num_steps = 100000000000
     params = None
@@ -207,7 +187,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, time_
         optim(params)
         optim.step()
         print(pyro.param("xi"))
-        if time.time() - t > time_budget:
+        if time_budget and time.time() - t > time_budget:
             break
 
     xi_history.append(pyro.param('xi').detach().clone())
@@ -243,8 +223,8 @@ def main(num_steps, time_budget, experiment_name, num_parallel, estimators, seed
         if estimator == 'posterior':
             loss = summed_posterior_loss(prior_mean, prior_sd, xi_init)
 
-        elif estimator == 'nce':
-            eig_loss = summed_nce_loss(prior_mean, prior_sd, xi_init)
+        elif estimator == 'pce':
+            eig_loss = summed_pce_loss(prior_mean, prior_sd, xi_init)
             loss = neg_loss(eig_loss)
 
         elif estimator == 'ace':
@@ -263,7 +243,8 @@ def main(num_steps, time_budget, experiment_name, num_parallel, estimators, seed
         design_prototype = torch.zeros(num_parallel)  # this is annoying, code needs refactor
 
         xi_history, est_loss_history, wall_times = opt_eig_loss_w_history(
-            design_prototype, loss, num_samples=num_samples, num_steps=num_steps, optim=scheduler, time_budget=time_budget)
+            design_prototype, loss, num_samples=num_samples, num_steps=num_steps, optim=scheduler,
+            time_budget=time_budget)
 
         if estimator == 'posterior':
             prior_entropy = dist.Normal(prior_mean, prior_sd).entropy()
@@ -273,8 +254,8 @@ def main(num_steps, time_budget, experiment_name, num_parallel, estimators, seed
 
         eig_history = []
         for i in range(xi_history.shape[0] - 1):
-            eig_history.append(semi_analytic_eig(xi_history[i, ...], prior_mean, prior_sd, n_samples=20000))
-        eig_history.append(semi_analytic_eig(xi_history[-1, ...], prior_mean, prior_sd, n_samples=200000))
+            eig_history.append(nmc_eig(xi_history[i, ...], prior_mean, prior_sd, n_samples=20000))
+        eig_history.append(nmc_eig(xi_history[-1, ...], prior_mean, prior_sd, n_samples=200000))
         eig_history = torch.stack(eig_history)
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
@@ -292,7 +273,7 @@ def main(num_steps, time_budget, experiment_name, num_parallel, estimators, seed
         d1 = xi1.expand(grid_points, grid_points).unsqueeze(-1)
         d2 = xi2.unsqueeze(-1).expand(grid_points, grid_points).unsqueeze(-1)
         d = torch.cat([d1, d2], dim=-1)
-        eig_heatmap = semi_analytic_eig(d, prior_mean, prior_sd, n_samples=10000)
+        eig_heatmap = nmc_eig(d, prior_mean, prior_sd, n_samples=10000)
         extent = [b0low, b0up, b1low, b1up]
         results['eig_heatmap'] = eig_heatmap
         results['extent'] = extent

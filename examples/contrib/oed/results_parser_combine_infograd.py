@@ -27,8 +27,8 @@ def main(names, sampling_interval):
     legend = []
     plt.figure(figsize=(5, 3.5))
     for name in names.split(","):
+        print(name, combined[name]['eig_history'].shape, combined[name]['seed'])
         wall_time = combined[name]['wall_times'].detach().numpy()[::sampling_interval]
-        est_hist = combined[name]['est_eig_history'].detach().numpy()[::sampling_interval]
         hist = combined[name]['eig_history'].detach().numpy()[::sampling_interval]
         mean, se = np.nanmean(hist, 1), np.nanstd(hist, 1)/math.sqrt(hist.shape[1])
         e = combined[name]["estimator"] + ('-nrb' if 'nrb' in name else '')
@@ -39,7 +39,7 @@ def main(names, sampling_interval):
         plt.plot(wall_time, mean, color=col, marker=marker, markersize=7)
         plt.fill_between(wall_time, mean - se, mean + se, alpha=0.15, color=col)
 
-        legend.extend([text])#
+        legend.extend([text])
     plt.ylim([0.91, 0.99])
     plt.xlabel("Time (s)", fontsize=18)
     plt.ylabel("EIG", fontsize=18)

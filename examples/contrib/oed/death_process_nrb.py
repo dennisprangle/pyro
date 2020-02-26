@@ -1,23 +1,23 @@
 import argparse
 import datetime
-from contextlib import ExitStack
-import time
-import subprocess
 import pickle
+import subprocess
+import time
 import warnings
+from contextlib import ExitStack
 
 import torch
-from torch import nn
 from torch.distributions import constraints
 
 import pyro
 import pyro.distributions as dist
 import pyro.optim as optim
 import pyro.poutine as poutine
-from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss
-from pyro.contrib.util import rmv, iter_plates_to_shape, lexpand, rvv, rexpand
+from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_nce_eig, \
+    _differentiable_ace_eig_loss
+from pyro.contrib.util import iter_plates_to_shape
 
-from death_process_rb import semi_analytic_eig
+from death_process_rb import nmc_eig
 
 
 def get_git_revision_hash():
@@ -43,6 +43,7 @@ def make_model_learn_xi(xi_init):
             p2 = 1 - torch.exp(-b * xi[..., 1])
             infected2 = pyro.sample("i2", dist.Binomial(N - infected1, p2))
             return infected1, infected2
+
     return model_learn_xi
 
 
@@ -60,46 +61,18 @@ def make_posterior_guide(prior_mean, prior_sd):
             selected_mean = posterior_mean[torch.arange(batch_shape[-1]), indices]
             selected_sd = posterior_sd[torch.arange(batch_shape[-1]), indices]
             pyro.sample("b", dist.LogNormal(selected_mean, selected_sd))
+
     return posterior_guide
-
-
-# class PosteriorGuide(nn.Module):
-#     def __init__(self):
-#         super(PosteriorGuide, self).__init__()
-#         self.linear1 = nn.Linear(2, 8)
-#         self.linear2 = nn.Linear(8, 8)
-#         self.mu = nn.Linear(8, 1)
-#         self.sigma = nn.Linear(8, 1)
-#         self.softplus = nn.Softplus()
-#
-#     def forward(self, y_dict, design_prototype, observation_labels, target_labels):
-#         i1, i2 = y_dict["i1"], y_dict["i2"]
-#         s1, s2 = 1./(1.1 - i1/N), 1./(1.1 - i2/(N + 1 - i1))
-#         all_inputs = torch.cat([s1, s2], dim=-1)
-#         x = self.softplus(self.linear1(all_inputs))
-#         x = self.softplus(self.linear2(x))
-#         mu = self.mu(x)
-#         sigma = self.softplus(self.sigma(x))
-#
-#         pyro.module("posterior_guide", self)
-#
-#         batch_shape = design_prototype.shape
-#
-#         with ExitStack() as stack:
-#             for plate in iter_plates_to_shape(batch_shape):
-#                 stack.enter_context(plate)
-#
-#             pyro.sample("b", dist.LogNormal(mu.expand(batch_shape), sigma.expand(batch_shape)))
 
 
 def neg_loss(loss):
     def new_loss(*args, **kwargs):
         return (-a for a in loss(*args, **kwargs))
+
     return new_loss
 
 
 def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, time_budget):
-
     if time_budget is not None:
         num_steps = 100000000000
     params = None
@@ -185,7 +158,8 @@ def main(num_steps, time_budget, experiment_name, num_parallel, estimators, seed
         design_prototype = torch.zeros(num_parallel)  # this is annoying, code needs refactor
 
         xi_history, est_loss_history, wall_times = opt_eig_loss_w_history(
-            design_prototype, loss, num_samples=num_samples, num_steps=num_steps, optim=scheduler, time_budget=time_budget)
+            design_prototype, loss, num_samples=num_samples, num_steps=num_steps, optim=scheduler,
+            time_budget=time_budget)
 
         if estimator == 'posterior':
             prior_entropy = dist.Normal(prior_mean, prior_sd).entropy()
@@ -195,23 +169,9 @@ def main(num_steps, time_budget, experiment_name, num_parallel, estimators, seed
 
         eig_history = []
         for i in range(xi_history.shape[0] - 1):
-            eig_history.append(semi_analytic_eig(xi_history[i, ...], prior_mean, prior_sd, n_samples=20000))
-        eig_history.append(semi_analytic_eig(xi_history[-1, ...], prior_mean, prior_sd, n_samples=200000))
+            eig_history.append(nmc_eig(xi_history[i, ...], prior_mean, prior_sd, n_samples=20000))
+        eig_history.append(nmc_eig(xi_history[-1, ...], prior_mean, prior_sd, n_samples=200000))
         eig_history = torch.stack(eig_history)
-
-        # Build heatmap
-        # grid_points = 100
-        # b0low = min(0.05, xi_history[:, 0].min())
-        # b0up = max(3, xi_history[:, 0].max()) + 0.1
-        # b1low = min(0.05, xi_history[:, 1].min())
-        # b1up = max(3, xi_history[:, 1].max()) + 0.1
-        # xi1 = torch.linspace(b0low, b0up, grid_points)
-        # xi2 = torch.linspace(b1low, b1up, grid_points)
-        # d1 = xi1.expand(grid_points, grid_points).unsqueeze(-1)
-        # d2 = xi2.unsqueeze(-1).expand(grid_points, grid_points).unsqueeze(-1)
-        # d = torch.cat([d1, d2], dim=-1)
-        # eig_heatmap = semi_analytic_eig(d, prior_mean, prior_sd, n_samples=200)
-        # extent = [b0low, b0up, b1low, b1up]
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
                    'xi_history': xi_history, 'est_eig_history': est_eig_history, 'eig_history': eig_history,

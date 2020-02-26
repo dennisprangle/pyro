@@ -41,12 +41,9 @@ def main():
     ax2.set_ylabel("#compounds", fontsize=14)
     ax1.tick_params(labelsize=14)
     ax2.tick_params(labelsize=14)
-    # ax1.set_yticks(fontsize=16)
-    # ax2.set_yticks(fontsize=16)
     ax1.text(-67., 13., "ACE", ha='center', fontsize=16)
     ax2.text(-63., 13., "Expert", ha='center', fontsize=16)
     plt.show()
-
 
 
 if __name__ == "__main__":
