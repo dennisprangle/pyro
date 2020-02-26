@@ -14,9 +14,9 @@ import pyro
 import pyro.optim as optim
 import pyro.distributions as dist
 from pyro.contrib.util import iter_plates_to_shape, rexpand, rmv
-from pyro.contrib.oed.eig import marginal_eig, elbo_learn, nmc_eig, nce_eig
+from pyro.contrib.oed.eig import marginal_eig, elbo_learn, nmc_eig, pce_eig
 import pyro.contrib.gp as gp
-from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss
+from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_pce_eig, _differentiable_ace_eig_loss
 from pyro.contrib.oed.eig import opt_eig_ape_loss
 from pyro.util import is_bad
 
@@ -267,7 +267,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, num_
                 elif typ == 'nce-grad':
 
                     # Suggested num_gradient_steps = 2500
-                    eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
+                    eig_loss = lambda d, N, **kwargs: differentiable_pce_eig(
                         model=model_learn_xi, design=d, observation_labels=["y"], target_labels=["rho", "alpha", "slope"],
                         N=N, M=num_contrast_samples, **kwargs)
                     loss = neg_loss(eig_loss)

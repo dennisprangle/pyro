@@ -11,7 +11,7 @@ import pyro
 import pyro.distributions as dist
 import pyro.optim as optim
 import pyro.poutine as poutine
-from pyro.contrib.oed.eig import _eig_from_ape, nce_eig, _ace_eig_loss
+from pyro.contrib.oed.eig import _eig_from_ape, pce_eig, _ace_eig_loss
 from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss
 from pyro.contrib.oed.util import linear_model_ground_truth
 from pyro.contrib.util import rmv, iter_plates_to_shape, lexpand, rvv, rexpand
@@ -124,7 +124,7 @@ def main(num_steps, experiment_name, estimators, seed, start_lr, end_lr):
             loss = _differentiable_posterior_loss(model_learn_xi, guide, "y", "x")
 
         elif estimator == 'nce':
-            eig_loss = lambda d, N, **kwargs: nce_eig(model=model_learn_xi, design=d, observation_labels="y",
+            eig_loss = lambda d, N, **kwargs: pce_eig(model=model_learn_xi, design=d, observation_labels="y",
                                                       target_labels="x", N=N, M=10, **kwargs)
             loss = neg_loss(eig_loss)
 

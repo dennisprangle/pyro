@@ -41,7 +41,7 @@ def _differentiable_posterior_loss(model, guide, observation_labels, target_labe
     return loss_fn
 
 
-def differentiable_nce_eig(model, design, observation_labels, target_labels=None, N=100, M=10, control_variate=0.,
+def differentiable_pce_eig(model, design, observation_labels, target_labels=None, N=100, M=10, control_variate=0.,
                            **kwargs):
 
     # Take N samples of the model

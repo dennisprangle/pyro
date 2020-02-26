@@ -13,7 +13,7 @@ import pyro
 import pyro.distributions as dist
 import pyro.optim as optim
 import pyro.poutine as poutine
-from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_nce_eig, \
+from pyro.contrib.oed.differentiable_eig import _differentiable_posterior_loss, differentiable_pce_eig, \
     _differentiable_ace_eig_loss
 from pyro.contrib.util import iter_plates_to_shape
 
@@ -135,8 +135,8 @@ def main(num_steps, time_budget, experiment_name, num_parallel, estimators, seed
             guide = make_posterior_guide(prior_mean, prior_sd)
             loss = _differentiable_posterior_loss(model_learn_xi, guide, ["i1", "i2"], ["b"])
 
-        elif estimator == 'nce':
-            eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
+        elif estimator == 'pce':
+            eig_loss = lambda d, N, **kwargs: differentiable_pce_eig(
                 model=model_learn_xi, design=d, observation_labels=["i1", "i2"], target_labels=["b"], N=N, M=N,
                 **kwargs)
             loss = neg_loss(eig_loss)

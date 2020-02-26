@@ -275,7 +275,7 @@ def nmc_eig(model, design, observation_labels, target_labels=None,
     return terms.sum(0) / nonnan
 
 
-def nce_eig(model, design, observation_labels, target_labels=None, N=100, M=10, **kwargs):
+def pce_eig(model, design, observation_labels, target_labels=None, N=100, M=10, **kwargs):
     if isinstance(observation_labels, str):  # list of strings instead of strings
         observation_labels = [observation_labels]
     if isinstance(target_labels, str):

@@ -14,11 +14,11 @@ import pyro.optim as optim
 import pyro.distributions as dist
 from pyro.contrib.util import iter_plates_to_shape
 from pyro.contrib.oed.differentiable_eig import (
-        _differentiable_posterior_loss, differentiable_nce_eig, _differentiable_ace_eig_loss,
+    _differentiable_posterior_loss, differentiable_pce_eig, _differentiable_ace_eig_loss,
         )
 from pyro import poutine
 from pyro.contrib.util import lexpand, rmv
-from pyro.contrib.oed.eig import _eig_from_ape, nce_eig, _ace_eig_loss, nmc_eig, vnmc_eig
+from pyro.contrib.oed.eig import _eig_from_ape, pce_eig, _ace_eig_loss, nmc_eig, vnmc_eig
 from pyro.util import is_bad
 from pyro.contrib.autoguide import mean_field_entropy
 
@@ -276,11 +276,11 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
 
         elif estimator == 'nce':
             m_final = 40
-            eig_loss = lambda d, N, **kwargs: differentiable_nce_eig(
+            eig_loss = lambda d, N, **kwargs: differentiable_pce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
                 N=N, M=contrastive_samples, **kwargs)
             loss = neg_loss(eig_loss)
-            high_acc = lambda d, N, **kwargs: nce_eig(
+            high_acc = lambda d, N, **kwargs: pce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
                 N=N, M=int(math.sqrt(N)), **kwargs)
             upper_loss = lambda d, N, **kwargs: nmc_eig(

@@ -13,7 +13,7 @@ import pyro.optim as optim
 import pyro.distributions as dist
 from pyro import poutine
 from pyro.contrib.util import lexpand, rmv
-from pyro.contrib.oed.eig import _eig_from_ape, nce_eig, _ace_eig_loss, nmc_eig, vnmc_eig, _posterior_loss
+from pyro.contrib.oed.eig import _eig_from_ape, pce_eig, _ace_eig_loss, nmc_eig, vnmc_eig, _posterior_loss
 from pyro.util import is_bad
 from pyro.contrib.autoguide import mean_field_entropy
 
@@ -209,7 +209,7 @@ def main(num_steps, num_samples, time_budget, experiment_name, estimators, seed,
 
         elif estimator == 'nce':
             # m_final = 40
-            eig_loss = lambda d, N, **kwargs: nce_eig(
+            eig_loss = lambda d, N, **kwargs: pce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
                 N=N, M=contrastive_samples, **kwargs)
             loss = neg_loss(eig_loss)

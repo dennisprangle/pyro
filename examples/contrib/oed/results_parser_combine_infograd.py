@@ -9,10 +9,10 @@ import matplotlib.pyplot as plt
 output_dir = "./run_outputs/gradinfo/"
 
 
-COLOURS = {"ace": 1, "ace-nrb":0, "nce": 3, "nce-nrb":2, "posterior": 5, "posterior-nrb":4, "bo-nce": 7}
-MARKERS = {"ace": "x", "nce": "|", "posterior": "1", "bo-nce": ".", "ace-nrb": "x", "nce-nrb": "|", "posterior-nrb": "1"}
-LEGENDS = {"ace": "ACE", "nce": "PCE", "posterior": "BA", "bo-nce": "BO+NMC",
-           "ace-nrb": "ACE without RB", "nce-nrb": "PCE without RB", "posterior-nrb": "BA without RB"}
+COLOURS = {"ace": 1, "ace-nrb":0, "pce": 3, "pce-nrb":2, "posterior": 5, "posterior-nrb":4, "bo-pce": 7}
+MARKERS = {"ace": "x", "pce": "|", "posterior": "1", "bo-pce": ".", "ace-nrb": "x", "pce-nrb": "|", "posterior-nrb": "1"}
+LEGENDS = {"ace": "ACE", "pce": "PCE", "posterior": "BA", "bo-pce": "BO+NMC",
+           "ace-nrb": "ACE without RB", "pce-nrb": "PCE without RB", "posterior-nrb": "BA without RB"}
 
 
 def main(names, sampling_interval):
