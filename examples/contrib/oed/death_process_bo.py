@@ -180,7 +180,7 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         y = torch.cat([y, y_acquire], dim=-1)
         run_times.append(time.time() - t)
 
-        if time.time() - t > time_budget:
+        if time_budget and time.time() - t > time_budget:
             break
 
     final_time = time.time() - t
