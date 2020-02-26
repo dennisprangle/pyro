@@ -1,25 +1,21 @@
-import torch
-from torch.distributions import constraints
-from torch import nn
 import argparse
-import math
-import subprocess
 import datetime
+import math
 import pickle
+import subprocess
 import time
 
+import torch
+from torch import nn
+from torch.distributions import constraints
+
 import pyro
-import pyro.optim as optim
 import pyro.distributions as dist
+import pyro.optim as optim
 from pyro import poutine
-from pyro.contrib.util import lexpand, rmv
-from pyro.contrib.oed.eig import _eig_from_ape, pce_eig, _ace_eig_loss, nmc_eig, vnmc_eig, _posterior_loss
+from pyro.contrib.oed.eig import _eig_from_ape, pce_eig, _ace_eig_loss, _posterior_loss
+from pyro.contrib.util import rmv
 from pyro.util import is_bad
-from pyro.contrib.autoguide import mean_field_entropy
-
-
-# TODO read from torch float spec
-epsilon = torch.tensor(2**-22)
 
 
 def get_git_revision_hash():
@@ -39,7 +35,7 @@ def make_regression_model(w_loc, w_scale, sigma_scale, xi_init, observation_labe
             # `sigma` is scalar
             sigma = 1e-6 + pyro.sample("sigma", dist.Exponential(sigma_scale)).unsqueeze(-1)
             mean = rmv(design, w)
-            sd = sigma 
+            sd = sigma
             y = pyro.sample(observation_label, dist.Normal(mean, sd).to_event(1))
             return y
 
@@ -47,7 +43,6 @@ def make_regression_model(w_loc, w_scale, sigma_scale, xi_init, observation_labe
 
 
 class TensorLinear(nn.Module):
-
     __constants__ = ['bias']
 
     def __init__(self, *shape, bias=True):
@@ -98,10 +93,11 @@ class PosteriorGuide(nn.Module):
         pyro.module("posterior_guide", self)
 
         posterior_scale_tril = pyro.param(
-            "posterior_scale_tril", torch.eye(posterior_mean.shape[-1], device=posterior_mean.device).expand(self.covariance_shape),
+            "posterior_scale_tril",
+            torch.eye(posterior_mean.shape[-1], device=posterior_mean.device).expand(self.covariance_shape),
             constraint=constraints.lower_cholesky
         )
-        posterior_scale_tril =  posterior_scale_tril * scale_tril_multiplier.unsqueeze(-1).unsqueeze(-1)
+        posterior_scale_tril = posterior_scale_tril * scale_tril_multiplier.unsqueeze(-1).unsqueeze(-1)
 
         batch_shape = design_prototype.shape[:-2]
         with pyro.plate_stack("guide_plate_stack", batch_shape):
@@ -112,15 +108,13 @@ class PosteriorGuide(nn.Module):
 def neg_loss(loss):
     def new_loss(*args, **kwargs):
         return (-a for a in loss(*args, **kwargs))
+
     return new_loss
 
 
 def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, time_budget):
-
     params = None
     est_loss_history = []
-    # lower_history = []
-    # upper_history = []
     xi_history = []
     baseline = 0.
     t = time.time()
@@ -143,29 +137,16 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, time_
         print(pyro.param("xi")[0, 0, ...])
         print(step)
         print('eig', baseline.squeeze())
-        if time.time() - t > time_budget:
+        if time_budget and time.time() - t > time_budget:
             break
-
-        # if step % h_freq == 0:
-        #     low = lower(design, n_high_acc, evaluation=True)
-        #     up = upper(design, n_high_acc, evaluation=True)
-        #     if isinstance(low, tuple):
-        #         low = low[1]
-        #     if isinstance(up, tuple):
-        #         up = up[1]
-        #     lower_history.append(low.detach())
-        #     upper_history.append(up.detach())
-        #     wall_times.append(time.time() - t)
 
     xi_history.append(pyro.param('xi').detach().clone())
 
     est_loss_history = torch.stack(est_loss_history)
     xi_history = torch.stack(xi_history)
-    # lower_history = torch.stack(lower_history)
-    # upper_history = torch.stack(upper_history)
     wall_times = torch.tensor(wall_times)
 
-    return xi_history, est_loss_history, wall_times  # , lower_history, upper_history, wall_times
+    return xi_history, est_loss_history, wall_times
 
 
 def main(num_steps, num_samples, time_budget, experiment_name, estimators, seed, num_parallel, start_lr, end_lr,
@@ -201,32 +182,19 @@ def main(num_steps, num_samples, time_budget, experiment_name, estimators, seed,
         # Fix correct loss
         targets = ["w", "sigma"]
         if estimator == 'posterior':
-            # m_final = 20
             guide = PosteriorGuide(n, p, (num_parallel,)).to(device)
             loss = _posterior_loss(model_learn_xi, guide, ["y"], targets)
-            # high_acc = loss
-            # upper_loss = lambda d, N, **kwargs: vnmc_eig(model_learn_xi, d, "y", targets, (N, int(math.sqrt(N))), 0, guide, None)
 
-        elif estimator == 'nce':
-            # m_final = 40
+        elif estimator == 'pce':
             eig_loss = lambda d, N, **kwargs: pce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
                 N=N, M=contrastive_samples, **kwargs)
             loss = neg_loss(eig_loss)
-            # high_acc = lambda d, N, **kwargs: nce_eig(
-            #     model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
-            #     N=N, M=int(math.sqrt(N)), **kwargs)
-            # upper_loss = lambda d, N, **kwargs: nmc_eig(
-            #     model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
-            #     N=N, M=int(math.sqrt(N)), **kwargs)
 
         elif estimator == 'ace':
-            # m_final = 20
             guide = PosteriorGuide(n, p, (num_parallel,)).to(device)
             eig_loss = _ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"], targets)
             loss = neg_loss(eig_loss)
-            # high_acc = _ace_eig_loss(model_learn_xi, guide, m_final, "y", targets)
-            # upper_loss = lambda d, N, **kwargs: vnmc_eig(model_learn_xi, d, "y", targets, (N, int(math.sqrt(N))), 0, guide, None)
 
         else:
             raise ValueError("Unexpected estimator")
@@ -243,16 +211,14 @@ def main(num_steps, num_samples, time_budget, experiment_name, estimators, seed,
 
         if estimator == 'posterior':
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, targets, est_loss_history, True, {})
-            # lower_history = _eig_from_ape(model_learn_xi, design_prototype, targets, lower_history, True, {})
 
-        elif estimator in ['nce', 'ace']:
+        elif estimator in ['pce', 'ace']:
             est_eig_history = -est_loss_history
         else:
             est_eig_history = est_loss_history
 
         results = {'estimator': estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
                    'xi_history': xi_history.cpu(), 'est_eig_history': est_eig_history.cpu(),
-                   # 'lower_history': lower_history.cpu(), 'upper_history': upper_history.cpu(),
                    'wall_times': wall_times.cpu()}
 
         with open(results_file, 'wb') as f:
@@ -263,7 +229,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a linear model")
     parser.add_argument("--num-steps", default=500000, type=int)
     parser.add_argument("--time-budget", default=1200, type=int)
-    # parser.add_argument("--high-acc-freq", default=50000, type=int)
     parser.add_argument("--num-samples", default=10, type=int)
     parser.add_argument("--num-parallel", default=10, type=int)
     parser.add_argument("--name", default="", type=str)

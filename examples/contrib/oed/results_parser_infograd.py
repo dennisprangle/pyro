@@ -9,19 +9,19 @@ import matplotlib.pyplot as plt
 output_dir = "./run_outputs/gradinfo/"
 
 
-def main(name, sampling_interval):
+def main(name, sampling_interval, summary):
 
     fname = output_dir + name + ".pickle"
     with open(fname, 'rb') as f:
         results = pickle.load(f)
 
-    # print(results['final_lower_bound'].mean(), results['final_lower_bound'].std()/math.sqrt(10))
-    # print(results['final_upper_bound'].mean(), results['final_upper_bound'].std()/math.sqrt(10))
-    #print(results['wall_times'][-1])
+    if summary:
+        print(results['final_lower_bound'].mean().item(), "+/-", results['final_lower_bound'].std().item()/math.sqrt(10))
+        print(results['final_upper_bound'].mean().item(), "+/-", results['final_upper_bound'].std().item()/math.sqrt(10))
+        return
     xi_history = results['xi_history']
     design = xi_history[-1, 0, ...]
     design = design / design.norm(p=1, dim=-1, keepdim=True)
-    #est_eig_history = results['est_eig_history']
     eig_history = results.get('eig_history')
     eig_heatmap = results.get('eig_heatmap')
     heatmap_extent = results.get('extent')
@@ -74,6 +74,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Result parser for design optimization (one shot)")
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--sampling-interval", default=20, type=int)
+    parser.add_argument("--summary", default=False, type=bool)
     args = parser.parse_args()
 
-    main(args.name, args.sampling_interval)
+    main(args.name, args.sampling_interval, args.summary)

@@ -89,25 +89,14 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
         run_times.append(time.time() - t)
         est_loss_history.append(y.max(-1)[0])
 
-        if time.time() - t > time_budget:
+        if time_budget and time.time() - t > time_budget:
             break
 
     final_time = time.time() - t
 
-    # for i in range(1, len(run_times)+1):
-    #
-    #     if i % 10 == 0:
-    #         s = num_acquisition * i
-    #         X_star, y_star = find_gp_max(X[:, :s, :], y[:, :s])
-    #         print(X_star)
-    #         est_loss_history.append(y_star)
-    #         xi_history.append(X_star.detach().clone())
-    #         wall_times.append(run_times[i-1])
-
     # Record the final GP max
     y_star, idx = torch.min(y, dim=-1)
     X_star = X[torch.arange(0, num_parallel, device=device), idx]
-    # X_star, y_star = find_gp_max(X, y)
     xi_history.append(X_star.detach().clone())
     wall_times.append(final_time)
 
@@ -134,7 +123,6 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
         seed = int(torch.rand(tuple()) * 2 ** 30)
         pyro.set_rng_seed(seed)
 
-    xi_init = torch.randn((num_parallel, n, p), device=device)
     # Change the prior distribution here
     # prior params
     w_prior_loc = torch.zeros(p, device=device)
@@ -149,8 +137,8 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
 
     # Fix correct loss
     targets = ["w", "sigma"]
-    vnmc_eval = lambda design: -vnmc_eig(model, design, "y", targets, (num_samples, contrastive_samples), num_steps, guide,
-                                         optim.Adam({"lr": start_lr}), final_num_samples=(400, 20))
+    vnmc_eval = lambda design: -vnmc_eig(model, design, "y", targets, (num_samples, contrastive_samples), num_steps,
+                                         guide, optim.Adam({"lr": start_lr}), final_num_samples=(400, 20))
 
     xi_history, est_loss_history, wall_times = gp_opt_w_history(
         vnmc_eval, None, time_budget, num_parallel, num_acquisition, gp_lengthscale, n, p, device)
@@ -159,7 +147,6 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
 
     results = {'git-hash': get_git_revision_hash(), 'seed': seed,
                'xi_history': xi_history.cpu(), 'est_eig_history': est_eig_history.cpu(),
-               # 'lower_history': lower_history.cpu(), 'upper_history': upper_history.cpu(),
                'wall_times': wall_times.cpu()}
 
     with open(results_file, 'wb') as f:
@@ -172,17 +159,15 @@ if __name__ == "__main__":
     parser.add_argument("--time-budget", default=1200, type=int)
     parser.add_argument("--num-acquisition", default=10, type=int)
     parser.add_argument("--lengthscale", default=5., type=float)
-    # parser.add_argument("--high-acc-freq", default=50000, type=int)
     parser.add_argument("--num-samples", default=10, type=int)
     parser.add_argument("--num-parallel", default=1, type=int)
     parser.add_argument("--name", default="", type=str)
-    # parser.add_argument("--estimator", default="posterior", type=str)
     parser.add_argument("--seed", default=-1, type=int)
     parser.add_argument("--start-lr", default=0.001, type=float)
     parser.add_argument("--end-lr", default=0.001, type=float)
     parser.add_argument("--device", default="cuda:0", type=str)
     parser.add_argument("-n", default=20, type=int)
-    parser.add_argument("-p", default=30, type=int)
+    parser.add_argument("-p", default=20, type=int)
     parser.add_argument("--scale", default=1., type=float)
     args = parser.parse_args()
     main(args.num_steps, args.num_samples, args.name, args.seed, args.num_parallel,

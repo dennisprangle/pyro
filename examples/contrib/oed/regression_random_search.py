@@ -1,27 +1,18 @@
-import torch
-from torch.distributions import constraints
-from torch import nn
 import argparse
-import math
-import subprocess
 import datetime
 import pickle
 import time
-from torch.distributions import transform_to
+
+import torch
+from regression import PosteriorGuide, get_git_revision_hash
+from regression_evaluation import make_regression_model
 
 import pyro
 import pyro.optim as optim
-import pyro.contrib.gp as gp
 from pyro.contrib.oed.eig import vnmc_eig
-from pyro.contrib.util import rmv
-from pyro.util import is_bad
-
-from regression import PosteriorGuide, neg_loss, get_git_revision_hash
-from regression_evaluation import make_regression_model
 
 
 def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisition, n, p, device):
-
     if time_budget is not None:
         num_steps = 100000000000
 
@@ -30,13 +21,13 @@ def gp_opt_w_history(loss_fn, num_steps, time_budget, num_parallel, num_acquisit
     t = time.time()
     wall_times = []
     run_times = []
-    X = torch.randn((num_parallel, num_acquisition, n , p), device=device)
+    X = torch.randn((num_parallel, num_acquisition, n, p), device=device)
 
     y = loss_fn(X)
 
     for i in range(num_steps):
         pyro.clear_param_store()
-        X_acquire = torch.randn((num_parallel, num_acquisition, n , p), device=device)
+        X_acquire = torch.randn((num_parallel, num_acquisition, n, p), device=device)
         y_acquire = loss_fn(X_acquire).detach().clone()
         print('acquired', X_acquire, y_acquire)
         X = torch.cat([X, X_acquire], dim=-3)
@@ -87,15 +78,15 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
 
     model = make_regression_model(
         w_prior_loc, w_prior_scale, sigma_prior_scale)
-    guide = PosteriorGuide(n, p, (num_parallel, )).to(device)
+    guide = PosteriorGuide(n, p, (num_parallel,)).to(device)
 
     contrastive_samples = num_samples
     num_outer_steps = 72
 
     # Fix correct loss
     targets = ["w", "sigma"]
-    vnmc_eval = lambda design: -vnmc_eig(model, design, "y", targets, (num_samples, contrastive_samples), num_steps, guide,
-                                         optim.Adam({"lr": start_lr}), final_num_samples=(400, 20))
+    vnmc_eval = lambda design: -vnmc_eig(model, design, "y", targets, (num_samples, contrastive_samples), num_steps,
+                                         guide, optim.Adam({"lr": start_lr}), final_num_samples=(400, 20))
 
     xi_history, est_loss_history, wall_times = gp_opt_w_history(
         vnmc_eval, num_outer_steps, time_budget, num_parallel, num_acquisition, n, p, device)
@@ -104,7 +95,6 @@ def main(num_steps, num_samples, experiment_name, seed, num_parallel, start_lr, 
 
     results = {'git-hash': get_git_revision_hash(), 'seed': seed,
                'xi_history': xi_history.cpu(), 'est_eig_history': est_eig_history.cpu(),
-               # 'lower_history': lower_history.cpu(), 'upper_history': upper_history.cpu(),
                'wall_times': wall_times.cpu()}
 
     with open(results_file, 'wb') as f:
@@ -116,17 +106,15 @@ if __name__ == "__main__":
     parser.add_argument("--num-steps", default=1000, type=int)
     parser.add_argument("--time-budget", default=None, type=int)
     parser.add_argument("--num-acquisition", default=10, type=int)
-    # parser.add_argument("--high-acc-freq", default=50000, type=int)
     parser.add_argument("--num-samples", default=10, type=int)
-    parser.add_argument("--num-parallel", default=1, type=int)
+    parser.add_argument("--num-parallel", default=10, type=int)
     parser.add_argument("--name", default="", type=str)
-    # parser.add_argument("--estimator", default="posterior", type=str)
     parser.add_argument("--seed", default=-1, type=int)
     parser.add_argument("--start-lr", default=0.001, type=float)
     parser.add_argument("--end-lr", default=0.001, type=float)
     parser.add_argument("--device", default="cuda:0", type=str)
     parser.add_argument("-n", default=20, type=int)
-    parser.add_argument("-p", default=30, type=int)
+    parser.add_argument("-p", default=20, type=int)
     parser.add_argument("--scale", default=1., type=float)
     args = parser.parse_args()
     main(args.num_steps, args.num_samples, args.name, args.seed, args.num_parallel,
