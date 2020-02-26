@@ -16,7 +16,7 @@ import pyro.contrib.gp as gp
 from pyro.contrib.util import rmv
 from pyro.util import is_bad
 
-from death_process_rb import semi_analytic_eig
+from death_process_rb import nmc_eig
 
 
 def get_git_revision_hash():
@@ -225,8 +225,8 @@ def main(experiment_name, seed, estimator, num_parallel, num_steps, time_budget,
     prior_entropy = dist.Normal(prior_mean, prior_sd).entropy()
 
     # Fix correct loss
-    if estimator == 'nce':
-        loss = lambda X: semi_analytic_eig(X, prior_mean, prior_sd, n_samples=num_samples)
+    if estimator == 'pce':
+        loss = lambda X: nmc_eig(X, prior_mean, prior_sd, n_samples=num_samples)
 
     elif estimator == 'posterior':
 
@@ -273,8 +273,8 @@ def main(experiment_name, seed, estimator, num_parallel, num_steps, time_budget,
 
     eig_history = []
     for i in range(xi_history.shape[0] - 1):
-        eig_history.append(semi_analytic_eig(xi_history[i, ...], prior_mean, prior_sd, n_samples=20000))
-    eig_history.append(semi_analytic_eig(xi_history[-1, ...], prior_mean, prior_sd, n_samples=200000))
+        eig_history.append(nmc_eig(xi_history[i, ...], prior_mean, prior_sd, n_samples=20000))
+    eig_history.append(nmc_eig(xi_history[-1, ...], prior_mean, prior_sd, n_samples=200000))
     eig_history = torch.stack(eig_history)
 
     results = {'estimator': 'bo-'+estimator, 'git-hash': get_git_revision_hash(), 'seed': seed,
@@ -289,12 +289,12 @@ def main(experiment_name, seed, estimator, num_parallel, num_steps, time_budget,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="BO design optimization for Death Process")
     parser.add_argument("--num-steps", default=200, type=int)
-    parser.add_argument("--estimator", default="nce", type=str)
+    parser.add_argument("--estimator", default="pce", type=str)
     parser.add_argument("--time-budget", default=None, type=float)
     parser.add_argument("--num-parallel", default=10, type=int)
     parser.add_argument("--name", default="", type=str)
     parser.add_argument("--seed", default=-1, type=int)
-    parser.add_argument("--num-acquisition", default=4, type=int)
-    parser.add_argument("--num-samples", default=10, type=int)
+    parser.add_argument("--num-acquisition", default=1, type=int)
+    parser.add_argument("--num-samples", default=2000, type=int)
     args = parser.parse_args()
     main(args.name, args.seed, args.estimator, args.num_parallel, args.num_steps, args.time_budget, args.num_acquisition, args.num_samples)

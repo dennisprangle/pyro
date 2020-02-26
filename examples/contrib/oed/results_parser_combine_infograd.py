@@ -27,7 +27,7 @@ def main(names, sampling_interval):
     legend = []
     plt.figure(figsize=(5, 3.5))
     for name in names.split(","):
-        print(name, combined[name]['eig_history'].shape, combined[name]['seed'])
+        print(name, combined[name]['eig_history'].shape, combined[name]['seed'], combined[name].get("num_samples", 0))
         wall_time = combined[name]['wall_times'].detach().numpy()[::sampling_interval]
         hist = combined[name]['eig_history'].detach().numpy()[::sampling_interval]
         mean, se = np.nanmean(hist, 1), np.nanstd(hist, 1)/math.sqrt(hist.shape[1])
