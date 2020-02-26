@@ -253,7 +253,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, num_
                 results['max EIG'] = max_eig
                 d_star_design = X[torch.arange(num_parallel), d_star_index, ...].unsqueeze(-2).unsqueeze(-2)
 
-            elif typ in ['posterior-grad', 'nce-grad', 'ace-grad']:
+            elif typ in ['posterior-grad', 'pce-grad', 'ace-grad']:
                 model_learn_xi = make_learn_xi_model(model)
                 grad_start_lr, grad_end_lr = 0.001, 0.001
 
@@ -264,7 +264,7 @@ def main(num_steps, num_parallel, experiment_name, typs, seed, lengthscale, num_
                     posterior_guide.set_prior(rho_concentration, alpha_concentration, slope_mu, slope_sigma)
                     loss = _differentiable_posterior_loss(model_learn_xi, posterior_guide, ["y"], ["rho", "alpha", "slope"])
 
-                elif typ == 'nce-grad':
+                elif typ == 'pce-grad':
 
                     # Suggested num_gradient_steps = 2500
                     eig_loss = lambda d, N, **kwargs: differentiable_pce_eig(

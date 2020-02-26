@@ -11,8 +11,6 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
 output_dir = "./run_outputs/ces/"
-# COLOURS = [[31/255, 120/255, 180/255], [227/255, 26/255, 28/255], [51/255, 160/255, 44/255], [177/255, 89/255, 40/255],
-#            [106 / 255, 61 / 255, 154 / 255], [255/255, 127/255, 0], [.22, .22, .22]]
 cmap = plt.get_cmap("Paired")
 COLOURS = {'ace-grad': cmap(1),
            'nce-grad': cmap(3),
@@ -29,8 +27,6 @@ VALUE_LABELS = {"Entropy": "Posterior entropy",
                 "Imax": "EIG lower bound"}
 LABELS = {'marginal': 'BO + marginal (baseline)', 'rand': 'Random design (baseline)', 'nmc': 'BOED NMC (baseline)',
           'posterior-grad': "BA gradient", 'nce-grad': "PCE gradient", "ace-grad": "ACE gradient"}
-
-# MARKERS = ['o', 'D', '^', '*']
 MARKERS = {'ace-grad': 'x',
            'nce-grad': '|',
            'posterior-grad': '1',
@@ -86,6 +82,7 @@ def main(fnames, findices, plot, percentile):
             try:
                 while True:
                     results = pickle.load(results_file)
+                    print(fname, results.get('num_gradient_steps', 0), results.get('num_samples', 0), results.get('num_contrast_samples', 0))
                     # Compute entropy and L2 distance to the true fixed effects
                     if 'rho0' in results:
                         rho0, rho1, alpha_concentration = results['rho0'], results['rho1'], results['alpha_concentration']
@@ -132,14 +129,10 @@ def main(fnames, findices, plot, percentile):
                 plt.fill_between(x, upper, lower, color=COLOURS[k], alpha=0.15)
             plt.xlabel("Step", fontsize=23)
             plt.xticks([5, 10, 15, 20], fontsize=23)
-            #plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
-            #plt.legend([LABELS[k] for k in reformed[statistic].keys()], fontsize=16, frameon=False, loc=1, ncol=4)
-            # frame = legend.get_frame()
-            # frame.set_linewidth(S/)
+
             plt.yticks(fontsize=23)
             plt.ylabel(VALUE_LABELS[statistic], fontsize=23)
-            # [i.set_linewidth(S/2) for i in plt.gca().spines.values()]
-            # plt.gca().tick_params(width=S/2)
+
             if statistic not in ["Entropy", "Imax"]:
                 plt.yscale('log')
             plt.show()

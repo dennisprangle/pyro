@@ -65,48 +65,6 @@ def make_docking_model(top_c, bottom_c, ee50_mu, ee50_sigma, slope_mu, slope_sig
     return docking_model
 
 
-# def make_posterior_guide(d, top_prior_c, bottom_prior_c, ee50_prior_mu, ee50_prior_sigma, slope_prior_mu,
-#                          slope_prior_sigma):
-#     def posterior_guide(y_dict, design, observation_labels, target_labels):
-#
-#         y = torch.cat(list(y_dict.values()), dim=-1)
-#
-#         top_mult = pyro.param("A_top", torch.zeros(*d, y.shape[-1]))
-#         top_confidence = pyro.param("top_v", top_prior_c.sum(), constraint=constraints.positive)
-#         top_c = top_confidence * torch.sigmoid(
-#             invsigmoid(top_prior_c[..., 0] / top_prior_c.sum(-1)) + (top_mult * (y - .5)).sum(-1)
-#         )
-#         top_c = torch.stack([top_c, top_confidence - top_c], dim=-1)
-#
-#         bottom_mult = pyro.param("A_ bottom", torch.ones(*d, y.shape[-1]))
-#         bottom_confidence = pyro.param("bottom_v", bottom_prior_c.sum(), constraint=constraints.positive)
-#         bottom_c = bottom_confidence * torch.sigmoid(
-#             invsigmoid(bottom_prior_c[..., 0] / bottom_prior_c.sum(-1)) + (bottom_mult * (y - .5)).sum(-1)
-#         )
-#         bottom_c = torch.stack([bottom_c, bottom_confidence - bottom_c], dim=-1)
-#
-#         ee50_mult = pyro.param("A_ee50", torch.zeros(*d, y.shape[-1]))
-#         ee50_mu = ee50_prior_mu + (ee50_mult * y).sum(-1)
-#         ee50_sigma = pyro.param("ee50_sd", ee50_prior_sigma, constraint=constraints.positive)
-#
-#         slope_mult = pyro.param("A_slope", torch.zeros(*d, y.shape[-1]))
-#         slope_mu = slope_prior_mu + (slope_mult * y).sum(-1)
-#         slope_sigma = pyro.param("slope_sd", slope_prior_sigma, constraint=constraints.positive)
-#
-#         print(ee50_mu)
-#
-#         batch_shape = design.shape[:-1]
-#         with ExitStack() as stack:
-#             for plate in iter_plates_to_shape(batch_shape):
-#                 stack.enter_context(plate)
-#             pyro.sample("top", dist.Dirichlet(top_c))
-#             pyro.sample("bottom", dist.Dirichlet(bottom_c))
-#             pyro.sample("ee50", dist.Normal(ee50_mu, ee50_sigma))
-#             pyro.sample("slope", dist.Normal(slope_mu, slope_sigma))
-#
-#     return posterior_guide
-
-
 class TensorLinear(nn.Module):
 
     __constants__ = ['bias']
@@ -274,7 +232,7 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
             high_acc = loss
             upper_loss = lambda d, N, **kwargs: vnmc_eig(model_learn_xi, d, "y", targets, (N, int(math.sqrt(N))), 0, guide, None)
 
-        elif estimator == 'nce':
+        elif estimator == 'pce':
             m_final = 40
             eig_loss = lambda d, N, **kwargs: differentiable_pce_eig(
                 model=model_learn_xi, design=d, observation_labels=["y"], target_labels=targets,
@@ -313,7 +271,7 @@ def main(num_steps, high_acc_freq, num_samples, experiment_name, estimators, see
             est_eig_history = _eig_from_ape(model_learn_xi, design_prototype, targets, est_loss_history, True, {})
             lower_history = _eig_from_ape(model_learn_xi, design_prototype, targets, lower_history, True, {})
 
-        elif estimator in ['nce', 'nce-proposal', 'ace']:
+        elif estimator in ['pce', 'pce-proposal', 'ace']:
             est_eig_history = -est_loss_history
         else:
             est_eig_history = est_loss_history
