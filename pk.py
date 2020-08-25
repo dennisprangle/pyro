@@ -22,29 +22,25 @@ def get_git_revision_hash():
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
 
 
-def make_regression_model(w_loc, w_scale, sigma_scale, xi_init, observation_label="y"):
-    def regression_model(design_prototype):
-        design = pyro.param("xi", xi_init)
+def make_pk_model(theta_loc, theta_scale, xi_init, observation_label="y", sd=0.1):
+    def pk_model(design_prototype):
+        design = pyro.param("xi", xi_init).expand(design_prototype.shape)
         print("Design shape", design.shape)
         print("Design prototype shape", design_prototype.shape)
-        design = (design / design.norm(dim=-1, p=1, keepdim=True)).expand(design_prototype.shape)
-        print("Norm design shape", design.shape)
-        if is_bad(design):
-            raise ArithmeticError("bad design, contains nan or inf")
-        batch_shape = design.shape[:-2]
+        batch_shape = design.shape[:-1]
         with pyro.plate_stack("plate_stack", batch_shape):
-            # `w` is shape p, the prior on each component is independent
-            w = pyro.sample("w", dist.Laplace(w_loc, w_scale).to_event(1))
-            # `sigma` is scalar
-            sigma = 1e-6 + pyro.sample("sigma", dist.Exponential(sigma_scale)).unsqueeze(-1)
-            mean = rmv(design, w)
-            sd = sigma
-            y = pyro.sample(observation_label, dist.Normal(mean, sd).to_event(1))
+            theta = pyro.sample("theta", dist.LogNormal(theta_loc, theta_scale).to_event(1))
+            theta1, theta2, theta3 = torch.unbind(theta, -1)
+            theta1 = theta1.unsqueeze(-1)
+            theta2 = theta2.unsqueeze(-1)
+            theta3 = theta3.unsqueeze(-1)
+            x = 400. * theta2 * (torch.exp(-theta1*design) - torch.exp(-theta2*design)) / (theta3*(theta2-theta1))
+            y = pyro.sample(observation_label, dist.Normal(x, sd).to_event(1))
             print("batch shape", batch_shape)
             print("y shape", y.shape)
             return y
 
-    return regression_model
+    return pk_model
 
 
 class TensorLinear(nn.Module):
@@ -74,50 +70,48 @@ class TensorLinear(nn.Module):
 
 
 class PosteriorGuide(nn.Module):
-    def __init__(self, y_dim, w_dim, batching):
+    def __init__(self, y_dim, batching):
         super(PosteriorGuide, self).__init__()
         n_hidden = 64
         self.linear1 = TensorLinear(*batching, y_dim, n_hidden)
         self.linear2 = TensorLinear(*batching, n_hidden, n_hidden)
-        self.output_layer = TensorLinear(*batching, n_hidden, w_dim + 3)
+        self.output_layer = TensorLinear(*batching, n_hidden, 9)
         print("batching", batching)
-        self.covariance_shape = batching + (w_dim, w_dim)
         self.softplus = nn.Softplus()
         self.relu = nn.ReLU()
 
     def forward(self, y_dict, design_prototype, observation_labels, target_labels):
-        y = y_dict["y"] - .5
+        y = y_dict["y"]
         print("y shape", y.shape)
         x = self.relu(self.linear1(y))
         x = self.relu(self.linear2(x))
         final = self.output_layer(x)
         print("final shape", final.shape)
 
-        posterior_mean = final[..., :-3]
-        gamma_concentration = 1e-6 + self.softplus(final[..., -3])
-        gamma_rate = 1. + self.softplus(final[..., -2])
-        scale_tril_multiplier = 1e-6 + self.softplus(final[..., -1])
-
+        posterior_mean = final[..., 0:3]
+        posterior_scale_tril_raw = final[..., 3:]
+        ## Next lines based on `fill_triangular` from tensorflow probability
+        chol_list = [posterior_scale_tril_raw[..., 3:],
+                  torch.flip(posterior_scale_tril_raw, [-1])]
+        print("chol shape", torch.cat(chol_list, -1).shape)
+        covariance_shape = final.shape[:-1] + (3,3)
+        print("target chol shape", covariance_shape)
+        chol = torch.reshape(torch.cat(chol_list, -1), covariance_shape)
+        chol = torch.tril(chol)
+        chol.diagonal().exp_()
         pyro.module("posterior_guide", self)
-
         posterior_scale_tril = pyro.param(
             "posterior_scale_tril",
-            torch.eye(posterior_mean.shape[-1], device=posterior_mean.device).expand(self.covariance_shape),
+            chol,
             constraint=constraints.lower_cholesky
         )
-        print("Cov shape", self.covariance_shape)
-        print("Posterior scale shape 1", posterior_scale_tril.shape)
-        print("Multipler shape", scale_tril_multiplier.unsqueeze(-1).unsqueeze(-1).shape)
-        posterior_scale_tril = posterior_scale_tril * scale_tril_multiplier.unsqueeze(-1).unsqueeze(-1)
-        print("Posterior scale shape 2", posterior_scale_tril.shape)
-
-        batch_shape = design_prototype.shape[:-2]
+        batch_shape = design_prototype.shape[:-1]
         print("Batch shape", batch_shape)
         print("Posterior mean shape", posterior_mean.shape)
+        print("Posterior scale shape", posterior_scale_tril.shape)
         with pyro.plate_stack("guide_plate_stack", batch_shape):
-            pyro.sample("sigma", dist.Gamma(gamma_concentration, gamma_rate))
-            temp = pyro.sample("w", dist.MultivariateNormal(posterior_mean, scale_tril=posterior_scale_tril))
-        print("w shape", temp.shape)
+            temp = pyro.sample("theta", dist.MultivariateNormal(posterior_mean, scale_tril=posterior_scale_tril))
+        print("theta shape", temp.shape)
 
 
 def neg_loss(loss):
@@ -139,6 +133,8 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, time_
             pyro.infer.util.zero_grads(params)
         with poutine.trace(param_only=True) as param_capture:
             agg_loss, loss = loss_fn(design, num_samples, evaluation=True, control_variate=baseline)
+        print("Design", design)
+        print("Loss", loss)
         baseline = -loss.detach()
         params = set(site["value"].unconstrained()
                      for site in param_capture.trace.nodes.values())
@@ -165,7 +161,7 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, time_
 
 
 def main(num_steps, num_samples, time_budget, experiment_name, estimators, seed, num_parallel, start_lr, end_lr,
-         device, n, p, scale):
+         device, n, scale):
     output_dir = "./run_outputs/gradinfo/"
     if not experiment_name:
         experiment_name = output_dir + "{}".format(datetime.datetime.now().isoformat())
@@ -182,22 +178,20 @@ def main(num_steps, num_samples, time_budget, experiment_name, estimators, seed,
             seed = int(torch.rand(tuple()) * 2 ** 30)
             pyro.set_rng_seed(seed)
 
-        xi_init = torch.randn((num_parallel, n, p), device=device)
-        # Change the prior distribution here
+        xi_init = 24. * torch.rand((num_parallel, n), device=device)
         # prior params
-        w_prior_loc = torch.zeros(p, device=device)
-        w_prior_scale = scale * torch.ones(p, device=device)
-        sigma_prior_scale = scale * torch.tensor(1., device=device)
+        theta_prior_loc = torch.tensor((0.1, 1., 20.), dtype=torch.float32, device=device).log()
+        theta_prior_scale = torch.tensor((0.05, 0.05, 0.05), dtype=torch.float32, device=device).sqrt()
 
-        model_learn_xi = make_regression_model(
-            w_prior_loc, w_prior_scale, sigma_prior_scale, xi_init)
+        model_learn_xi = make_pk_model(
+            theta_prior_loc, theta_prior_scale, xi_init)
 
         contrastive_samples = num_samples
 
         # Fix correct loss
-        targets = ["w", "sigma"]
+        targets = ["theta"]
         if estimator == 'posterior':
-            guide = PosteriorGuide(n, p, (num_parallel,)).to(device)
+            guide = PosteriorGuide(n, (num_parallel,)).to(device)
             loss = _posterior_loss(model_learn_xi, guide, ["y"], targets)
 
         elif estimator == 'pce':
@@ -207,7 +201,7 @@ def main(num_steps, num_samples, time_budget, experiment_name, estimators, seed,
             loss = neg_loss(eig_loss)
 
         elif estimator == 'ace':
-            guide = PosteriorGuide(n, p, (num_parallel,)).to(device)
+            guide = PosteriorGuide(n, (num_parallel,)).to(device)
             eig_loss = _ace_eig_loss(model_learn_xi, guide, contrastive_samples, ["y"], targets)
             loss = neg_loss(eig_loss)
 
@@ -218,7 +212,8 @@ def main(num_steps, num_samples, time_budget, experiment_name, estimators, seed,
         scheduler = pyro.optim.ExponentialLR({'optimizer': torch.optim.Adam, 'optim_args': {'lr': start_lr},
                                               'gamma': gamma})
 
-        design_prototype = torch.zeros(num_parallel, n, p, device=device)  # this is annoying, code needs refactor
+        design_prototype = torch.zeros(num_parallel, n, device=device)  # this is annoying, code needs refactor
+        design_prototype = 24. * torch.rand(num_parallel, n, device=device)
 
         xi_history, est_loss_history, wall_times = opt_eig_loss_w_history(
             design_prototype, loss, num_samples=num_samples, num_steps=num_steps, optim=scheduler,
@@ -241,7 +236,7 @@ def main(num_steps, num_samples, time_budget, experiment_name, estimators, seed,
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a linear model")
+    parser = argparse.ArgumentParser(description="Gradient-based design optimization (one shot) with a pharmacokinetic model")
     parser.add_argument("--num-steps", default=500000, type=int)
     parser.add_argument("--time-budget", default=1200, type=int)
     parser.add_argument("--num-samples", default=10, type=int)
@@ -252,9 +247,8 @@ if __name__ == "__main__":
     parser.add_argument("--start-lr", default=0.001, type=float)
     parser.add_argument("--end-lr", default=0.001, type=float)
     parser.add_argument("--device", default="cuda:0", type=str)
-    parser.add_argument("-n", default=20, type=int)
-    parser.add_argument("-p", default=20, type=int)
+    parser.add_argument("-n", default=15, type=int)
     parser.add_argument("--scale", default=1., type=float)
     args = parser.parse_args()
     main(args.num_steps, args.num_samples, args.time_budget, args.name, args.estimator, args.seed, args.num_parallel,
-         args.start_lr, args.end_lr, args.device, args.n, args.p, args.scale)
+         args.start_lr, args.end_lr, args.device, args.n, args.scale)
