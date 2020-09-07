@@ -25,8 +25,6 @@ def get_git_revision_hash():
 def make_pk_model(theta_loc, theta_scale, xi_init, observation_label="y", sd=0.1):
     def pk_model(design_prototype):
         design = pyro.param("xi", xi_init).expand(design_prototype.shape)
-        print("Design shape", design.shape)
-        print("Design prototype shape", design_prototype.shape)
         batch_shape = design.shape[:-1]
         with pyro.plate_stack("plate_stack", batch_shape):
             theta = pyro.sample("theta", dist.LogNormal(theta_loc, theta_scale).to_event(1))
@@ -36,8 +34,6 @@ def make_pk_model(theta_loc, theta_scale, xi_init, observation_label="y", sd=0.1
             theta3 = theta3.unsqueeze(-1)
             x = 400. * theta2 * (torch.exp(-theta1*design) - torch.exp(-theta2*design)) / (theta3*(theta2-theta1))
             y = pyro.sample(observation_label, dist.Normal(x, sd).to_event(1))
-            print("batch shape", batch_shape)
-            print("y shape", y.shape)
             return y
 
     return pk_model
@@ -76,26 +72,21 @@ class PosteriorGuide(nn.Module):
         self.linear1 = TensorLinear(*batching, y_dim, n_hidden)
         self.linear2 = TensorLinear(*batching, n_hidden, n_hidden)
         self.output_layer = TensorLinear(*batching, n_hidden, 9)
-        print("batching", batching)
         self.softplus = nn.Softplus()
         self.relu = nn.ReLU()
 
     def forward(self, y_dict, design_prototype, observation_labels, target_labels):
         y = y_dict["y"]
-        print("y shape", y.shape)
         x = self.relu(self.linear1(y))
         x = self.relu(self.linear2(x))
         final = self.output_layer(x)
-        print("final shape", final.shape)
 
         posterior_mean = final[..., 0:3]
         posterior_scale_tril_raw = final[..., 3:]
         ## Next lines based on `fill_triangular` from tensorflow probability
         chol_list = [posterior_scale_tril_raw[..., 3:],
                   torch.flip(posterior_scale_tril_raw, [-1])]
-        print("chol shape", torch.cat(chol_list, -1).shape)
         covariance_shape = final.shape[:-1] + (3,3)
-        print("target chol shape", covariance_shape)
         chol = torch.reshape(torch.cat(chol_list, -1), covariance_shape)
         chol = torch.tril(chol)
         chol.diagonal().exp_()
@@ -106,12 +97,8 @@ class PosteriorGuide(nn.Module):
             constraint=constraints.lower_cholesky
         )
         batch_shape = design_prototype.shape[:-1]
-        print("Batch shape", batch_shape)
-        print("Posterior mean shape", posterior_mean.shape)
-        print("Posterior scale shape", posterior_scale_tril.shape)
         with pyro.plate_stack("guide_plate_stack", batch_shape):
-            temp = pyro.sample("theta", dist.MultivariateNormal(posterior_mean, scale_tril=posterior_scale_tril))
-        print("theta shape", temp.shape)
+            pyro.sample("theta", dist.MultivariateNormal(posterior_mean, scale_tril=posterior_scale_tril))
 
 
 def neg_loss(loss):
@@ -133,25 +120,24 @@ def opt_eig_loss_w_history(design, loss_fn, num_samples, num_steps, optim, time_
             pyro.infer.util.zero_grads(params)
         with poutine.trace(param_only=True) as param_capture:
             agg_loss, loss = loss_fn(design, num_samples, evaluation=True, control_variate=baseline)
-        print("Design", design)
-        print("Loss", loss)
         baseline = -loss.detach()
         params = set(site["value"].unconstrained()
                      for site in param_capture.trace.nodes.values())
         if torch.isnan(agg_loss):
             raise ArithmeticError("Encountered NaN loss in opt_eig_ape_loss")
         agg_loss.backward(retain_graph=True)
-        est_loss_history.append(loss.detach())
-        wall_times.append(time.time() - t)
+        if step % 500 == 0:
+            xi_history.append(pyro.param('xi').detach().clone())
+            est_loss_history.append(loss.detach())
+            wall_times.append(time.time() - t)
         optim(params)
         optim.step()
-        print(pyro.param("xi")[0, 0, ...])
-        print(step)
-        print('eig', baseline.squeeze())
+        if step % 500 == 0:
+            print(pyro.param("xi")[0, ...])
+            print(step)
+            print('eig', baseline.squeeze())
         if time_budget and time.time() - t > time_budget:
             break
-
-    xi_history.append(pyro.param('xi').detach().clone())
 
     est_loss_history = torch.stack(est_loss_history)
     xi_history = torch.stack(xi_history)
